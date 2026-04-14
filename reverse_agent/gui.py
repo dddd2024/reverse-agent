@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import shutil
+import subprocess
 import threading
 import traceback
 from pathlib import Path
@@ -53,6 +54,7 @@ class App(tk.Tk):
         self.olly_path_var = tk.StringVar(value="")
         self.olly_script_var = tk.StringVar(value="")
         self.olly_timeout_var = tk.StringVar(value="120")
+        self.runtime_validate_var = tk.BooleanVar(value=False)
 
         self.flag_var = tk.StringVar(value="")
         self.report_var = tk.StringVar(value="")
@@ -68,9 +70,31 @@ class App(tk.Tk):
             return 'copilot -p "{prompt}" --allow-all-tools --allow-all-paths -s'
         if shutil.which("github-copilot-cli"):
             return 'github-copilot-cli -p "{prompt}" --allow-all-tools --allow-all-paths -s'
-        if shutil.which("gh"):
+        if App._is_gh_copilot_available():
             return 'gh copilot -p "{prompt}" --allow-all-tools --allow-all-paths -s'
         return ""
+
+    @staticmethod
+    def _is_gh_copilot_available() -> bool:
+        if shutil.which("gh") is None:
+            return False
+        try:
+            proc = subprocess.run(
+                ["gh", "copilot", "--help"],
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=8,
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            return False
+        if proc.returncode == 0:
+            return True
+        output = f"{proc.stdout}\n{proc.stderr}".lower()
+        if "unknown command" in output or "not a gh command" in output:
+            return False
+        return False
 
     @staticmethod
     def _parse_timeout(value: str, field_name: str) -> int:
@@ -154,7 +178,7 @@ class App(tk.Tk):
         self.tool_frame.grid(row=6, column=0, columnspan=2, sticky="ew", pady=(10, 0))
         ttk.Checkbutton(
             self.tool_frame,
-            text="启用工具链自动分析（IDA + OllyDbg 接口）",
+            text="启用工具链自动分析（IDA + OllyDbg）",
             variable=self.tool_enabled_var,
         ).grid(row=0, column=0, columnspan=4, sticky="w")
 
@@ -175,7 +199,7 @@ class App(tk.Tk):
         )
 
         ttk.Checkbutton(
-            self.tool_frame, text="启用 OllyDbg（接口预留）", variable=self.olly_enabled_var
+            self.tool_frame, text="启用 OllyDbg 自动化", variable=self.olly_enabled_var
         ).grid(row=4, column=0, sticky="w", pady=(8, 0))
         ttk.Label(self.tool_frame, text="OllyDbg 路径:").grid(row=5, column=0, sticky="w")
         ttk.Entry(self.tool_frame, textvariable=self.olly_path_var).grid(
@@ -189,6 +213,15 @@ class App(tk.Tk):
         ttk.Entry(self.tool_frame, textvariable=self.olly_timeout_var).grid(
             row=6, column=1, sticky="ew", padx=(6, 6), pady=(4, 0)
         )
+        ttk.Checkbutton(
+            self.tool_frame,
+            text="启用本地运行时校验（会执行样本 EXE）",
+            variable=self.runtime_validate_var,
+        ).grid(row=7, column=0, columnspan=4, sticky="w", pady=(8, 0))
+        ttk.Label(
+            self.tool_frame,
+            text="仅在隔离环境启用此选项，避免在主机直接执行未知样本。",
+        ).grid(row=8, column=0, columnspan=4, sticky="w")
         self.tool_frame.columnconfigure(1, weight=1)
         self.tool_frame.columnconfigure(3, weight=1)
 
@@ -285,6 +318,7 @@ class App(tk.Tk):
                 local_model=self.local_model_var.get(),
                 local_api_key=self.local_key_var.get(),
                 tool_config=tool_config,
+                runtime_validation_enabled=self.runtime_validate_var.get(),
                 reports_dir=Path("solve_reports"),
                 log=lambda msg: self.after(0, self._append_log, msg),
             )

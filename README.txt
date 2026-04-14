@@ -5,9 +5,11 @@ Reverse Agent（GUI 逆向解题助手）
 - 支持模式：静态分析 / 动态调试。
 - 支持模型：Copilot CLI 或本地 OpenAI 兼容模型。
 - 输出最可能 flag，并在 `solve_reports\` 生成详细报告。
+- 报告采用新手友好的 CTF writeup 结构（题目信息、解题路线、关键证据链、候选排除、逐步推导、排错建议）。
 - 支持非花括号答案格式（如纯字符串口令 `SEPTA`）的结果提取。
 - 对本地 EXE 可执行样本支持候选运行时校验（检测 `Correct!`）以提升命中率。
-- 支持工具链自动化（第一版）：**IDA 全自动** + **OllyDbg 接口预留**。
+- 支持工具链自动化：**IDA 全自动** + **OllyDbg 脚本驱动自动化**。
+- 运行时候选校验改为显式开关（仅建议在隔离环境执行未知 EXE）。
 
 快速开始
 1) 安装依赖：
@@ -36,7 +38,14 @@ Copilot CLI 模式
 工具链自动化（IDA + OllyDbg）
 - 启用“工具链自动分析”后：
   - IDA：自动执行 headless 分析脚本，提取字符串与函数证据，并注入模型 prompt。
-  - OllyDbg：当前版本仅预留接口（记录配置与状态），不执行完整自动调试。
+  - OllyDbg：支持脚本驱动自动化执行（`.py/.ps1/.bat/.cmd/.exe`），产出日志与证据 JSON 并注入模型 prompt。
+    - 脚本参数约定：
+      - `--olly <ollydbg_executable>`
+      - `--target <target_exe_path>`
+      - `--out <evidence_json_path>`
+    - 若脚本返回码为 0 且输出 JSON 存在，程序会读取：
+      - `summary`（字符串，可选）
+      - `evidence`（字符串列表，可选）
 
 IDA 配置说明
 - 可执行文件：优先使用 GUI 手动填写路径；支持两种填写方式：
@@ -55,8 +64,11 @@ IDA 配置说明
    - 检查脚本路径是否存在且可读。
 2) Copilot CLI 卡住或无输出：
    - 使用带 `-p`、`--allow-all-tools`、`--allow-all-paths`、`-s` 的非交互模板。
-3) 动态模式没有自动调试：
-   - 第一版仅实现 OllyDbg 接口预留，后续可在此基础上接入脚本插件自动化。
+3) 动态模式下 OllyDbg 未执行：
+   - 检查是否已配置 OllyDbg 路径（`ollydbg.exe`）与自动化脚本路径；
+   - 检查脚本是否按约定写出证据 JSON。
+4) 运行时校验默认关闭：
+   - GUI 中“启用本地运行时校验（会执行样本 EXE）”为显式开关，未开启时只做静态/模型推断。
 
 收尾与发布说明
 - 关闭 GUI 前建议确认：

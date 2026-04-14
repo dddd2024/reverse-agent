@@ -131,7 +131,12 @@ def build_prompt(
         "1) 推断最可能的最终 flag。",
         "2) 第一行只输出一个 flag。",
         "3) 如果不是 flag{} 格式，也必须在第一行只输出答案本体（例如 SEPTA）。",
-        "4) 随后用简短证据说明原因。",
+        "4) 从第二行开始请按优秀 CTF writeup 风格输出，且对新手友好：",
+        "   - 思路概览（先讲目标与路线）",
+        "   - 关键证据（字符串/函数/分支/常量）",
+        "   - 逐步推导（从证据到答案）",
+        "   - 易错点与如何自查",
+        "5) 不要编造未出现的工具输出或地址。",
     ]
     return "\n".join(lines)
 
@@ -224,6 +229,7 @@ def run_pipeline(
     local_model: str,
     local_api_key: str,
     tool_config: ToolAutomationConfig,
+    runtime_validation_enabled: bool,
     reports_dir: Path,
     log: LogFn,
 ) -> SolveResult:
@@ -307,7 +313,11 @@ def run_pipeline(
             if ext not in candidate_pool:
                 candidate_pool.append(ext)
 
-    if file_path.suffix.lower() == ".exe" and candidate_pool:
+    if (
+        runtime_validation_enabled
+        and file_path.suffix.lower() == ".exe"
+        and candidate_pool
+    ):
         for cand in candidate_pool:
             try:
                 if _validate_candidate_with_exe(file_path, cand):
@@ -316,6 +326,8 @@ def run_pipeline(
                     break
             except subprocess.TimeoutExpired:
                 continue
+    elif file_path.suffix.lower() == ".exe" and candidate_pool:
+        log("已跳过运行时校验（未启用“执行样本验证”开关）。")
 
     if not selected_flag:
         selected_flag = "NOT_FOUND"

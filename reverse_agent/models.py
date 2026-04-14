@@ -29,6 +29,33 @@ class CopilotCliBackend:
             return value[1:end] if end > 1 else value[1:]
         return value.split(maxsplit=1)[0]
 
+    @staticmethod
+    def _ensure_gh_copilot_available() -> None:
+        try:
+            proc = subprocess.run(
+                ["gh", "copilot", "--help"],
+                shell=False,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=8,
+            )
+        except subprocess.TimeoutExpired as exc:
+            raise ModelError("`gh copilot` 可用性检测超时，请检查 gh CLI 环境。") from exc
+        if proc.returncode == 0:
+            return
+        output = f"{proc.stdout}\n{proc.stderr}".lower()
+        if "unknown command" in output or "not a gh command" in output:
+            raise ModelError(
+                "`gh` 已安装，但未检测到 `gh copilot` 子命令。"
+                "请安装/启用 GitHub Copilot CLI 扩展，或改用 `copilot` 可执行命令模板。"
+            )
+        raise ModelError(
+            "无法确认 `gh copilot` 可用。"
+            f"返回码: {proc.returncode}，输出: {(proc.stderr or proc.stdout).strip()[:300]}"
+        )
+
     def solve(self, prompt: str) -> str:
         template = self.command_template.strip()
         if not template:
@@ -60,6 +87,8 @@ class CopilotCliBackend:
         # Ensure non-interactive behavior for Copilot CLI so GUI does not hang.
         is_gh_copilot = len(args) >= 2 and args[0] == "gh" and args[1] == "copilot"
         is_direct_copilot = args[0] in {"copilot", "github-copilot-cli"}
+        if is_gh_copilot:
+            self._ensure_gh_copilot_available()
         if is_gh_copilot or is_direct_copilot:
             has_prompt_flag = "-p" in args or "--prompt" in args
             if not has_prompt_flag:

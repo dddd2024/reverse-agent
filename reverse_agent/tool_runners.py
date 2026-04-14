@@ -5,6 +5,7 @@ import os
 import shlex
 import shutil
 import subprocess
+import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
@@ -66,6 +67,35 @@ def _resolve_ida_script(user_path: str) -> str:
     return str(default_script) if default_script.exists() else ""
 
 
+def _resolve_ollydbg_executable(user_path: str) -> str:
+    if user_path.strip():
+        p = Path(user_path.strip())
+        if not p.exists():
+            return ""
+        if p.is_file():
+            return str(p)
+        if p.is_dir():
+            for name in ("ollydbg.exe", "OLLYDBG.EXE"):
+                candidate = p / name
+                if candidate.exists() and candidate.is_file():
+                    return str(candidate)
+            return ""
+    for candidate in ("ollydbg.exe", "OLLYDBG.EXE"):
+        resolved = shutil.which(candidate)
+        if resolved:
+            return resolved
+    return ""
+
+
+def _resolve_ollydbg_script(user_path: str) -> str:
+    if not user_path.strip():
+        return ""
+    p = Path(user_path.strip())
+    if not p.exists() or not p.is_file():
+        return ""
+    return str(p)
+
+
 def run_tool_automation(
     file_path: Path,
     analysis_mode: str,
@@ -84,7 +114,7 @@ def run_tool_automation(
         artifacts.append(_run_ida(file_path, config, artifacts_dir, log))
 
     if analysis_mode == "Dynamic Debug" and config.ollydbg_enabled:
-        artifacts.append(_run_ollydbg_placeholder(config))
+        artifacts.append(_run_ollydbg(file_path, config, artifacts_dir, log))
 
     return artifacts
 
@@ -179,19 +209,134 @@ def _run_ida(
     return artifact
 
 
-def _run_ollydbg_placeholder(config: ToolAutomationConfig) -> ToolRunArtifact:
-    has_exe = bool(config.ollydbg_executable.strip())
-    has_script = bool(config.ollydbg_script_path.strip())
-    guidance = "已预留 OllyDbg 接口，当前版本仅记录配置，不执行自动调试。"
-    if not has_exe:
-        guidance += " 未配置 OllyDbg 路径。"
-    if not has_script:
-        guidance += " 未配置 OllyDbg 脚本路径。"
-    return ToolRunArtifact(
+def _build_olly_script_command(
+    script_path: str, ollydbg_executable: str, target_file: Path, output_path: Path
+) -> list[str]:
+    suffix = Path(script_path).suffix.lower()
+    if suffix == ".py":
+        return [
+            sys.executable,
+            script_path,
+            "--olly",
+            ollydbg_executable,
+            "--target",
+            str(target_file),
+            "--out",
+            str(output_path),
+        ]
+    if suffix == ".ps1":
+        return [
+            "powershell",
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            script_path,
+            "-OllyPath",
+            ollydbg_executable,
+            "-TargetPath",
+            str(target_file),
+            "-OutputPath",
+            str(output_path),
+        ]
+    return [
+        script_path,
+        "--olly",
+        ollydbg_executable,
+        "--target",
+        str(target_file),
+        "--out",
+        str(output_path),
+    ]
+
+
+def _run_ollydbg(
+    file_path: Path,
+    config: ToolAutomationConfig,
+    artifacts_dir: Path,
+    log: LogFn,
+) -> ToolRunArtifact:
+    artifact = ToolRunArtifact(
         tool_name="OllyDbg",
         enabled=True,
         attempted=False,
         success=False,
-        summary=guidance,
-        error="OllyDbg 自动执行尚未在第一版实现。",
     )
+    ollydbg_executable = _resolve_ollydbg_executable(config.ollydbg_executable)
+    if not ollydbg_executable:
+        artifact.error = "未找到 OllyDbg 可执行文件（请在界面配置 ollydbg.exe 路径）。"
+        artifact.summary = "OllyDbg 自动分析未执行。"
+        return artifact
+
+    olly_script = _resolve_ollydbg_script(config.ollydbg_script_path)
+    if not olly_script:
+        artifact.error = (
+            "未找到 OllyDbg 自动化脚本。请提供脚本路径（支持 .py/.ps1/.bat/.cmd/.exe）。"
+        )
+        artifact.summary = "OllyDbg 自动分析未执行。"
+        return artifact
+
+    output_path = artifacts_dir / f"{file_path.stem}_ollydbg_evidence.json"
+    log_path = artifacts_dir / f"{file_path.stem}_ollydbg.log"
+    command_args = _build_olly_script_command(
+        script_path=olly_script,
+        ollydbg_executable=ollydbg_executable,
+        target_file=file_path,
+        output_path=output_path,
+    )
+    artifact.command = " ".join(shlex.quote(a) for a in command_args)
+    artifact.output_path = str(output_path)
+    artifact.attempted = True
+    log("正在执行 OllyDbg 自动化脚本...")
+
+    try:
+        proc = subprocess.run(
+            command_args,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=config.ollydbg_timeout_seconds,
+        )
+    except subprocess.TimeoutExpired:
+        artifact.error = f"OllyDbg 自动化超时（>{config.ollydbg_timeout_seconds} 秒）。"
+        artifact.summary = "OllyDbg 自动分析超时。"
+        return artifact
+
+    combined_output = (
+        f"[stdout]\n{proc.stdout or ''}\n\n[stderr]\n{proc.stderr or ''}".strip()
+    )
+    log_path.write_text(combined_output, encoding="utf-8", errors="replace")
+
+    if proc.returncode != 0:
+        details = (proc.stderr or proc.stdout or "").strip()
+        artifact.error = details[:2000] if details else "OllyDbg 脚本未返回可读错误信息。"
+        artifact.summary = f"OllyDbg 执行失败（退出码 {proc.returncode}）。"
+        return artifact
+
+    if output_path.exists():
+        try:
+            data = json.loads(output_path.read_text(encoding="utf-8"))
+            if isinstance(data, dict):
+                evidence = data.get("evidence", [])
+                if isinstance(evidence, list):
+                    artifact.evidence = [str(item) for item in evidence[:40]]
+                custom_summary = str(data.get("summary", "")).strip()
+                if custom_summary:
+                    artifact.summary = custom_summary
+            if not artifact.summary:
+                artifact.summary = "OllyDbg 自动分析完成。"
+        except Exception as exc:
+            artifact.error = f"OllyDbg 证据文件解析失败：{exc}"
+            artifact.summary = "OllyDbg 输出不可解析。"
+            return artifact
+    else:
+        artifact.summary = (
+            "OllyDbg 自动化脚本执行完成，但未生成证据文件。"
+            f" 已写入日志：{log_path}"
+        )
+
+    artifact.success = True
+    if str(log_path) not in artifact.evidence:
+        artifact.evidence.append(f"OllyDbg日志: {log_path}")
+    return artifact

@@ -64,6 +64,7 @@ Report must include:
 - model info
 - extracted candidate flags
 - final selected flag
+- beginner-friendly writeup flow (route, evidence, derivation, pitfalls)
 - model raw output
 - prompt used
 
