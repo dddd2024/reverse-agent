@@ -65,8 +65,11 @@ Report must include:
 - extracted candidate flags
 - final selected flag
 - beginner-friendly writeup flow (route, evidence, derivation, pitfalls)
-- model raw output
-- prompt used
+- sanitized tool evidence (no local absolute paths)
+- address/function context with evidence IDs where available
+- candidate confidence ranking table
+
+Do **not** include a dedicated section that dumps system/user prompt text in the final report.
 
 ## Safety and Scope
 - Stay inside challenge-solving scope.
