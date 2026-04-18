@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import shlex
 import shutil
 import subprocess
@@ -16,7 +17,7 @@ class ModelError(RuntimeError):
 @dataclass
 class CopilotCliBackend:
     command_template: str
-    timeout_seconds: int = 180
+    timeout_seconds: int = 300
 
     @staticmethod
     def _extract_executable(template: str) -> str:
@@ -103,24 +104,33 @@ class CopilotCliBackend:
             if "--allow-all-paths" not in args:
                 args.append("--allow-all-paths")
 
+        # Use Popen + explicit timeout handling so we can reliably terminate
+        # process trees on Windows when the CLI hangs.
+        creationflags = 0
+        if os.name == "nt":
+            creationflags = subprocess.CREATE_NEW_PROCESS_GROUP
+        proc = subprocess.Popen(
+            args,
+            shell=False,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            creationflags=creationflags,
+        )
         try:
-            proc = subprocess.run(
-                args,
-                shell=False,
-                capture_output=True,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-                timeout=self.timeout_seconds,
-            )
+            stdout, stderr = proc.communicate(timeout=self.timeout_seconds)
         except subprocess.TimeoutExpired as exc:
+            self._terminate_process_tree(proc.pid)
             raise ModelError(
                 "Copilot CLI call timed out. "
                 "Use non-interactive flags in Command Template "
-                '(recommended: gh copilot -p "{prompt}" --allow-all-tools --allow-all-paths -s).'
+                '(recommended: gh copilot -p "{prompt}" --allow-all-tools --allow-all-paths -s). '
+                "If needed, increase Copilot timeout in GUI."
             ) from exc
         if proc.returncode != 0:
-            error_text = (proc.stderr.strip() or proc.stdout.strip()).strip()
+            error_text = (stderr.strip() or stdout.strip()).strip()
             if "not recognized as an internal or external command" in error_text.lower() or "不是内部或外部命令" in error_text:
                 raise ModelError(
                     "Copilot CLI command executable was not found. "
@@ -131,9 +141,9 @@ class CopilotCliBackend:
                 f"Copilot CLI command failed (code {proc.returncode}): "
                 f"{error_text}"
             )
-        output = (proc.stdout or "").strip()
+        output = (stdout or "").strip()
         if not output:
-            stderr_text = (proc.stderr or "").strip()
+            stderr_text = (stderr or "").strip()
             if stderr_text:
                 raise ModelError(f"Copilot CLI returned no stdout. Stderr: {stderr_text}")
             raise ModelError(
@@ -141,6 +151,35 @@ class CopilotCliBackend:
                 "Try command template: gh copilot -p \"{prompt}\" --allow-all-tools --allow-all-paths -s"
             )
         return output
+
+    @staticmethod
+    def _terminate_process_tree(pid: int) -> None:
+        if not pid:
+            return
+        try:
+            if os.name == "nt":
+                subprocess.run(
+                    ["taskkill", "/PID", str(pid), "/T", "/F"],
+                    shell=False,
+                    capture_output=True,
+                    text=True,
+                    encoding="utf-8",
+                    errors="replace",
+                    timeout=8,
+                )
+            else:
+                subprocess.run(
+                    ["kill", "-TERM", str(pid)],
+                    shell=False,
+                    capture_output=True,
+                    text=True,
+                    encoding="utf-8",
+                    errors="replace",
+                    timeout=5,
+                )
+        except Exception:
+            # Preserve timeout error path; cleanup best-effort only.
+            return
 
 
 @dataclass

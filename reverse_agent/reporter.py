@@ -39,6 +39,7 @@ def write_report(result: SolveResult, reports_dir: Path) -> Path:
     resolved_path = _sanitize_path_field(result.resolved_path)
     model_name = _sanitize_text_weak(result.model_name)
     yaml_meta = _build_yaml_meta(result, selected_flag)
+    evidence_limited = _is_evidence_limited(result)
 
     content = f"""---
 {yaml_meta}
@@ -70,21 +71,7 @@ def write_report(result: SolveResult, reports_dir: Path) -> Path:
 
 ## 0x04 关键伪代码还原（Decompiled Code）
 ```cpp
-bool verify_flag(const std::string& input_flag) {{
-    if (input_flag.size() != {rules.length_check or 24}) return false;  // 长度校验
-
-    const int dash_pos[] = {{{", ".join(str(x) for x in (rules.dash_positions or [9, 12, 16, 19, 21]))}}};  // 字符过滤
-    for (int p : dash_pos) {{
-        if (input_flag[p] != '-') return false;
-    }}
-
-    std::string transformed = input_flag;
-    for (char& encrypted_char : transformed) {{
-{_build_transform_code(rules)}
-    }}
-
-    return transformed == target_cipher_text;
-}}
+{_build_pseudocode_section(rules, evidence_limited)}
 ```
 
 ## 0x05 核心算法推导（含示例）
@@ -124,10 +111,15 @@ bool verify_flag(const std::string& input_flag) {{
 
 ### 复现建议
 ```python
-# 1) 先按长度与固定符号位过滤输入
-# 2) 仅对字母做仿射逆变换 x = 9*(y-7) mod 26
-# 3) 正向回代 y = (3*x+7) mod 26 验证与目标密文一致
+{_build_repro_tips(rules, evidence_limited)}
 ```
+
+## 0x0A 失败归因与下一步建议
+### 候选验证矩阵
+{_build_validation_matrix(result)}
+
+### 归因建议
+{_build_failure_diagnostics(result)}
 """
     path.write_text(content, encoding="utf-8")
     return path
@@ -274,6 +266,49 @@ def _build_yaml_meta(result: SolveResult, selected_flag: str) -> str:
     )
 
 
+def _build_failure_diagnostics(result: SolveResult) -> str:
+    selected = (result.selected_flag or "").strip().upper()
+    if selected not in {"NOT_FOUND", "UNKNOWN", "N/A", "NONE", "NULL"}:
+        return "- 本次结果已产出有效候选，未触发失败归因。"
+
+    has_ida = any(a.tool_name == "IDA" and a.success for a in result.tool_artifacts)
+    has_olly = any(a.tool_name == "OllyDbg" and a.success for a in result.tool_artifacts)
+    has_runtime_candidate = any(
+        any("runtime_candidate:" in ev or "prefix_candidate:" in ev for ev in a.evidence)
+        for a in result.tool_artifacts
+    )
+    notes: list[str] = [
+        "- 归因: 候选融合后仍无高置信可提交答案。",
+        f"- 证据状态: IDA={'ok' if has_ida else 'missing'}, OllyDbg={'ok' if has_olly else 'missing'}, runtime_candidate={'yes' if has_runtime_candidate else 'no'}。",
+    ]
+    if not has_runtime_candidate:
+        notes.append("- 建议: 使用自定义 Olly 自动化脚本抓取 compare 前后缓冲区与返回值。")
+    notes.append("- 建议: 启用“执行样本验证”在隔离环境验证 Top 候选。")
+    notes.append("- 建议: 检查报告中的关键地址是否出现真实比较链（strcmp/memcmp/lstrcmp 参数）。")
+    return "\n".join(notes)
+
+
+def _build_validation_matrix(result: SolveResult) -> str:
+    rows = [
+        "| candidate | validated | selected | evidence |",
+        "|---|---|---|---|",
+    ]
+    selected = (result.selected_flag or "").strip()
+    if not result.candidate_validations:
+        rows.append(f"| `{_escape_table(selected or '-')}` | - | yes | - |")
+        return "\n".join(rows)
+
+    for item in result.candidate_validations[:20]:
+        cand = str(item.get("candidate", "")).strip()
+        validated = str(item.get("validated", "")).strip() or "-"
+        evidence = _sanitize_text_weak(str(item.get("evidence", "")).strip())[:140]
+        is_selected = "yes" if cand == selected else "no"
+        rows.append(
+            f"| `{_escape_table(cand or '-')}` | {validated} | {is_selected} | `{_escape_table(evidence or '-')}` |"
+        )
+    return "\n".join(rows)
+
+
 def _detect_report_rules(result: SolveResult, explanation: str) -> ReportRules:
     text = f"{result.model_output}\n{explanation}".lower()
     has_affine = "mod 26" in text or "affine" in text or "(3*x+7)" in text or "(3 * x + 7)" in text
@@ -311,6 +346,47 @@ def _build_flow_diagram(rules: ReportRules) -> str:
     if rules.has_affine:
         return "输入获取 -> 格式与长度预检查 -> 字母位仿射处理 -> 密文对比"
     return "输入获取 -> 格式与长度预检查 -> 规则处理/特征变换 -> 目标校验"
+
+
+def _is_evidence_limited(result: SolveResult) -> bool:
+    selected = (result.selected_flag or "").strip().upper()
+    return selected in {"NOT_FOUND", "UNKNOWN", "N/A", "NONE", "NULL"} and not (result.model_output or "").strip()
+
+
+def _build_pseudocode_section(rules: ReportRules, evidence_limited: bool) -> str:
+    if evidence_limited:
+        return (
+            "// 证据不足：本次未拿到可复原的稳定校验分支。\n"
+            "// 建议基于 IDA compare/local_check_context 与动态断点继续定位真实 verify 函数。"
+        )
+    return (
+        "bool verify_flag(const std::string& input_flag) {\n"
+        f"    if (input_flag.size() != {rules.length_check or 24}) return false;  // 长度校验\n\n"
+        f"    const int dash_pos[] = {{{', '.join(str(x) for x in (rules.dash_positions or [9, 12, 16, 19, 21]))}}};  // 字符过滤\n"
+        "    for (int p : dash_pos) {\n"
+        "        if (input_flag[p] != '-') return false;\n"
+        "    }\n\n"
+        "    std::string transformed = input_flag;\n"
+        "    for (char& encrypted_char : transformed) {\n"
+        f"{_build_transform_code(rules)}"
+        "    }\n\n"
+        "    return transformed == target_cipher_text;\n"
+        "}"
+    )
+
+
+def _build_repro_tips(rules: ReportRules, evidence_limited: bool) -> str:
+    if evidence_limited:
+        return (
+            "# 1) 在 IDA 中定位 compare_contexts / local_check_contexts 提示的调用点\n"
+            "# 2) 仅对真实比较分支上的输入缓冲区做断点跟踪\n"
+            "# 3) 导出长度、字符集、常量表后再做逆推或约束求解"
+        )
+    return (
+        "# 1) 先按长度与固定符号位过滤输入\n"
+        "# 2) 仅对字母做仿射逆变换 x = 9*(y-7) mod 26\n"
+        "# 3) 正向回代 y = (3*x+7) mod 26 验证与目标密文一致"
+    )
 
 
 def _build_transform_code(rules: ReportRules) -> str:
@@ -352,3 +428,4 @@ def _build_math_section(rules: ReportRules) -> str:
         "2. `x = 9 * (22 - 7) mod 26 = 9 * 15 mod 26 = 135 mod 26 = 5`。  \n"
         "3. 索引 5 对应 `f`，因此逆推结果正确。"
     )
+    evidence_limited = _is_evidence_limited(result)

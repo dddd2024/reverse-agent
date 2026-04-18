@@ -2,10 +2,18 @@
 
 Use this file as the **first-read startup guide** so a new AI session can begin work immediately.
 
+## Current Project Status (Read First)
+- Latest execution log is maintained in `PROJECT_PROGRESS_LOG.txt`.
+- The file records:
+  - what has already been completed,
+  - current verified findings on `samplereverse.exe`,
+  - concrete next tasks for the next iteration.
+
 ## 60-Second Startup Checklist
 1. Confirm goal: solve reverse challenge input and output one final flag.
 2. Confirm input type: local executable path or downloadable URL.
 3. Choose analysis mode:
+   - `Auto` for default intelligent routing
    - `Static Analysis` for string/logic-driven tasks
    - `Dynamic Debug` for runtime-only/anti-debug/decrypt-at-runtime tasks
 4. Use existing pipeline; do not redesign core flow unless requested.
@@ -17,6 +25,9 @@ Use this file as the **first-read startup guide** so a new AI session can begin 
 - `reverse_agent\pipeline.py`: solve workflow orchestration.
 - `reverse_agent\dynamic_templates.py`: static/dynamic analysis templates.
 - `reverse_agent\models.py`: model backends (Copilot CLI / local OpenAI-compatible API).
+- `reverse_agent\tool_runners.py`: IDA / Olly automation entry and artifact normalization.
+- `reverse_agent\advanced_solvers.py`: optional `angr` symbolic fallback solver.
+- `reverse_agent\olly_scripts\collect_evidence.py`: built-in default Olly automation script.
 - `reverse_agent\reporter.py`: detailed markdown report writer.
 
 ## Fixed Input/Output Contract
@@ -27,11 +38,14 @@ Use this file as the **first-read startup guide** so a new AI session can begin 
 ## Operating Workflow (Do this in order)
 1. Resolve input (local file or download URL).
 2. Extract printable strings.
-3. Detect local candidate flags via pattern match.
-4. Build prompt with selected analysis template.
-5. Query selected model backend.
-6. Select final flag (prefer strongest evidence).
-7. Write detailed report.
+3. Detect local candidates (`flag{...}` + token-like short passwords).
+4. Resolve analysis mode (`Auto` may switch to static or dynamic based on evidence).
+5. Run tool automation (IDA first; Olly in dynamic mode, or static-stage supplement when needed).
+6. Merge tool evidence and candidates; optionally add `angr` candidates.
+7. Build prompt (adaptive context budget for large evidence sets).
+8. Query selected model backend (Copilot timeout triggers one compact-prompt retry).
+9. Rank candidates and run runtime validation when enabled.
+10. Write report.
 
 ## Analysis Mode Guidance
 
@@ -51,6 +65,7 @@ Use when answer depends on runtime behavior.
 2. If model guess conflicts with runtime-evidence candidate, prefer runtime-evidence candidate.
 3. Never emit multiple final flags in the first line.
 4. Preserve exact flag casing and braces from strongest evidence.
+5. If runtime validation is enabled and no candidate validates, return `NOT_FOUND`.
 
 ## Prompt and Reasoning Discipline
 - Respect selected analysis mode; do not mix modes without reason.
@@ -68,6 +83,8 @@ Report must include:
 - sanitized tool evidence (no local absolute paths)
 - address/function context with evidence IDs where available
 - candidate confidence ranking table
+- candidate validation matrix
+- failure diagnostics section (when selected result is `NOT_FOUND` / negative answer)
 
 Do **not** include a dedicated section that dumps system/user prompt text in the final report.
 
@@ -77,7 +94,7 @@ Do **not** include a dedicated section that dumps system/user prompt text in the
 - Avoid destructive environment actions.
 
 ## Fast Defaults
-- Default analysis mode: `Static Analysis`.
-- Switch to `Dynamic Debug` when:
-  - no strong static candidate exists, or
-  - challenge behavior indicates runtime decryption/anti-debug gating.
+- Default GUI analysis mode: `Auto`.
+- In `Auto`, prefer `Static Analysis` when strong local candidates already exist.
+- In `Auto`, switch to `Dynamic Debug` when runtime/anti-debug signals are strong, especially with custom Olly script configured.
+- Runtime validation toggle defaults to enabled; use only in isolated environment.

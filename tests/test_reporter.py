@@ -51,7 +51,9 @@ def test_reporter_redacts_paths_and_includes_required_sections(tmp_path: Path) -
     assert r"E:\Users\demo" not in content
     assert "report_type: reverse_ctf_writeup" in content
     assert "| confidence |" in content
+    assert "| candidate | validated | selected | evidence |" in content
     assert "关键指令节选" not in content
+    assert "## 0x0A 失败归因与下一步建议" in content
 
 
 def test_reporter_non_affine_fallback(tmp_path: Path) -> None:
@@ -72,3 +74,21 @@ def test_reporter_non_affine_fallback(tmp_path: Path) -> None:
 
     assert "未检测到稳定的仿射特征" in content
     assert "规则处理/特征变换" in content
+
+
+def test_reporter_not_found_includes_failure_diagnostics(tmp_path: Path) -> None:
+    result = SolveResult(
+        input_value="sample.exe",
+        resolved_path="sample.exe",
+        analysis_mode="Static Analysis",
+        model_name="Copilot CLI",
+        candidates=[],
+        selected_flag="NOT_FOUND",
+        prompt="",
+        model_output="NOT_FOUND",
+        extracted_strings_count=0,
+        tool_artifacts=[],
+    )
+    report_path = write_report(result, reports_dir=tmp_path)
+    content = report_path.read_text(encoding="utf-8")
+    assert "归因: 候选融合后仍无高置信可提交答案" in content

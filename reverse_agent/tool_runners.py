@@ -89,7 +89,8 @@ def _resolve_ollydbg_executable(user_path: str) -> str:
 
 def _resolve_ollydbg_script(user_path: str) -> str:
     if not user_path.strip():
-        return ""
+        default_script = Path(__file__).parent / "olly_scripts" / "collect_evidence.py"
+        return str(default_script) if default_script.exists() else ""
     p = Path(user_path.strip())
     if not p.exists() or not p.is_file():
         return ""
@@ -113,8 +114,42 @@ def run_tool_automation(
     if config.ida_enabled:
         artifacts.append(_run_ida(file_path, config, artifacts_dir, log))
 
-    if analysis_mode == "Dynamic Debug" and config.ollydbg_enabled:
+    auto_olly_enabled = (
+        analysis_mode == "Dynamic Debug"
+        and not config.ollydbg_enabled
+        and bool(config.ollydbg_executable.strip())
+        and bool(config.ollydbg_script_path.strip())
+    )
+    if auto_olly_enabled:
+        log("检测到 OllyDbg 路径与脚本已配置，自动启用 OllyDbg 自动化。")
+
+    if analysis_mode == "Dynamic Debug" and (config.ollydbg_enabled or auto_olly_enabled):
         artifacts.append(_run_ollydbg(file_path, config, artifacts_dir, log))
+    elif analysis_mode != "Dynamic Debug" and (
+        config.ollydbg_enabled
+        or config.ollydbg_executable.strip()
+        or config.ollydbg_script_path.strip()
+    ):
+        artifacts.append(
+            ToolRunArtifact(
+                tool_name="OllyDbg",
+                enabled=True,
+                attempted=False,
+                success=False,
+                summary="OllyDbg 已跳过（仅在动态调试模式执行）。",
+            )
+        )
+    elif analysis_mode == "Dynamic Debug":
+        artifacts.append(
+            ToolRunArtifact(
+                tool_name="OllyDbg",
+                enabled=False,
+                attempted=False,
+                success=False,
+                summary="OllyDbg 未启用（可勾选开关或同时配置路径+脚本自动启用）。",
+                error="未满足 OllyDbg 运行条件。",
+            )
+        )
 
     return artifacts
 
@@ -195,16 +230,76 @@ def _run_ida(
         artifact.summary = "IDA 输出不可解析。"
         return artifact
 
-    strings = data.get("strings", [])[:20]
-    funcs = data.get("functions", [])[:20]
+    strings = data.get("strings", [])[:40]
+    funcs = data.get("functions", [])[:30]
+    compare_contexts = data.get("compare_contexts", [])[:20]
+    local_check_contexts = data.get("local_check_contexts", [])[:20]
+    control_id_contexts = data.get("control_id_contexts", [])[:20]
+    entry = str(data.get("entry", "")).strip()
     artifact.evidence = [
+        *([f"IDA入口: {entry}"] if entry else []),
         *(f"IDA字符串: {s}" for s in strings),
         *(f"IDA函数: {f}" for f in funcs),
     ]
+    for ctx in compare_contexts:
+        if not isinstance(ctx, dict):
+            continue
+        call_ea = str(ctx.get("call_ea", "")).strip()
+        callee = str(ctx.get("callee", "")).strip()
+        caller = str(ctx.get("caller_func", "")).strip()
+        ref_strings = str(ctx.get("ref_strings", "")).strip()
+        call_disasm = str(ctx.get("call_disasm", "")).strip()
+        nearby = str(ctx.get("nearby", "")).strip()
+        parts = [
+            f"IDA比较上下文: call={call_ea}" if call_ea else "IDA比较上下文",
+            f"callee={callee}" if callee else "",
+            f"caller={caller}" if caller else "",
+            f"insn={call_disasm}" if call_disasm else "",
+            f"strings={ref_strings}" if ref_strings else "",
+            f"nearby={nearby}" if nearby else "",
+        ]
+        artifact.evidence.append(" ".join(p for p in parts if p))
+    for ctx in local_check_contexts:
+        if not isinstance(ctx, dict):
+            continue
+        call_ea = str(ctx.get("call_ea", "")).strip()
+        callee = str(ctx.get("callee", "")).strip()
+        caller = str(ctx.get("caller_func", "")).strip()
+        ref_strings = str(ctx.get("ref_strings", "")).strip()
+        call_disasm = str(ctx.get("call_disasm", "")).strip()
+        nearby = str(ctx.get("nearby", "")).strip()
+        imm_args = str(ctx.get("imm_args", "")).strip()
+        parts = [
+            f"IDA局部校验上下文: call={call_ea}" if call_ea else "IDA局部校验上下文",
+            f"callee={callee}" if callee else "",
+            f"caller={caller}" if caller else "",
+            f"insn={call_disasm}" if call_disasm else "",
+            f"strings={ref_strings}" if ref_strings else "",
+            f"imm={imm_args}" if imm_args else "",
+            f"nearby={nearby}" if nearby else "",
+        ]
+        artifact.evidence.append(" ".join(p for p in parts if p))
+    for ctx in control_id_contexts:
+        if not isinstance(ctx, dict):
+            continue
+        ea = str(ctx.get("ea", "")).strip()
+        caller = str(ctx.get("caller_func", "")).strip()
+        insn = str(ctx.get("insn", "")).strip()
+        nearby = str(ctx.get("nearby", "")).strip()
+        parts = [
+            f"IDA控件ID上下文: ea={ea}" if ea else "IDA控件ID上下文",
+            f"caller={caller}" if caller else "",
+            f"insn={insn}" if insn else "",
+            f"nearby={nearby}" if nearby else "",
+        ]
+        artifact.evidence.append(" ".join(p for p in parts if p))
     artifact.success = True
     artifact.summary = (
         f"IDA 自动分析完成：字符串 {len(data.get('strings', []))} 条，"
-        f"函数 {len(data.get('functions', []))} 个。"
+        f"函数 {len(data.get('functions', []))} 个，"
+        f"比较上下文 {len(data.get('compare_contexts', []))} 条，"
+        f"局部校验上下文 {len(data.get('local_check_contexts', []))} 条，"
+        f"控件ID上下文 {len(data.get('control_id_contexts', []))} 条。"
     )
     return artifact
 
@@ -321,6 +416,23 @@ def _run_ollydbg(
                 evidence = data.get("evidence", [])
                 if isinstance(evidence, list):
                     artifact.evidence = [str(item) for item in evidence[:40]]
+                candidates = data.get("candidates", [])
+                if isinstance(candidates, list):
+                    for item in candidates[:12]:
+                        if isinstance(item, dict):
+                            value = str(item.get("value", "")).strip()
+                            source = str(item.get("source", "")).strip()
+                            confidence = str(item.get("confidence", "")).strip()
+                            if value:
+                                artifact.evidence.append(
+                                    f"runtime_candidate:{value}"
+                                    + (f" source={source}" if source else "")
+                                    + (f" confidence={confidence}" if confidence else "")
+                                )
+                        else:
+                            value = str(item).strip()
+                            if value:
+                                artifact.evidence.append(f"runtime_candidate:{value}")
                 custom_summary = str(data.get("summary", "")).strip()
                 if custom_summary:
                     artifact.summary = custom_summary

@@ -1,92 +1,98 @@
 Reverse Agent（GUI 逆向解题助手）
 
-功能概览
-- 支持输入：本地文件路径或下载 URL。
-- 支持模式：静态分析 / 动态调试。
-- 支持模型：Copilot CLI 或本地 OpenAI 兼容模型。
-- 输出最可能 flag，并在 `solve_reports\` 生成详细报告。
-- 报告采用新手友好的 CTF writeup 结构（含 YAML 元数据、证据编号、候选置信度）。
-- 支持非花括号答案格式（如纯字符串口令 `SEPTA`）的结果提取。
-- 对本地 EXE 可执行样本支持候选运行时校验（检测 `Correct!`）以提升命中率。
-- 支持工具链自动化：**IDA 全自动** + **OllyDbg 脚本驱动自动化**。
-- 运行时候选校验改为显式开关（仅建议在隔离环境执行未知 EXE）。
-- 报告默认进行敏感信息清理（本地路径脱敏），且不再输出系统 Prompt 段落。
+这是一个面向 CTF / RE 场景的 Windows GUI 工具，支持静态与动态证据采集、模型辅助候选收敛、运行时验证和结构化报告输出。
+
+核心能力
+- 输入：本地文件路径或 URL。
+- 模式：自动判断 / 静态分析 / 动态调试。
+- 模型：Copilot CLI 或 OpenAI 兼容接口。
+- 工具链：IDA 自动化 + OllyDbg 脚本自动化（可注入结构化 evidence/candidates）。
+- 验证：支持 stdin 校验与 GUI（pywinauto）窗口级校验。
+- 样本增强：`samplereverse` 已支持 GUI 运行时证据采集、低字节精确注入、可选 Z3 分区求解。
+- 输出：`solve_reports\` 下生成结果与证据报告。
+
+项目结构
+- `app.py`：程序入口。
+- `reverse_agent\gui.py`：GUI 主逻辑。
+- `reverse_agent\harness.py`：批量评测 harness（任务集、可恢复重跑、样本级结果与汇总）。
+- `reverse_agent\pipeline.py`：主流程编排（证据采集、候选生成、验证、报告）。
+- `reverse_agent\models.py`：Copilot CLI / 本地模型调用封装。
+- `reverse_agent\tool_runners.py`：IDA / Olly / angr 等工具调用。
+- `reverse_agent\sample_solver.py`：`samplereverse` 专项求解与 checkpoint。
+- `reverse_agent\reporter.py`：报告生成。
+- `tests\`：pytest 测试集。
+- `PROJECT_PROGRESS_LOG.txt`：详细迭代日志与样本进展（长文档已从 README 中拆出）。
 
 快速开始
-1) 安装依赖：
-   pip install -r requirements.txt
+1) 安装依赖  
+`pip install -r requirements.txt`
 
-2) 启动 GUI：
-   launch_reverse_agent.bat
-   或
-   python app.py
+2) 启动 GUI  
+`launch_reverse_agent.bat`  
+或  
+`python app.py`
 
-3) （可选）创建桌面快捷方式：
-   powershell -ExecutionPolicy Bypass -File .\create_desktop_shortcut.ps1
+3) 可选：创建桌面快捷方式  
+`powershell -ExecutionPolicy Bypass -File .\create_desktop_shortcut.ps1`
 
-Copilot CLI 模式
-- 在 GUI 里设置命令模板，支持 `{prompt}` 占位符。
-- 推荐模板（Windows）：
-  - gh copilot -p "{prompt}" --allow-all-tools --allow-all-paths -s
-  - copilot -p "{prompt}" --allow-all-tools --allow-all-paths -s
-  - github-copilot-cli -p "{prompt}" --allow-all-tools --allow-all-paths -s
+4) 可选：安装高级求解依赖  
+`pip install angr`
 
-本地模型模式
-- 使用 OpenAI 兼容接口：
-  POST {base_url}/v1/chat/completions
-- 在 GUI 中填写 Base URL / 模型名称 / API Key（可选）。
+批量 Harness（新增）
+1) 准备 JSON 任务集，例如：
+```json
+{
+  "cases": [
+    {
+      "case_id": "sample-local",
+      "input_value": "E:\\samples\\sample.exe",
+      "expected_flag": "flag{demo}",
+      "tags": ["smoke", "gui"]
+    }
+  ]
+}
+```
 
-工具链自动化（IDA + OllyDbg）
-- 启用“工具链自动分析”后：
-  - IDA：自动执行 headless 分析脚本，提取字符串与函数证据，并注入模型 prompt。
-  - OllyDbg：支持脚本驱动自动化执行（`.py/.ps1/.bat/.cmd/.exe`），产出日志与证据 JSON 并注入模型 prompt。
-    - 脚本参数约定：
-      - `--olly <ollydbg_executable>`
-      - `--target <target_exe_path>`
-      - `--out <evidence_json_path>`
-    - 若脚本返回码为 0 且输出 JSON 存在，程序会读取：
-      - `summary`（字符串，可选）
-      - `evidence`（字符串列表，可选）
+2) 运行可复现实验：
+`python -m reverse_agent.harness --dataset .\cases.json --run-name smoke_suite --analysis-mode "Static Analysis"`
 
-报告输出结构（当前版本）
-- 标题包含 0x00 ~ 0x09 章节，重点包括：
-  - 最终答案高亮
-  - 逻辑流程图（文字流）
-  - 关键伪代码（按题型自适应）
-  - 数学/算法推导（仿射题有逆元示例）
-  - 地址与函数上下文（E1/E2...证据编号）
-  - 工具证据与环境
-  - 候选答案对比（含 confidence）
-  - 推导摘要与复现提示
-- 不再输出“关键指令节选 / 系统 Prompt”章节。
+3) 结果目录：
+- `solve_reports\harness_runs\<run_name>\run_manifest.json`：本次运行配置、git commit、digest。
+- `solve_reports\harness_runs\<run_name>\case_results\*.json`：每个样本单独结果。
+- `solve_reports\harness_runs\<run_name>\summary.json` / `summary.md`：聚合统计与人工可读汇总。
 
-IDA 配置说明
-- 可执行文件：优先使用 GUI 手动填写路径；支持两种填写方式：
-  - 直接填写可执行文件（如 `E:\Program Files\ida_pro\idat64.exe`）
-  - 填写 IDA 安装目录（如 `E:\Program Files\ida_pro`，程序会自动查找 exe）
-- 留空时自动尝试：
-  `idat64.exe` / `idat.exe` / `ida64.exe` / `ida.exe`
-- 脚本路径：留空时默认使用项目内脚本：
-  `reverse_agent\ida_scripts\collect_evidence.py`
-- 超时：建议 120~300 秒，视样本复杂度调整。
-- 如果填写了 IDA/OllyDbg 路径或脚本，即使未手动勾选总开关，程序也会自动启用工具链分析。
+4) 断点续跑：
+- 对同一个 `--run-name` 再次执行时，默认会跳过已完成样本。
+- 可结合 `--case-id`、`--tag`、`--limit` 做 smoke / regression 子集运行。
 
-常见问题
-1) IDA 未执行：
-   - 检查 IDA 路径是否正确；
-   - 检查脚本路径是否存在且可读。
-2) Copilot CLI 卡住或无输出：
-   - 使用带 `-p`、`--allow-all-tools`、`--allow-all-paths`、`-s` 的非交互模板。
-3) 动态模式下 OllyDbg 未执行：
-   - 检查是否已配置 OllyDbg 路径（`ollydbg.exe`）与自动化脚本路径；
-   - 检查脚本是否按约定写出证据 JSON。
-4) 运行时校验默认关闭：
-   - GUI 中“启用本地运行时校验（会执行样本 EXE）”为显式开关，未开启时只做静态/模型推断。
+常用配置
+- Copilot CLI 推荐模板（Windows）：
+  - `gh copilot -p "{prompt}" --allow-all-tools --allow-all-paths -s`
+  - `copilot -p "{prompt}" --allow-all-tools --allow-all-paths -s`
+  - `github-copilot-cli -p "{prompt}" --allow-all-tools --allow-all-paths -s`
+- `samplereverse` 相关环境变量：
+  - `REVERSE_AGENT_SAMPLE_MAX_ATTEMPTS`（默认 `250000`）
+  - `REVERSE_AGENT_SAMPLE_MAX_SECONDS`（默认 `21600`）
+  - `REVERSE_AGENT_SAMPLE_RANDOM_SEED`（默认 `1337`）
+  - `REVERSE_AGENT_SAMPLE_ENABLE_Z3`（如设为 `1/true`，启用样本专用 Z3 分区探测）
 
-收尾与发布说明
-- 关闭 GUI 前建议确认：
-  - `solve_reports\` 下已生成本次报告；
-  - 工具链配置（IDA 路径/脚本）已按当前机器保存。
-- 仓库发布建议：
-  - 不提交 `solve_reports\` 的产物与本地缓存；
-  - 提交代码后可直接用 `gh repo create` 创建公开仓库并推送。
+排障建议
+1) IDA 未执行：检查 IDA 路径与脚本路径。  
+2) Copilot CLI 超时：使用非交互模板，并提高 GUI 中调用超时。  
+3) Olly 未执行：确认动态模式、Olly 路径、脚本输出 JSON 约定。  
+4) 未安装 angr：会自动跳过，不影响基础流程。  
+
+说明
+- `solve_reports\` 是运行产物目录，默认不应提交。
+- 历史与细粒度进展请查看：`PROJECT_PROGRESS_LOG.txt`。
+
+当前状态（2026-04-18）
+- 测试基线：`python -m pytest -q` -> `50 passed`。
+- `samplereverse.exe` 仍未解出，但针对该样本的运行时可观测性已明显增强：
+  - 可稳定采集 GUI 输出证据；
+  - 可向 GUI 输入框注入低字节候选（不再局限于可打印 ASCII）；
+  - 已新增结构化长窗口搜索与 Z3 分区探测入口。
+- 本轮结束时的结论：
+  - `m40/m44/m48` 既有搜索窗口仍无命中；
+  - 新增长窗口定向搜索可稳定得到 `3/5` 前缀近似解，但尚未到 `5/5`；
+  - 若继续攻关，最高优先级仍是“compare 前真值提取”或更强的约束求解，而不是继续无约束盲搜。
