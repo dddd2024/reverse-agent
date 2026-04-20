@@ -1,5 +1,6 @@
 from pathlib import Path
 
+from reverse_agent.evidence import StructuredEvidence
 from reverse_agent.harness import (
     HarnessCase,
     HarnessConfig,
@@ -40,6 +41,10 @@ def test_run_harness_writes_manifest_summary_and_case_results(
             model_output="flag{demo}\nreasoning" if name == "ok_case" else "NOT_FOUND",
             extracted_strings_count=12,
             tool_artifacts=[],
+            structured_evidence=[StructuredEvidence(kind="CandidateEvidence", source_tool="fake")],
+            active_profile="samplereverse" if name == "ok_case" else "",
+            matched_profiles=["samplereverse"] if name == "ok_case" else [],
+            applied_strategies=["CompareAwareSearchStrategy"] if name == "ok_case" else [],
             candidate_validations=[],
             report_path=str(reports_dir / f"{name}.md"),
         )
@@ -49,7 +54,7 @@ def test_run_harness_writes_manifest_summary_and_case_results(
     config = HarnessConfig(
         cases=[
             HarnessCase(case_id="ok-case", input_value="ok_case.exe", expected_flag="flag{demo}", tags=["smoke"]),
-            HarnessCase(case_id="miss-case", input_value="miss_case.exe", expected_flag="flag{miss}", tags=["regression"]),
+            HarnessCase(case_id="miss-case", input_value="miss_case.exe", expected_flag="flag{miss}", category="gui_compare", tags=["regression"]),
         ],
         reports_dir=reports_dir,
         run_name="smoke_suite",
@@ -69,6 +74,9 @@ def test_run_harness_writes_manifest_summary_and_case_results(
     assert summary.passed_cases == 1
     assert summary.failed_cases == 1
     assert summary.not_found_cases == 1
+    assert summary.evidence_coverage == 1.0
+    assert summary.candidate_quality == 0.5
+    assert summary.solve_rate_by_category["gui_compare"] == 0.0
     assert (run_dir / "run_manifest.json").exists()
     assert (run_dir / "summary.json").exists()
     assert (run_dir / "summary.md").exists()
@@ -92,6 +100,7 @@ def test_run_harness_resume_skips_completed_cases(tmp_path: Path, monkeypatch) -
             model_output="flag{demo}",
             extracted_strings_count=5,
             tool_artifacts=[],
+            structured_evidence=[],
             candidate_validations=[],
             report_path=str(tmp_path / "reports" / "demo.md"),
         )
@@ -129,6 +138,7 @@ def test_run_harness_rejects_same_run_name_with_different_config(
             model_output="flag{demo}",
             extracted_strings_count=5,
             tool_artifacts=[],
+            structured_evidence=[],
             candidate_validations=[],
             report_path=str(tmp_path / "reports" / "demo.md"),
         )

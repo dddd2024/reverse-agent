@@ -10,6 +10,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
 
+from .evidence import StructuredEvidence
+
 LogFn = Callable[[str], None]
 
 
@@ -37,6 +39,97 @@ class ToolRunArtifact:
     output_path: str = ""
     error: str = ""
     evidence: list[str] = field(default_factory=list)
+    structured_evidence: list[StructuredEvidence] = field(default_factory=list)
+    owner_profile: str = ""
+    strategy_name: str = ""
+
+
+def _maybe_float(value: object) -> float | None:
+    if value is None or value == "":
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _structured_evidence_from_json(tool_name: str, data: dict[str, object]) -> list[StructuredEvidence]:
+    items: list[StructuredEvidence] = []
+    candidates = data.get("candidates", [])
+    if isinstance(candidates, list):
+        for item in candidates[:16]:
+            if isinstance(item, dict):
+                value = str(item.get("value", "")).strip()
+                source = str(item.get("source", "")).strip() or tool_name
+                confidence = _maybe_float(item.get("confidence"))
+            else:
+                value = str(item).strip()
+                source = tool_name
+                confidence = None
+            if not value:
+                continue
+            items.append(
+                StructuredEvidence(
+                    kind="CandidateEvidence",
+                    source_tool=source,
+                    summary=f"{tool_name} candidate",
+                    confidence=confidence,
+                    derived_candidates=[value],
+                    payload={"value": value},
+                )
+            )
+
+    if any(key in data for key in ("compare_site", "lhs_wide_hex", "rhs_wide_hex", "input_text")):
+        payload = {
+            "compare_site": str(data.get("compare_site", "")).strip(),
+            "input_text": str(data.get("input_text", "")),
+            "lhs_wide_text": str(data.get("lhs_wide_text", "")),
+            "lhs_wide_hex": str(data.get("lhs_wide_hex", "")),
+            "rhs_wide_text": str(data.get("rhs_wide_text", "")),
+            "rhs_wide_hex": str(data.get("rhs_wide_hex", "")),
+        }
+        items.append(
+            StructuredEvidence(
+                kind="RuntimeCompareEvidence",
+                source_tool=tool_name,
+                summary=str(data.get("summary", "")).strip() or f"{tool_name} compare capture",
+                confidence=0.95 if payload["lhs_wide_hex"] else 0.55,
+                payload=payload,
+                derived_candidates=[
+                    evidence.derived_candidates[0]
+                    for evidence in items
+                    if evidence.kind == "CandidateEvidence" and evidence.derived_candidates
+                ][:4],
+            )
+        )
+
+    strings = data.get("strings", [])
+    if isinstance(strings, list) and strings:
+        items.append(
+            StructuredEvidence(
+                kind="StaticStringEvidence",
+                source_tool=tool_name,
+                summary=f"{tool_name} extracted strings",
+                confidence=0.7,
+                payload={"strings": [str(item) for item in strings[:20]]},
+            )
+        )
+
+    if any(key in data for key in ("compare_contexts", "control_id_contexts", "local_check_contexts")):
+        items.append(
+            StructuredEvidence(
+                kind="ConstraintEvidence",
+                source_tool=tool_name,
+                summary=f"{tool_name} recovered comparison contexts",
+                confidence=0.75,
+                payload={
+                    "compare_contexts": data.get("compare_contexts", []),
+                    "control_id_contexts": data.get("control_id_contexts", []),
+                    "local_check_contexts": data.get("local_check_contexts", []),
+                },
+            )
+        )
+    return items
 
 
 def _resolve_ida_executable(user_path: str) -> str:
@@ -97,6 +190,57 @@ def _resolve_ollydbg_script(user_path: str) -> str:
     return str(p)
 
 
+def _resolve_compare_probe_script() -> str:
+    script_path = Path(__file__).parent / "olly_scripts" / "compare_probe.py"
+    return str(script_path) if script_path.exists() and script_path.is_file() else ""
+
+
+def _populate_artifact_from_json_output(
+    artifact: ToolRunArtifact,
+    output_path: Path,
+    tool_name: str,
+) -> bool:
+    try:
+        data = json.loads(output_path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        artifact.error = f"{tool_name} 证据文件解析失败：{exc}"
+        artifact.summary = f"{tool_name} 输出不可解析。"
+        return False
+
+    if not isinstance(data, dict):
+        artifact.error = f"{tool_name} 证据文件格式错误：顶层不是 JSON object。"
+        artifact.summary = f"{tool_name} 输出不可解析。"
+        return False
+
+    evidence = data.get("evidence", [])
+    if isinstance(evidence, list):
+        artifact.evidence = [str(item) for item in evidence[:80]]
+    artifact.structured_evidence = _structured_evidence_from_json(tool_name=tool_name, data=data)
+
+    candidates = data.get("candidates", [])
+    if isinstance(candidates, list):
+        for item in candidates[:16]:
+            if isinstance(item, dict):
+                value = str(item.get("value", "")).strip()
+                source = str(item.get("source", "")).strip()
+                confidence = str(item.get("confidence", "")).strip()
+                if value:
+                    artifact.evidence.append(
+                        f"runtime_candidate:{value}"
+                        + (f" source={source}" if source else "")
+                        + (f" confidence={confidence}" if confidence else "")
+                    )
+            else:
+                value = str(item).strip()
+                if value:
+                    artifact.evidence.append(f"runtime_candidate:{value}")
+
+    custom_summary = str(data.get("summary", "")).strip()
+    if custom_summary:
+        artifact.summary = custom_summary
+    return True
+
+
 def run_tool_automation(
     file_path: Path,
     analysis_mode: str,
@@ -152,6 +296,86 @@ def run_tool_automation(
         )
 
     return artifacts
+
+
+def run_compare_probe(
+    file_path: Path,
+    artifacts_dir: Path,
+    log: LogFn,
+    timeout_seconds: int = 120,
+) -> ToolRunArtifact:
+    artifacts_dir.mkdir(parents=True, exist_ok=True)
+    artifact = ToolRunArtifact(
+        tool_name="CompareProbe",
+        enabled=True,
+        attempted=False,
+        success=False,
+    )
+    compare_probe_script = _resolve_compare_probe_script()
+    if not compare_probe_script:
+        artifact.error = "未找到 CompareProbe 脚本。"
+        artifact.summary = "CompareProbe 未执行。"
+        return artifact
+
+    output_path = artifacts_dir / f"{file_path.stem}_compare_probe.json"
+    log_path = artifacts_dir / f"{file_path.stem}_compare_probe.log"
+    command_args = [
+        sys.executable,
+        compare_probe_script,
+        "--target",
+        str(file_path),
+        "--out",
+        str(output_path),
+    ]
+    artifact.command = " ".join(shlex.quote(a) for a in command_args)
+    artifact.output_path = str(output_path)
+    artifact.attempted = True
+    log("正在执行 CompareProbe 动态比较提取...")
+
+    try:
+        proc = subprocess.run(
+            command_args,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=timeout_seconds,
+        )
+    except subprocess.TimeoutExpired:
+        artifact.error = f"CompareProbe 超时（>{timeout_seconds} 秒）。"
+        artifact.summary = "CompareProbe 超时。"
+        return artifact
+
+    combined_output = (
+        f"[stdout]\n{proc.stdout or ''}\n\n[stderr]\n{proc.stderr or ''}".strip()
+    )
+    log_path.write_text(combined_output, encoding="utf-8", errors="replace")
+
+    if proc.returncode != 0:
+        details = (proc.stderr or proc.stdout or "").strip()
+        artifact.error = details[:2000] if details else "CompareProbe 未返回可读错误信息。"
+        artifact.summary = f"CompareProbe 执行失败（退出码 {proc.returncode}）。"
+        return artifact
+
+    if output_path.exists():
+        if not _populate_artifact_from_json_output(
+            artifact=artifact,
+            output_path=output_path,
+            tool_name="CompareProbe",
+        ):
+            return artifact
+        if not artifact.summary:
+            artifact.summary = "CompareProbe 已完成。"
+    else:
+        artifact.summary = (
+            "CompareProbe 已执行，但未生成证据文件。"
+            f" 已写入日志：{log_path}"
+        )
+
+    artifact.success = True
+    if f"CompareProbe日志: {log_path}" not in artifact.evidence:
+        artifact.evidence.append(f"CompareProbe日志: {log_path}")
+    return artifact
 
 
 def _run_ida(
@@ -410,38 +634,14 @@ def _run_ollydbg(
         return artifact
 
     if output_path.exists():
-        try:
-            data = json.loads(output_path.read_text(encoding="utf-8"))
-            if isinstance(data, dict):
-                evidence = data.get("evidence", [])
-                if isinstance(evidence, list):
-                    artifact.evidence = [str(item) for item in evidence[:40]]
-                candidates = data.get("candidates", [])
-                if isinstance(candidates, list):
-                    for item in candidates[:12]:
-                        if isinstance(item, dict):
-                            value = str(item.get("value", "")).strip()
-                            source = str(item.get("source", "")).strip()
-                            confidence = str(item.get("confidence", "")).strip()
-                            if value:
-                                artifact.evidence.append(
-                                    f"runtime_candidate:{value}"
-                                    + (f" source={source}" if source else "")
-                                    + (f" confidence={confidence}" if confidence else "")
-                                )
-                        else:
-                            value = str(item).strip()
-                            if value:
-                                artifact.evidence.append(f"runtime_candidate:{value}")
-                custom_summary = str(data.get("summary", "")).strip()
-                if custom_summary:
-                    artifact.summary = custom_summary
-            if not artifact.summary:
-                artifact.summary = "OllyDbg 自动分析完成。"
-        except Exception as exc:
-            artifact.error = f"OllyDbg 证据文件解析失败：{exc}"
-            artifact.summary = "OllyDbg 输出不可解析。"
+        if not _populate_artifact_from_json_output(
+            artifact=artifact,
+            output_path=output_path,
+            tool_name="OllyDbg",
+        ):
             return artifact
+        if not artifact.summary:
+            artifact.summary = "OllyDbg 自动分析完成。"
     else:
         artifact.summary = (
             "OllyDbg 自动化脚本执行完成，但未生成证据文件。"

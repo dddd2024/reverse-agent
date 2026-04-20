@@ -1,12 +1,17 @@
 __all__ = [
     "advanced_solvers",
     "dynamic_templates",
+    "evidence",
     "gui",
     "harness",
     "models",
     "pipeline",
+    "probes",
+    "profiles",
     "reporter",
     "sample_solver",
     "skills",
+    "strategies",
     "tool_runners",
+    "transforms",
 ]

@@ -52,6 +52,9 @@ def write_report(result: SolveResult, reports_dir: Path) -> Path:
 - **解析后文件**: `{resolved_path}`
 - **分析模式**: `{result.analysis_mode}`
 - **模型**: `{model_name}`
+- **命中 Profile**: `{_sanitize_text_weak(result.active_profile or '-')}`
+- **匹配 Profiles**: `{_sanitize_text_weak(', '.join(result.matched_profiles) if result.matched_profiles else '-')}`
+- **执行 Strategies**: `{_sanitize_text_weak(', '.join(result.applied_strategies) if result.applied_strategies else '-')}`
 - **提取字符串数量**: `{result.extracted_strings_count}`
 
 ## 0x01 最终答案（先看这个）
@@ -164,6 +167,8 @@ def _build_tool_artifacts_block(result: SolveResult) -> str:
         [
             (
                 f"- **工具**: {item.tool_name}\n"
+                f"  - 归属 Profile: {_sanitize_text_weak(item.owner_profile or '-')}\n"
+                f"  - Strategy: {_sanitize_text_weak(item.strategy_name or '-')}\n"
                 f"  - 启用: {item.enabled}\n"
                 f"  - 尝试执行: {item.attempted}\n"
                 f"  - 成功: {item.success}\n"
@@ -171,6 +176,7 @@ def _build_tool_artifacts_block(result: SolveResult) -> str:
                 f"  - 命令: `{_sanitize_path_field(item.command or '-')}`\n"
                 f"  - 输出文件: `{_sanitize_path_field(item.output_path or '-')}`\n"
                 f"  - 错误: `{_sanitize_text_weak(item.error or '-')}`\n"
+                f"  - 结构化证据: {_sanitize_text_weak(', '.join(ev.kind for ev in item.structured_evidence[:6]) if item.structured_evidence else '-')}\n"
                 f"  - 证据样本: {_sanitize_text_weak(', '.join(item.evidence[:8]) if item.evidence else '-')}"
             )
             for item in result.tool_artifacts
@@ -260,8 +266,10 @@ def _build_yaml_meta(result: SolveResult, selected_flag: str) -> str:
             "report_type: reverse_ctf_writeup",
             f"analysis_mode: {result.analysis_mode}",
             f"model: \"{_sanitize_text_weak(result.model_name)}\"",
+            f"profile: \"{_sanitize_text_weak(result.active_profile)}\"",
             f"flag: \"{selected_flag}\"",
             f"strings_count: {result.extracted_strings_count}",
+            f"structured_evidence_count: {len(result.structured_evidence)}",
         ]
     )
 
@@ -275,11 +283,12 @@ def _build_failure_diagnostics(result: SolveResult) -> str:
     has_olly = any(a.tool_name == "OllyDbg" and a.success for a in result.tool_artifacts)
     has_runtime_candidate = any(
         any("runtime_candidate:" in ev or "prefix_candidate:" in ev for ev in a.evidence)
+        or any(item.kind == "CandidateEvidence" for item in a.structured_evidence)
         for a in result.tool_artifacts
     )
     notes: list[str] = [
         "- 归因: 候选融合后仍无高置信可提交答案。",
-        f"- 证据状态: IDA={'ok' if has_ida else 'missing'}, OllyDbg={'ok' if has_olly else 'missing'}, runtime_candidate={'yes' if has_runtime_candidate else 'no'}。",
+        f"- 证据状态: IDA={'ok' if has_ida else 'missing'}, OllyDbg={'ok' if has_olly else 'missing'}, runtime_candidate={'yes' if has_runtime_candidate else 'no'}, structured_evidence={len(result.structured_evidence)}。",
     ]
     if not has_runtime_candidate:
         notes.append("- 建议: 使用自定义 Olly 自动化脚本抓取 compare 前后缓冲区与返回值。")

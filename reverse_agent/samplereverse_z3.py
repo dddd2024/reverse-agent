@@ -14,7 +14,7 @@ ENC_CONST = bytes.fromhex(
     "ccb9ca9b7ab1b8129285ccfbd812419f93eb15e91fe68784d900eb89e4f8d310"
     "0d91af1223c308eba2fcfdc4c69882e781ed9eb5"
 )
-TARGET = b"flag{"
+TARGET = "flag{".encode("utf-16le")
 B64_TABLE = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
 
 

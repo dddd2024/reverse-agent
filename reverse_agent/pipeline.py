@@ -16,10 +16,25 @@ import requests
 
 from .advanced_solvers import solve_with_angr_stdin
 from .dynamic_templates import get_analysis_template
+from .evidence import StructuredEvidence, collect_derived_candidates
 from .models import CopilotCliBackend, LocalOpenAIBackend, ModelError
+from .profiles import match_profiles
+from .profiles.base import ChallengeProfile
+from .probes.compare import artifact_has_compare_truth as _artifact_has_compare_truth_impl
+from .probes.gui import (
+    candidate_to_gui_text as _candidate_to_gui_text_impl,
+    collect_gui_runtime_outputs,
+    escape_runtime_text as _escape_runtime_text_impl,
+    is_windows_gui_exe as _is_windows_gui_exe_impl,
+    validate_candidates_with_gui_session as _validate_candidates_with_gui_session_impl,
+)
 from .sample_solver import run_samplereverse_resumable_search
 from .skills import get_ctf_reverse_skill_lines
-from .tool_runners import ToolAutomationConfig, ToolRunArtifact, run_tool_automation
+from .tool_runners import (
+    ToolAutomationConfig,
+    ToolRunArtifact,
+    run_tool_automation,
+)
 
 LogFn = Callable[[str], None]
 
@@ -89,40 +104,19 @@ class SolveResult:
     extracted_strings_count: int
     tool_artifacts: list[ToolRunArtifact]
     candidate_validations: list[dict[str, str]] = field(default_factory=list)
+    structured_evidence: list[StructuredEvidence] = field(default_factory=list)
+    active_profile: str = ""
+    matched_profiles: list[str] = field(default_factory=list)
+    applied_strategies: list[str] = field(default_factory=list)
     report_path: str = ""
 
 
 def _escape_runtime_text(value: str) -> str:
-    out: list[str] = []
-    for ch in value:
-        code = ord(ch)
-        if ch == "\r":
-            out.append("\\r")
-        elif ch == "\n":
-            out.append("\\n")
-        elif 0x20 <= code <= 0x7E or 0x4E00 <= code <= 0x9FFF:
-            out.append(ch)
-        else:
-            out.append(f"\\x{code:02x}")
-    return "".join(out)
+    return _escape_runtime_text_impl(value)
 
 
 def _candidate_to_gui_text(candidate: str) -> str:
-    try:
-        raw = candidate.encode("latin1", errors="ignore")
-    except Exception:
-        return candidate
-    out: list[str] = []
-    for b in raw:
-        if 0x20 <= b <= 0x7E:
-            out.append(chr(b))
-        elif b == 0:
-            continue
-        else:
-            # Preserve the low byte seen by the target while avoiding control
-            # characters that Edit controls may swallow or normalize.
-            out.append(chr(0x0100 | b))
-    return "".join(out)
+    return _candidate_to_gui_text_impl(candidate)
 
 
 def _looks_like_samplereverse(strings: list[str], file_path: Path) -> bool:
@@ -139,84 +133,32 @@ def _probe_gui_runtime_outputs(
     seed_candidates: list[str],
     per_action_delay: float = 0.18,
 ) -> ToolRunArtifact | None:
-    if not _is_windows_gui_exe(file_path):
-        return None
     if not _looks_like_samplereverse(strings, file_path):
         return None
-
-    try:
-        from pywinauto import Application
-    except ImportError:
-        return ToolRunArtifact(
-            tool_name="GUIProbe",
-            enabled=False,
-            attempted=False,
-            success=False,
-            summary="GUI 运行时证据采集未执行（缺少 pywinauto）。",
-            error="缺少 pywinauto。",
-        )
-
     probe_inputs = ["AAAAAAA", "flag{"]
     for candidate in seed_candidates[:4]:
         normalized = candidate.strip()
-        if not normalized or normalized in probe_inputs:
-            continue
-        probe_inputs.append(normalized)
-    probe_inputs = probe_inputs[:4]
-
-    artifact = ToolRunArtifact(
-        tool_name="GUIProbe",
-        enabled=True,
-        attempted=True,
-        success=False,
-        summary="GUI 运行时证据采集中。",
+        if normalized and normalized not in probe_inputs:
+            probe_inputs.append(normalized)
+    return collect_gui_runtime_outputs(
+        file_path=file_path,
+        probe_inputs=probe_inputs[:4],
+        per_action_delay=per_action_delay,
     )
-    evidence: list[str] = []
-    try:
-        app = Application(backend="uia").start(str(file_path))
-    except Exception as exc:
-        artifact.summary = "GUI 运行时证据采集启动失败。"
-        artifact.error = str(exc)
-        return artifact
 
-    try:
-        time.sleep(1.0)
-        win = app.top_window()
-        input_edit = win.child_window(auto_id="1001", control_type="Edit")
-        decrypt_btn = win.child_window(auto_id="1000", control_type="Button")
-        output_edit = win.child_window(auto_id="1002", control_type="Edit")
-        evidence.append(f"runtime_gui:title={_escape_runtime_text(win.window_text() or '')}")
-        evidence.append(
-            "runtime_gui:controls=button:1000,edit:1001,edit:1002"
-        )
-        for candidate in probe_inputs:
-            input_edit.set_edit_text(_candidate_to_gui_text(candidate))
-            decrypt_btn.click()
-            time.sleep(per_action_delay)
-            try:
-                output = output_edit.get_value() or ""
-            except Exception:
-                output = output_edit.window_text() or ""
-            evidence.append(
-                f"runtime_gui:probe_input={_escape_runtime_text(candidate)}"
-            )
-            evidence.append(
-                f"runtime_gui:probe_output={_escape_runtime_text(output[:220])}"
-            )
-        artifact.success = True
-        artifact.summary = "GUI 运行时证据采集成功。"
-        artifact.evidence = evidence
-        return artifact
-    except Exception as exc:
-        artifact.summary = "GUI 运行时证据采集失败。"
-        artifact.error = str(exc)
-        artifact.evidence = evidence
-        return artifact
-    finally:
-        try:
-            app.kill()
-        except Exception:
-            pass
+
+def _artifact_has_compare_truth(artifact: ToolRunArtifact) -> bool:
+    return _artifact_has_compare_truth_impl(artifact)
+
+
+def _run_compare_probe_if_needed(
+    file_path: Path,
+    strings: list[str],
+    artifacts_dir: Path,
+    log: LogFn,
+) -> ToolRunArtifact | None:
+    _ = file_path, strings, artifacts_dir, log
+    return None
 
 
 def is_url(value: str) -> bool:
@@ -502,6 +444,20 @@ def _extract_tool_candidates(tool_evidence: list[str]) -> list[str]:
     return candidates
 
 
+def _extract_compare_probe_inputs(tool_evidence: list[str]) -> list[str]:
+    candidates: list[str] = []
+    seen: set[str] = set()
+    for line in tool_evidence:
+        if not line.startswith("runtime_compare:input="):
+            continue
+        token = _normalize_candidate(line.split("=", 1)[1])
+        if not token or token in seen:
+            continue
+        seen.add(token)
+        candidates.append(token)
+    return candidates
+
+
 def build_prompt(
     file_path: Path,
     strings: list[str],
@@ -633,6 +589,10 @@ def _is_flag_like(value: str) -> bool:
     return any(p.fullmatch(value.strip()) for p in FLAG_PATTERNS)
 
 
+def _extract_structured_candidates(items: list[StructuredEvidence]) -> list[str]:
+    return collect_derived_candidates(items)
+
+
 def _collect_runtime_markers(strings: list[str], tool_evidence: list[str]) -> tuple[list[str], list[str]]:
     corpus = [*(strings[:1200]), *tool_evidence]
     success_markers = [
@@ -661,6 +621,7 @@ def _collect_runtime_markers(strings: list[str], tool_evidence: list[str]) -> tu
 def _rank_candidates(
     selected_flag: str,
     pre_candidates: list[str],
+    compare_candidates: list[str],
     prefix_candidates: list[str],
     tool_candidates: list[str],
     angr_candidates: list[str],
@@ -687,6 +648,8 @@ def _rank_candidates(
     add(selected_flag, 20)
     for c in pre_candidates:
         add(c, 60)
+    for c in compare_candidates:
+        add(c, 120)
     for c in prefix_candidates:
         add(c, 70)
     for c in tool_candidates:
@@ -763,67 +726,17 @@ def _validate_candidates_with_gui_session(
     fail_markers: list[str],
     per_action_delay: float = 0.12,
 ) -> tuple[str, list[dict[str, str]]]:
-    try:
-        from pywinauto import Application
-    except ImportError as exc:
-        raise RuntimeError(
-            "GUI 动态校验依赖 pywinauto，当前环境未安装。"
-        ) from exc
-
-    app = Application(backend="uia").start(str(file_path))
-    records: list[dict[str, str]] = []
-    selected = ""
-    try:
-        time.sleep(0.9)
-        win = app.top_window()
-        input_edit = win.child_window(auto_id="1001", control_type="Edit")
-        decrypt_btn = win.child_window(auto_id="1000", control_type="Button")
-        output_edit = win.child_window(auto_id="1002", control_type="Edit")
-        merged_fail_markers = [*fail_markers, "密钥不正确", "wrong", "incorrect", "error"]
-        for cand in candidates:
-            input_edit.set_edit_text(_candidate_to_gui_text(cand))
-            decrypt_btn.click()
-            time.sleep(per_action_delay)
-            try:
-                output = output_edit.get_value() or ""
-            except Exception:
-                output = output_edit.window_text() or ""
-            lower = output.lower()
-            has_success = any(m.lower() in lower for m in success_markers if m)
-            has_fail = any(m.lower() in lower for m in merged_fail_markers if m)
-            ok = has_success and not has_fail
-            records.append(
-                {
-                    "candidate": cand,
-                    "validated": "yes" if ok else "no",
-                    "evidence": output[:220],
-                }
-            )
-            if ok:
-                selected = cand
-                break
-    finally:
-        app.kill()
-    return selected, records
+    return _validate_candidates_with_gui_session_impl(
+        file_path=file_path,
+        candidates=candidates,
+        success_markers=success_markers,
+        fail_markers=fail_markers,
+        per_action_delay=per_action_delay,
+    )
 
 
 def _is_windows_gui_exe(file_path: Path) -> bool:
-    try:
-        data = file_path.read_bytes()[:2048]
-        if len(data) < 0x40 or data[:2] != b"MZ":
-            return False
-        pe_off = int.from_bytes(data[0x3C:0x40], "little")
-        if pe_off + 0x5E >= len(data):
-            # Need full header if offset is beyond initial slice.
-            data = file_path.read_bytes()[: max(pe_off + 0x60, 4096)]
-        if data[pe_off : pe_off + 4] != b"PE\x00\x00":
-            return False
-        optional_header_off = pe_off + 24
-        subsystem_off = optional_header_off + 0x44
-        subsystem = int.from_bytes(data[subsystem_off : subsystem_off + 2], "little")
-        return subsystem == 2  # IMAGE_SUBSYSTEM_WINDOWS_GUI
-    except Exception:
-        return False
+    return _is_windows_gui_exe_impl(file_path)
 
 
 def run_pipeline(
@@ -884,61 +797,115 @@ def run_pipeline(
         log=log,
     )
     tool_evidence = [line for a in tool_artifacts for line in a.evidence]
+    structured_evidence = [item for a in tool_artifacts for item in a.structured_evidence]
     tool_candidates = _extract_tool_candidates(tool_evidence)
-    gui_probe_artifact = _probe_gui_runtime_outputs(
+    structured_candidates = _extract_structured_candidates(structured_evidence)
+    if structured_candidates:
+        tool_candidates = [
+            *structured_candidates,
+            *[c for c in tool_candidates if c not in structured_candidates],
+        ]
+
+    profile_matches = match_profiles(
         file_path=file_path,
         strings=strings,
-        seed_candidates=pre_candidates,
+        static_evidence=tool_evidence,
     )
-    if gui_probe_artifact:
-        tool_artifacts.append(gui_probe_artifact)
-        tool_evidence.extend(gui_probe_artifact.evidence)
-        gui_probe_candidates = _extract_tool_candidates(gui_probe_artifact.evidence)
-        for candidate in gui_probe_candidates:
-            if candidate not in tool_candidates:
-                tool_candidates.append(candidate)
-    sample_probe_result = run_samplereverse_resumable_search(
-        file_path=file_path,
-        strings=strings,
-        seed_candidates=pre_candidates,
-        artifacts_dir=artifacts_dir,
-        log=log,
-        max_attempts=_read_int_env(
-            "REVERSE_AGENT_SAMPLE_MAX_ATTEMPTS", default=250_000, min_value=10_000
-        ),
-        max_seconds=_read_float_env(
-            "REVERSE_AGENT_SAMPLE_MAX_SECONDS", default=6 * 60 * 60, min_value=30.0
-        ),
-        random_seed=_read_int_env(
-            "REVERSE_AGENT_SAMPLE_RANDOM_SEED", default=1337, min_value=1
-        ),
-    )
+    matched_profiles = [profile.profile_id for profile, _ in profile_matches]
+    active_profile: ChallengeProfile | None = profile_matches[0][0] if profile_matches else None
+    if profile_matches:
+        preview = ", ".join(f"{profile.profile_id}({score})" for profile, score in profile_matches[:3])
+        log(f"Profile detect 命中: {preview}")
+
+    compare_candidates: list[str] = []
+    compare_probe_inputs: list[str] = []
     hard_stop_due_deadline = False
-    if sample_probe_result.enabled:
-        probe_artifact = ToolRunArtifact(
-            tool_name="SampleProbe",
-            enabled=True,
-            attempted=True,
-            success=True,
-            summary=sample_probe_result.summary,
-            output_path=str(artifacts_dir / "samplereverse_search_checkpoint.json"),
-            evidence=sample_probe_result.evidence,
+    profile_strategy_names: list[str] = []
+    if active_profile:
+        seed_candidates = active_profile.build_seed_candidates(
+            strings=strings,
+            pre_candidates=pre_candidates,
+            tool_evidence=tool_evidence,
         )
-        tool_artifacts.append(probe_artifact)
-        tool_evidence.extend(sample_probe_result.evidence)
-        for candidate in sample_probe_result.candidates:
-            if candidate not in pre_candidates:
-                pre_candidates.append(candidate)
-        probe_candidates = _extract_tool_candidates(sample_probe_result.evidence)
-        for candidate in probe_candidates:
-            if candidate not in tool_candidates:
-                tool_candidates.append(candidate)
-        hard_stop_due_deadline = any(
-            line.strip() == "runtime_probe:deadline_reached=1"
-            for line in sample_probe_result.evidence
+        runtime_probe_artifacts = active_profile.collect_runtime_probes(
+            file_path=file_path,
+            strings=strings,
+            artifacts_dir=artifacts_dir,
+            seed_candidates=seed_candidates,
+            analysis_mode=analysis_mode,
+            log=log,
         )
-        if hard_stop_due_deadline:
-            log("SampleProbe 达到截止时间，后续流程按硬截止策略终止（跳过 angr/模型/运行时校验）。")
+        if runtime_probe_artifacts:
+            tool_artifacts.extend(runtime_probe_artifacts)
+            tool_evidence = [line for a in tool_artifacts for line in a.evidence]
+            structured_evidence = [item for a in tool_artifacts for item in a.structured_evidence]
+            tool_candidates = _extract_tool_candidates(tool_evidence)
+            structured_candidates = _extract_structured_candidates(structured_evidence)
+            if structured_candidates:
+                tool_candidates = [
+                    *structured_candidates,
+                    *[c for c in tool_candidates if c not in structured_candidates],
+                ]
+            seed_candidates = active_profile.build_seed_candidates(
+                strings=strings,
+                pre_candidates=pre_candidates,
+                tool_evidence=tool_evidence,
+            )
+        compare_candidates = _extract_tool_candidates(
+            [
+                line
+                for artifact in tool_artifacts
+                if artifact.tool_name == "CompareProbe"
+                for line in artifact.evidence
+            ]
+        )
+        compare_probe_inputs = _extract_compare_probe_inputs(tool_evidence)
+        specialized_result = active_profile.run_specialized_solver(
+            file_path=file_path,
+            strings=strings,
+            seed_candidates=seed_candidates,
+            artifacts_dir=artifacts_dir,
+            log=log,
+            prior_artifacts=tool_artifacts,
+        )
+        if specialized_result:
+            profile_strategy_names.extend(specialized_result.strategies)
+            if specialized_result.artifacts:
+                tool_artifacts.extend(specialized_result.artifacts)
+            tool_evidence = [line for a in tool_artifacts for line in a.evidence]
+            structured_evidence = [item for a in tool_artifacts for item in a.structured_evidence]
+            tool_candidates = _extract_tool_candidates(tool_evidence)
+            structured_candidates = _extract_structured_candidates(structured_evidence)
+            if specialized_result.candidates:
+                for candidate in specialized_result.candidates:
+                    if candidate not in pre_candidates:
+                        pre_candidates.append(candidate)
+            if structured_candidates:
+                tool_candidates = [
+                    *structured_candidates,
+                    *[c for c in tool_candidates if c not in structured_candidates],
+                ]
+            hard_stop_due_deadline = any(
+                line.strip() == "runtime_probe:deadline_reached=1"
+                for line in tool_evidence
+            )
+            if hard_stop_due_deadline:
+                log("Profile specialized solver 达到截止时间，后续流程按硬截止策略终止。")
+        compare_candidates = _extract_tool_candidates(
+            [
+                line
+                for artifact in tool_artifacts
+                if artifact.tool_name == "CompareProbe"
+                for line in artifact.evidence
+            ]
+        )
+        compare_probe_inputs = _extract_compare_probe_inputs(tool_evidence)
+        if compare_candidates:
+            tool_candidates = [
+                *compare_candidates,
+                *[c for c in tool_candidates if c not in compare_candidates],
+            ]
+
     olly_ready = bool(
         tool_config.ollydbg_enabled
         or tool_config.ollydbg_executable.strip()
@@ -970,15 +937,27 @@ def run_pipeline(
         )
         if extra_artifacts:
             tool_artifacts.extend(extra_artifacts)
+            tool_evidence = [line for a in tool_artifacts for line in a.evidence]
+            structured_evidence = [item for a in tool_artifacts for item in a.structured_evidence]
             extra_evidence = [line for a in extra_artifacts for line in a.evidence]
-            tool_evidence.extend(extra_evidence)
             extra_candidates = _extract_tool_candidates(extra_evidence)
+            extra_structured_candidates = _extract_structured_candidates(structured_evidence)
+            if extra_structured_candidates:
+                extra_candidates = [
+                    *extra_structured_candidates,
+                    *[c for c in extra_candidates if c not in extra_structured_candidates],
+                ]
             if extra_candidates:
                 tool_candidates.extend([c for c in extra_candidates if c not in tool_candidates])
     for artifact in tool_artifacts:
         log(f"{artifact.tool_name}: {artifact.summary}")
         if artifact.error:
             log(f"{artifact.tool_name} 错误: {artifact.error}")
+    if compare_candidates:
+        pre_candidates = [
+            *compare_candidates,
+            *[c for c in pre_candidates if c not in compare_candidates],
+        ]
     if tool_candidates:
         log(f"工具证据中提取到候选 {len(tool_candidates)} 个。")
         pre_candidates = [
@@ -1031,7 +1010,7 @@ def run_pipeline(
         log(f"在模型分析前已发现本地候选 {len(pre_candidates)} 个。")
 
     model_output = ""
-    selected_flag = pre_candidates[0] if pre_candidates else ""
+    selected_flag = compare_candidates[0] if compare_candidates else (pre_candidates[0] if pre_candidates else "")
     runtime_validation_enabled_effective = (
         runtime_validation_enabled and not hard_stop_due_deadline
     )
@@ -1121,6 +1100,7 @@ def run_pipeline(
     ranked_candidates = _rank_candidates(
         selected_flag=selected_flag,
         pre_candidates=pre_candidates,
+        compare_candidates=compare_candidates,
         prefix_candidates=prefix_candidates,
         tool_candidates=tool_candidates,
         angr_candidates=angr_candidates,
@@ -1130,7 +1110,7 @@ def run_pipeline(
         recovered_tokens=recovered_tokens,
     )
     candidate_pool = [c for c, _ in ranked_candidates]
-    for priority in [*prefix_candidates, model_flag, model_best_answer, selected_flag]:
+    for priority in [*compare_candidates, *prefix_candidates, model_flag, model_best_answer, selected_flag]:
         candidate = _normalize_candidate(priority)
         if (
             not candidate
@@ -1160,7 +1140,26 @@ def run_pipeline(
         and file_path.suffix.lower() == ".exe"
         and candidate_pool
     ):
-        if gui_subsystem:
+        profile_validation = (
+            active_profile.validate_candidate(
+                file_path=file_path,
+                candidates=candidate_pool,
+                success_markers=success_markers,
+                fail_markers=fail_markers,
+                runtime_validation_enabled=runtime_validation_enabled_effective,
+                log=log,
+            )
+            if active_profile
+            else None
+        )
+        if profile_validation and profile_validation.handled:
+            validation_records.extend(profile_validation.records)
+            selected_flag = profile_validation.selected_flag or ""
+            if selected_flag:
+                log(f"Profile 动态校验通过，选定候选: {selected_flag}")
+            elif profile_validation.summary:
+                log(f"Profile 动态校验未命中：{profile_validation.summary}")
+        elif gui_subsystem:
             max_gui_candidates = 60
             validation_pool = candidate_pool[:max_gui_candidates]
             log(
@@ -1263,6 +1262,24 @@ def run_pipeline(
     if not selected_flag:
         selected_flag = "NOT_FOUND"
 
+    structured_evidence = [item for artifact in tool_artifacts for item in artifact.structured_evidence]
+    applied_strategies = []
+    for value in [
+        *profile_strategy_names,
+        *[
+            artifact.strategy_name
+            for artifact in tool_artifacts
+            if artifact.strategy_name
+        ],
+        *(
+            active_profile.supported_strategies()
+            if active_profile and active_profile.profile_id in matched_profiles
+            else []
+        ),
+    ]:
+        if value and value not in applied_strategies:
+            applied_strategies.append(value)
+
     reports_dir.mkdir(parents=True, exist_ok=True)
     from .reporter import write_report
 
@@ -1278,6 +1295,10 @@ def run_pipeline(
         extracted_strings_count=len(strings),
         tool_artifacts=tool_artifacts,
         candidate_validations=validation_records,
+        structured_evidence=structured_evidence,
+        active_profile=active_profile.profile_id if active_profile else "",
+        matched_profiles=matched_profiles,
+        applied_strategies=applied_strategies,
     )
     report_path = write_report(result, reports_dir=reports_dir)
     result.report_path = str(report_path)

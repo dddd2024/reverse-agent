@@ -2,8 +2,13 @@ import json
 import sys
 from pathlib import Path
 
+from reverse_agent.evidence import StructuredEvidence
 from reverse_agent import tool_runners
-from reverse_agent.tool_runners import ToolAutomationConfig, run_tool_automation
+from reverse_agent.tool_runners import (
+    ToolAutomationConfig,
+    run_compare_probe,
+    run_tool_automation,
+)
 
 
 def test_ollydbg_script_automation_runs_and_emits_artifact(tmp_path: Path) -> None:
@@ -59,6 +64,67 @@ def test_ollydbg_script_automation_runs_and_emits_artifact(tmp_path: Path) -> No
     assert Path(artifact.output_path).exists()
     assert any(item.startswith("target:") for item in artifact.evidence)
     assert any("runtime_candidate:flag{" in item for item in artifact.evidence)
+
+
+def test_compare_probe_runner_parses_structured_payload(
+    tmp_path: Path, monkeypatch
+) -> None:
+    target = tmp_path / "samplereverse.exe"
+    target.write_bytes(b"MZ")
+
+    script = tmp_path / "compare_probe_driver.py"
+    script.write_text(
+        "\n".join(
+            [
+                "import argparse",
+                "import json",
+                "from pathlib import Path",
+                "p=argparse.ArgumentParser()",
+                "p.add_argument('--target', required=True)",
+                "p.add_argument('--out', required=True)",
+                "a=p.parse_args()",
+                "payload = {",
+                "    'summary': 'compare ok',",
+                "    'compare_site': '0x40258c',",
+                "    'input_text': 'AAAAAAA',",
+                "    'lhs_wide_text': 'flag{demo',",
+                "    'lhs_wide_hex': '66006c00610067007b00',",
+                "    'rhs_wide_text': 'flag{',",
+                "    'rhs_wide_hex': '66006c00610067007b00',",
+                "    'evidence': [",
+                "        'runtime_compare:site=0x40258c',",
+                "        'runtime_compare:lhs=flag{demo',",
+                "        'runtime_compare:rhs=flag{',",
+                "    ],",
+                "    'candidates': [{'value': 'AAAAAAA', 'source': 'runtime_compare', 'confidence': 0.98}]",
+                "}",
+                "Path(a.out).write_text(json.dumps(payload), encoding='utf-8')",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(
+        "reverse_agent.tool_runners._resolve_compare_probe_script",
+        lambda: str(script),
+    )
+
+    artifact = run_compare_probe(
+        file_path=target,
+        artifacts_dir=tmp_path / "artifacts",
+        log=lambda _: None,
+        timeout_seconds=30,
+    )
+
+    assert artifact.tool_name == "CompareProbe"
+    assert artifact.attempted is True
+    assert artifact.success is True
+    assert "compare ok" in artifact.summary
+    assert Path(artifact.output_path).exists()
+    assert any(item.startswith("runtime_compare:lhs=") for item in artifact.evidence)
+    assert any("runtime_candidate:AAAAAAA" in item for item in artifact.evidence)
+    assert any(item.kind == "RuntimeCompareEvidence" for item in artifact.structured_evidence)
+    assert any(item.kind == "CandidateEvidence" for item in artifact.structured_evidence)
 
 
 def test_ollydbg_requires_script_for_automation(tmp_path: Path) -> None:

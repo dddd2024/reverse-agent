@@ -25,6 +25,7 @@ class HarnessCase:
     expected_flag: str = ""
     analysis_mode: str | None = None
     runtime_validation_enabled: bool | None = None
+    category: str = ""
     tags: list[str] = field(default_factory=list)
     notes: str = ""
 
@@ -66,7 +67,12 @@ class HarnessCaseResult:
     candidate_count: int
     extracted_strings_count: int
     tool_artifact_count: int
+    structured_evidence_count: int
     validation_count: int
+    profile_name: str = ""
+    matched_profiles: list[str] = field(default_factory=list)
+    applied_strategies: list[str] = field(default_factory=list)
+    category: str = ""
     tags: list[str] = field(default_factory=list)
     notes: str = ""
     error: str = ""
@@ -88,6 +94,9 @@ class HarnessSummary:
     not_found_cases: int
     labeled_cases: int
     accuracy_when_labeled: float | None
+    evidence_coverage: float | None
+    candidate_quality: float | None
+    solve_rate_by_category: dict[str, float]
     elapsed_seconds: float
     manifest_path: str
     summary_path: str
@@ -120,6 +129,7 @@ def load_harness_cases(dataset_path: Path) -> list[HarnessCase]:
                 expected_flag=str(item.get("expected_flag") or item.get("expected") or "").strip(),
                 analysis_mode=_optional_str(item.get("analysis_mode")),
                 runtime_validation_enabled=_optional_bool(item.get("runtime_validation_enabled")),
+                category=str(item.get("category") or "").strip(),
                 tags=[str(tag) for tag in tags],
                 notes=str(item.get("notes") or "").strip(),
             )
@@ -241,7 +251,9 @@ def run_harness(config: HarnessConfig, log: LogFn) -> HarnessSummary:
                     candidate_count=0,
                     extracted_strings_count=0,
                     tool_artifact_count=0,
+                    structured_evidence_count=0,
                     validation_count=0,
+                    category=case.category,
                     tags=case.tags[:],
                     notes=case.notes,
                     error=str(exc),
@@ -406,7 +418,12 @@ def _case_result_from_solve_result(
         candidate_count=len(solve_result.candidates),
         extracted_strings_count=solve_result.extracted_strings_count,
         tool_artifact_count=len(solve_result.tool_artifacts),
+        structured_evidence_count=len(solve_result.structured_evidence),
         validation_count=len(solve_result.candidate_validations),
+        profile_name=solve_result.active_profile,
+        matched_profiles=solve_result.matched_profiles[:],
+        applied_strategies=solve_result.applied_strategies[:],
+        category=case.category,
         tags=case.tags[:],
         notes=case.notes,
     )
@@ -465,6 +482,23 @@ def _build_summary(
     not_found_cases = sum(1 for item in results if item.selected_flag == "NOT_FOUND")
     labeled_cases = sum(1 for item in results if item.expected_flag)
     accuracy = (passed_cases / labeled_cases) if labeled_cases else None
+    evidence_coverage = (
+        sum(1 for item in results if item.structured_evidence_count > 0) / len(results)
+        if results
+        else None
+    )
+    candidate_quality = (
+        sum(1 for item in results if item.candidate_count > 0 and item.selected_flag != "NOT_FOUND") / len(results)
+        if results
+        else None
+    )
+    category_counts: dict[str, dict[str, int]] = {}
+    for item in results:
+        category = item.category or "uncategorized"
+        bucket = category_counts.setdefault(category, {"total": 0, "solved": 0})
+        bucket["total"] += 1
+        if item.selected_flag and item.selected_flag != "NOT_FOUND":
+            bucket["solved"] += 1
     return HarnessSummary(
         run_name=run_name,
         run_dir=str(run_dir),
@@ -478,6 +512,12 @@ def _build_summary(
         not_found_cases=not_found_cases,
         labeled_cases=labeled_cases,
         accuracy_when_labeled=accuracy,
+        evidence_coverage=evidence_coverage,
+        candidate_quality=candidate_quality,
+        solve_rate_by_category={
+            key: (value["solved"] / value["total"]) if value["total"] else 0.0
+            for key, value in sorted(category_counts.items())
+        },
         elapsed_seconds=elapsed_seconds,
         manifest_path=str(manifest_path),
         summary_path=str(summary_path),
@@ -490,6 +530,10 @@ def _write_summary_markdown(
     summary: HarnessSummary,
     results: list[HarnessCaseResult],
 ) -> None:
+    category_lines = [
+        f"| `{category}` | {rate:.2f} |"
+        for category, rate in summary.solve_rate_by_category.items()
+    ] or ["| `uncategorized` | 0.00 |"]
     lines = [
         "# Reverse Agent Harness Summary",
         "",
@@ -502,14 +546,22 @@ def _write_summary_markdown(
         f"- Errors: `{summary.error_cases}`",
         f"- Not found: `{summary.not_found_cases}`",
         f"- Accuracy (labeled only): `{summary.accuracy_when_labeled}`",
+        f"- Evidence coverage: `{summary.evidence_coverage}`",
+        f"- Candidate quality: `{summary.candidate_quality}`",
         "",
-        "| case_id | status | selected | expected | elapsed_s | cached | report |",
-        "|---|---|---|---|---:|---|---|",
+        "## Solve Rate By Category",
+        "",
+        "| category | solve_rate |",
+        "|---|---:|",
+        *category_lines,
+        "",
+        "| case_id | category | status | profile | selected | expected | elapsed_s | cached | report |",
+        "|---|---|---|---|---|---|---:|---|---|",
     ]
     for item in results:
         report = Path(item.report_path).name if item.report_path else "-"
         lines.append(
-            f"| `{item.case_id}` | {item.status} | `{item.selected_flag or '-'}` | "
+            f"| `{item.case_id}` | `{item.category or '-'}` | {item.status} | `{item.profile_name or '-'}` | `{item.selected_flag or '-'}` | "
             f"`{item.expected_flag or '-'}` | {item.elapsed_seconds:.2f} | "
             f"{'yes' if item.cached else 'no'} | `{report}` |"
         )

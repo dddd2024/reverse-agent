@@ -8,6 +8,7 @@ import random
 import re
 import time
 from dataclasses import dataclass
+from itertools import combinations, product
 from pathlib import Path
 from typing import Callable
 
@@ -19,8 +20,9 @@ SAMPLEREVERSE_ENC_CONST = bytes.fromhex(
     "ccb9ca9b7ab1b8129285ccfbd812419f93eb15e91fe68784d900eb89e4f8d310"
     "0d91af1223c308eba2fcfdc4c69882e781ed9eb5"
 )
-SAMPLEREVERSE_TARGET_PREFIX = b"flag{"
+SAMPLEREVERSE_TARGET_PREFIX = "flag{".encode("utf-16le")
 CHECKPOINT_FILE_NAME = "samplereverse_search_checkpoint.json"
+OPTIMIZER_RESULT_FILE_NAME = "samplereverse_optimize_result.json"
 
 
 @dataclass
@@ -55,6 +57,7 @@ def run_samplereverse_resumable_search(
     starts_from = int(checkpoint.get("cartesian_index", 0))
     cartesian_length = int(checkpoint.get("cartesian_length", 4))
     best_hex = str(checkpoint.get("best_hex", ""))
+    best_prefix_hex = str(checkpoint.get("best_prefix_hex", ""))
     best_score = int(checkpoint.get("best_score", 0))
     best_mask = int(checkpoint.get("best_mask", 0))
     best_distance = int(checkpoint.get("best_distance", 10_000))
@@ -87,7 +90,7 @@ def run_samplereverse_resumable_search(
     evidence: list[str] = [
         "runtime_probe:samplereverse_signature=1",
         "runtime_probe:transform=nibble_expand(+0x78,+0x7A)->utf16le->base64->rc4",
-        "runtime_probe:compare=__wcsnicmp(...,5) with target prefix flag{",
+        "runtime_probe:compare=__wcsnicmp(...,L\"flag{\",5) with wide target prefix",
         f"runtime_probe:checkpoint={checkpoint_path}",
         f"runtime_probe:deadline_seconds={int(max_seconds)}",
         f"runtime_probe:deadline_epoch={int(deadline_epoch)}",
@@ -100,14 +103,21 @@ def run_samplereverse_resumable_search(
     seen: set[str] = set()
 
     def _push_candidate(value: str) -> None:
-        normalized = value.strip()
+        if value is None:
+            return
+        normalized = str(value)
         if not normalized or normalized in seen:
             return
         seen.add(normalized)
         candidates.append(normalized)
 
     token_candidates = _extract_token_candidates(strings)
-    for value in [*seed_candidates, *token_candidates]:
+    optimizer_seed_candidates = _load_optimizer_seed_candidates(artifacts_dir)
+    if optimizer_seed_candidates:
+        evidence.append(
+            f"runtime_probe:optimizer_seed_count={len(optimizer_seed_candidates)}"
+        )
+    for value in [*optimizer_seed_candidates, *seed_candidates, *token_candidates]:
         _push_candidate(value)
 
     attempts = 0
@@ -124,29 +134,33 @@ def run_samplereverse_resumable_search(
         return time.monotonic() >= deadline
 
     def _is_better(score: int, mask: int, candidate: str, prefix_hex: str) -> bool:
-        nonlocal best_hex, best_score, best_mask, best_distance
-        distance = _prefix_distance(prefix_hex)
+        nonlocal best_hex, best_score, best_mask, best_distance, best_prefix_hex
         cur_hex = candidate.encode("latin1", errors="ignore").hex()
-        if score > best_score:
+        cur_obj = _objective_tuple(prefix_hex, score, mask)
+        best_obj = (
+            _objective_tuple(best_prefix_hex, best_score, best_mask)
+            if best_prefix_hex
+            else (-1, -1, -1, -1, -(10**9))
+        )
+        if cur_obj > best_obj:
             return True
-        if score == best_score and mask > best_mask:
-            return True
-        if score == best_score and mask == best_mask and distance < best_distance:
-            return True
-        if score == best_score and mask == best_mask and best_hex and cur_hex < best_hex:
+        if cur_obj == best_obj and best_hex and cur_hex < best_hex:
             return True
         return False
 
     def _record_best(score: int, mask: int, candidate: str, prefix_hex: str) -> None:
-        nonlocal best_hex, best_score, best_mask, best_distance
+        nonlocal best_hex, best_score, best_mask, best_distance, best_prefix_hex
         if _is_better(score, mask, candidate, prefix_hex):
             best_hex = candidate.encode("latin1", errors="ignore").hex()
+            best_prefix_hex = prefix_hex
             best_score = score
             best_mask = mask
             best_distance = _prefix_distance(prefix_hex)
             evidence.append(
                 "runtime_probe:best_update "
-                f"score={score}/5 mask={mask:05b} candidate_hex={best_hex} dec_prefix_hex={prefix_hex}"
+                f"score={score}/{len(SAMPLEREVERSE_TARGET_PREFIX)} "
+                f"mask={mask:0{len(SAMPLEREVERSE_TARGET_PREFIX)}b} "
+                f"candidate_hex={best_hex} dec_prefix_hex={prefix_hex}"
             )
 
     if best_hex:
@@ -154,6 +168,10 @@ def run_samplereverse_resumable_search(
             cached = bytes.fromhex(best_hex).decode("latin1")
             if "\x00" not in cached:
                 _push_candidate(cached)
+            if not best_prefix_hex:
+                best_prefix_hex = _decrypt_prefix(
+                    cached, len(SAMPLEREVERSE_TARGET_PREFIX)
+                ).hex()
         except Exception:
             pass
 
@@ -228,8 +246,12 @@ def run_samplereverse_resumable_search(
     m60_index = int(checkpoint.get("m60_index", 0))
     m64_tier = int(checkpoint.get("m64_tier", 0))
     m64_index = int(checkpoint.get("m64_index", 0))
-    m68_tier = int(checkpoint.get("m68_tier", 0))
-    m68_index = int(checkpoint.get("m68_index", 0))
+    m72_tier = int(checkpoint.get("m72_tier", checkpoint.get("m68_tier", 0)))
+    m72_index = int(checkpoint.get("m72_index", checkpoint.get("m68_index", 0)))
+    m76_tier = int(checkpoint.get("m76_tier", 0))
+    m76_index = int(checkpoint.get("m76_index", 0))
+    m80_tier = int(checkpoint.get("m80_tier", 0))
+    m80_index = int(checkpoint.get("m80_index", 0))
     hi_budget = min(max(0, explore_limit - attempts), 90_000)
     if hi_budget > 0 and not found:
         evidence.append("runtime_probe:dependency_probe=L8/L9(prefix5),m44/m48")
@@ -384,14 +406,17 @@ def run_samplereverse_resumable_search(
                 break
 
     # - L=12 -> m64: first 5 bytes depend on prefix7
-    # - L=13 -> m68: first 5 bytes depend on prefix7
+    # - L=13 -> m72: first 5 bytes depend on prefix7
     hi3_budget = min(max(0, explore_limit - attempts), 90_000)
     if hi3_budget > 0 and not found:
-        evidence.append("runtime_probe:dependency_probe=L12/L13(prefix7),m64/m68")
+        evidence.append(
+            "runtime_probe:dependency_probe="
+            f"L12/L13(prefix7),m64/m{_key_length_for_input_length(13)}"
+        )
         m64_budget = hi3_budget // 2
-        m68_budget = hi3_budget - m64_budget
+        m72_budget = hi3_budget - m64_budget
         m64_spent = 0
-        m68_spent = 0
+        m72_spent = 0
 
         while m64_tier < len(dep_tiers) and m64_spent < m64_budget and not found and not _time_exceeded():
             tier_name, dep_charset = dep_tiers[m64_tier]
@@ -426,37 +451,116 @@ def run_samplereverse_resumable_search(
                 m64_index = idx
                 break
 
-        while m68_tier < len(dep_tiers) and m68_spent < m68_budget and not found and not _time_exceeded():
-            tier_name, dep_charset = dep_tiers[m68_tier]
+        while m72_tier < len(dep_tiers) and m72_spent < m72_budget and not found and not _time_exceeded():
+            tier_name, dep_charset = dep_tiers[m72_tier]
             total = len(dep_charset) ** 7
-            idx = m68_index
-            while idx < total and m68_spent < m68_budget and not found:
+            idx = m72_index
+            while idx < total and m72_spent < m72_budget and not found:
                 if _time_exceeded():
                     break
                 prefix7 = _index_to_candidate(dep_charset, 7, idx)
-                candidate = prefix7 + "AAAAAA"  # length 13 => m68
+                candidate = prefix7 + "AAAAAA"  # length 13 => m72
                 score, mask, prefix_hex = _score_candidate_prefix(candidate)
                 attempts += 1
-                m68_spent += 1
+                m72_spent += 1
                 _record_best(score, mask, candidate, prefix_hex)
                 if score >= 2:
                     top_scored.append((score, mask, candidate, prefix_hex))
                 if score == len(SAMPLEREVERSE_TARGET_PREFIX):
                     found = candidate
                     evidence.append(
-                        "runtime_probe:m68_hit "
+                        "runtime_probe:m72_hit "
                         f"tier={tier_name} idx={idx} candidate={_display_candidate(candidate)}"
                     )
                     break
                 idx += 1
             if found:
-                m68_index = idx
+                m72_index = idx
                 break
             if idx >= total:
-                m68_tier += 1
-                m68_index = 0
+                m72_tier += 1
+                m72_index = 0
             else:
-                m68_index = idx
+                m72_index = idx
+                break
+
+    # - L=14 -> m76: first 5 bytes depend on prefix8 (b0..b6 + hi4(b7))
+    # - L=15 -> m80: first 5 bytes depend on prefix8
+    hi4_budget = min(max(0, explore_limit - attempts), 90_000)
+    if hi4_budget > 0 and not found:
+        evidence.append(
+            "runtime_probe:dependency_probe="
+            f"L14/L15(prefix8),m{_key_length_for_input_length(14)}/m{_key_length_for_input_length(15)}"
+        )
+        m76_budget = hi4_budget // 2
+        m80_budget = hi4_budget - m76_budget
+        m76_spent = 0
+        m80_spent = 0
+
+        while m76_tier < len(dep_tiers) and m76_spent < m76_budget and not found and not _time_exceeded():
+            tier_name, dep_charset = dep_tiers[m76_tier]
+            total = len(dep_charset) ** 8
+            idx = m76_index
+            while idx < total and m76_spent < m76_budget and not found:
+                if _time_exceeded():
+                    break
+                prefix8 = _index_to_candidate(dep_charset, 8, idx)
+                candidate = prefix8 + "AAAAAA"  # length 14 => m76
+                score, mask, prefix_hex = _score_candidate_prefix(candidate)
+                attempts += 1
+                m76_spent += 1
+                _record_best(score, mask, candidate, prefix_hex)
+                if score >= 2:
+                    top_scored.append((score, mask, candidate, prefix_hex))
+                if score == len(SAMPLEREVERSE_TARGET_PREFIX):
+                    found = candidate
+                    evidence.append(
+                        "runtime_probe:m76_hit "
+                        f"tier={tier_name} idx={idx} candidate={_display_candidate(candidate)}"
+                    )
+                    break
+                idx += 1
+            if found:
+                m76_index = idx
+                break
+            if idx >= total:
+                m76_tier += 1
+                m76_index = 0
+            else:
+                m76_index = idx
+                break
+
+        while m80_tier < len(dep_tiers) and m80_spent < m80_budget and not found and not _time_exceeded():
+            tier_name, dep_charset = dep_tiers[m80_tier]
+            total = len(dep_charset) ** 8
+            idx = m80_index
+            while idx < total and m80_spent < m80_budget and not found:
+                if _time_exceeded():
+                    break
+                prefix8 = _index_to_candidate(dep_charset, 8, idx)
+                candidate = prefix8 + "AAAAAAA"  # length 15 => m80
+                score, mask, prefix_hex = _score_candidate_prefix(candidate)
+                attempts += 1
+                m80_spent += 1
+                _record_best(score, mask, candidate, prefix_hex)
+                if score >= 2:
+                    top_scored.append((score, mask, candidate, prefix_hex))
+                if score == len(SAMPLEREVERSE_TARGET_PREFIX):
+                    found = candidate
+                    evidence.append(
+                        "runtime_probe:m80_hit "
+                        f"tier={tier_name} idx={idx} candidate={_display_candidate(candidate)}"
+                    )
+                    break
+                idx += 1
+            if found:
+                m80_index = idx
+                break
+            if idx >= total:
+                m80_tier += 1
+                m80_index = 0
+            else:
+                m80_index = idx
                 break
 
     z3_enabled = os.getenv("REVERSE_AGENT_SAMPLE_ENABLE_Z3", "").strip().lower() in {
@@ -682,7 +786,9 @@ def run_samplereverse_resumable_search(
         evidence.append(
             "runtime_probe:prefix_preview "
             f"candidate={_display_candidate(candidate)} "
-            f"score={score}/5 mask={mask:05b} dec_prefix_hex={prefix_hex}"
+            f"score={score}/{len(SAMPLEREVERSE_TARGET_PREFIX)} "
+            f"mask={mask:0{len(SAMPLEREVERSE_TARGET_PREFIX)}b} "
+            f"dec_prefix_hex={prefix_hex}"
         )
         _push_candidate(candidate)
 
@@ -701,7 +807,7 @@ def run_samplereverse_resumable_search(
         and not _time_exceeded()
         and focused_budget > 0
         and best_hex
-        and best_score >= 3
+        and best_score >= max(1, len(SAMPLEREVERSE_TARGET_PREFIX) - 2)
     ):
         try:
             base_bytes = bytearray(bytes.fromhex(best_hex))
@@ -717,7 +823,9 @@ def run_samplereverse_resumable_search(
             if 1 <= len(mismatch_positions) <= 2:
                 evidence.append(
                     "runtime_probe:focused_probe="
-                    f"score={best_score}/5 mask={best_mask:05b} mismatch={mismatch_positions}"
+                    f"score={best_score}/{len(SAMPLEREVERSE_TARGET_PREFIX)} "
+                    f"mask={best_mask:0{len(SAMPLEREVERSE_TARGET_PREFIX)}b} "
+                    f"mismatch={mismatch_positions}"
                 )
                 # Exhaustively mutate mismatched positions with full-byte values.
                 if len(mismatch_positions) == 1:
@@ -809,6 +917,234 @@ def run_samplereverse_resumable_search(
                                     base_bytes[p0] = old0
                                 base_bytes[sp] = orig
                         base_bytes[p0] = old0
+
+    triad_probe_reserve = max(100_000, max_attempts // 6)
+    triad_probe_budget = min(
+        max(0, max_attempts - attempts - triad_probe_reserve),
+        180_000,
+    )
+    if not found and triad_probe_budget > 0 and not _time_exceeded() and best_hex:
+        try:
+            triad_base = bytearray(bytes.fromhex(best_hex))
+        except Exception:
+            triad_base = bytearray()
+        if len(triad_base) >= 7:
+            active_positions = list(range(min(7, len(triad_base))))
+            shortlist = _top_single_byte_values(bytes(triad_base), active_positions, top_k=12)
+            triads = list(combinations(active_positions, 3))
+            position_strength: dict[int, tuple[int, int, int, int, int]] = {}
+            for pos in active_positions:
+                values = shortlist.get(pos, [triad_base[pos]])
+                if len(values) <= 1:
+                    position_strength[pos] = (-1, -1, -1, -1, -(10**9))
+                    continue
+                trial = bytearray(triad_base)
+                trial[pos] = values[1]
+                sc, mk, px = _score_candidate_bytes(bytes(trial))
+                position_strength[pos] = _objective_tuple(px, sc, mk)
+            triads.sort(
+                key=lambda triad: tuple(
+                    sorted((position_strength[pos] for pos in triad), reverse=True)
+                ),
+                reverse=True,
+            )
+            evidence.append(
+                "runtime_probe:triad_probe="
+                f"positions={active_positions} topk=12 triads={len(triads)}"
+            )
+            originals = {pos: triad_base[pos] for pos in active_positions}
+            for p0, p1, p2 in triads:
+                if found or triad_probe_budget <= 0 or _time_exceeded():
+                    break
+                values0 = shortlist.get(p0, [triad_base[p0]])
+                values1 = shortlist.get(p1, [triad_base[p1]])
+                values2 = shortlist.get(p2, [triad_base[p2]])
+                for v0, v1, v2 in product(values0, values1, values2):
+                    if found or triad_probe_budget <= 0 or _time_exceeded():
+                        break
+                    if (
+                        v0 == originals[p0]
+                        and v1 == originals[p1]
+                        and v2 == originals[p2]
+                    ):
+                        continue
+                    old0 = triad_base[p0]
+                    old1 = triad_base[p1]
+                    old2 = triad_base[p2]
+                    triad_base[p0] = v0
+                    triad_base[p1] = v1
+                    triad_base[p2] = v2
+                    candidate = bytes(triad_base).decode("latin1")
+                    sc, mk, px = _score_candidate_prefix(candidate)
+                    attempts += 1
+                    triad_probe_budget -= 1
+                    _record_best(sc, mk, candidate, px)
+                    if sc >= 2:
+                        top_scored.append((sc, mk, candidate, px))
+                    triad_base[p0] = old0
+                    triad_base[p1] = old1
+                    triad_base[p2] = old2
+                    if sc == len(SAMPLEREVERSE_TARGET_PREFIX):
+                        found = candidate
+                        break
+
+    # Deterministic byte-level refinement around the best current candidates.
+    byte_refine_reserve = max(120_000, max_attempts // 6)
+    byte_refine_budget = min(max(0, max_attempts - attempts - byte_refine_reserve), 240_000)
+    if not found and byte_refine_budget > 0 and not _time_exceeded():
+        evidence.append("runtime_probe:byte_refine=coordinate_descent(full_bytes)")
+        refine_seeds: list[bytes] = []
+        if best_hex:
+            try:
+                refine_seeds.append(bytes.fromhex(best_hex))
+            except Exception:
+                pass
+        for _, _, cand, _ in top_scored[:12]:
+            try:
+                raw = cand.encode("latin1", errors="ignore")
+            except Exception:
+                continue
+            if raw:
+                refine_seeds.append(raw)
+        if not refine_seeds:
+            refine_seeds = [b"AAAAAAA"]
+
+        seen_refine: set[bytes] = set()
+        focused_bytes = _focused_charset_bytes()
+        for seed in refine_seeds:
+            if found or byte_refine_budget <= 0 or _time_exceeded():
+                break
+            work = bytes(seed[:20])
+            if not work or work in seen_refine:
+                continue
+            seen_refine.add(work)
+            cur = bytearray(work)
+            if len(cur) < 4:
+                cur.extend(b"A" * (4 - len(cur)))
+            cur_cand = bytes(cur).decode("latin1")
+            cur_sc, cur_mk, cur_px = _score_candidate_prefix(cur_cand)
+            cur_obj = _objective_tuple(cur_px, cur_sc, cur_mk)
+            passes = 0
+            improved = True
+            while (
+                improved
+                and not found
+                and byte_refine_budget > 0
+                and not _time_exceeded()
+                and passes < 4
+            ):
+                improved = False
+                passes += 1
+                for pos in range(len(cur)):
+                    if found or byte_refine_budget <= 0 or _time_exceeded():
+                        break
+                    original = cur[pos]
+                    best_local_obj = cur_obj
+                    best_local_state = (original, cur_sc, cur_mk, cur_px)
+                    for value in focused_bytes:
+                        if value == original:
+                            continue
+                        cur[pos] = value
+                        cand = bytes(cur).decode("latin1")
+                        sc, mk, px = _score_candidate_prefix(cand)
+                        attempts += 1
+                        byte_refine_budget -= 1
+                        _record_best(sc, mk, cand, px)
+                        obj = _objective_tuple(px, sc, mk)
+                        if sc >= 2:
+                            top_scored.append((sc, mk, cand, px))
+                        if obj > best_local_obj:
+                            best_local_obj = obj
+                            best_local_state = (value, sc, mk, px)
+                        if sc == len(SAMPLEREVERSE_TARGET_PREFIX):
+                            found = cand
+                            break
+                        if byte_refine_budget <= 0 or _time_exceeded():
+                            break
+                    if found:
+                        break
+                    cur[pos] = best_local_state[0]
+                    if best_local_obj > cur_obj:
+                        improved = True
+                        cur_obj = best_local_obj
+                        cur_sc = best_local_state[1]
+                        cur_mk = best_local_state[2]
+                        cur_px = best_local_state[3]
+                    else:
+                        cur[pos] = original
+
+                if found or byte_refine_budget <= 0 or _time_exceeded():
+                    break
+
+                if len(cur) < 18:
+                    original_len = len(cur)
+                    cur.append(0x41)
+                    best_append_obj = cur_obj
+                    best_append_state = (0x41, cur_sc, cur_mk, cur_px)
+                    for value in focused_bytes:
+                        if found or byte_refine_budget <= 0 or _time_exceeded():
+                            break
+                        cur[-1] = value
+                        cand = bytes(cur).decode("latin1")
+                        sc, mk, px = _score_candidate_prefix(cand)
+                        attempts += 1
+                        byte_refine_budget -= 1
+                        _record_best(sc, mk, cand, px)
+                        obj = _objective_tuple(px, sc, mk)
+                        if sc >= 2:
+                            top_scored.append((sc, mk, cand, px))
+                        if obj > best_append_obj:
+                            best_append_obj = obj
+                            best_append_state = (value, sc, mk, px)
+                        if sc == len(SAMPLEREVERSE_TARGET_PREFIX):
+                            found = cand
+                            break
+                    if found:
+                        break
+                    if best_append_obj > cur_obj:
+                        cur[-1] = best_append_state[0]
+                        improved = True
+                        cur_obj = best_append_obj
+                        cur_sc = best_append_state[1]
+                        cur_mk = best_append_state[2]
+                        cur_px = best_append_state[3]
+                    else:
+                        del cur[original_len:]
+
+                if found or byte_refine_budget <= 0 or _time_exceeded():
+                    break
+
+                if len(cur) > 4:
+                    best_delete_obj = cur_obj
+                    best_delete_state: tuple[int, int, int, str] | None = None
+                    for pos in range(len(cur)):
+                        if found or byte_refine_budget <= 0 or _time_exceeded():
+                            break
+                        trial = bytearray(cur)
+                        del trial[pos]
+                        cand = bytes(trial).decode("latin1")
+                        sc, mk, px = _score_candidate_prefix(cand)
+                        attempts += 1
+                        byte_refine_budget -= 1
+                        _record_best(sc, mk, cand, px)
+                        obj = _objective_tuple(px, sc, mk)
+                        if sc >= 2:
+                            top_scored.append((sc, mk, cand, px))
+                        if obj > best_delete_obj:
+                            best_delete_obj = obj
+                            best_delete_state = (pos, sc, mk, px)
+                        if sc == len(SAMPLEREVERSE_TARGET_PREFIX):
+                            found = cand
+                            break
+                    if found:
+                        break
+                    if best_delete_state is not None:
+                        del cur[best_delete_state[0]]
+                        improved = True
+                        cur_obj = best_delete_obj
+                        cur_sc = best_delete_state[1]
+                        cur_mk = best_delete_state[2]
+                        cur_px = best_delete_state[3]
 
     # Stochastic local search with richer objective to push 3/5 or 4/5 prefixes to 5/5.
     anneal_reserve = max(80_000, max_attempts // 6)
@@ -1008,7 +1344,10 @@ def run_samplereverse_resumable_search(
 
                 temperature = max(3.0, temperature * 0.9992)
 
-    top_scored = _dedupe_top_scored(top_scored, limit=2048)
+    top_scored = _dedupe_top_scored_by_prefix(
+        _dedupe_top_scored(top_scored, limit=4096),
+        limit=2048,
+    )
     for _, _, candidate, _ in top_scored[:48]:
         _push_candidate(candidate)
 
@@ -1022,7 +1361,11 @@ def run_samplereverse_resumable_search(
     if best_hex:
         evidence.append(f"runtime_probe:best_candidate_hex={best_hex}")
         if best_score:
-            evidence.append(f"runtime_probe:best_candidate_score={best_score}/5 mask={best_mask:05b}")
+            evidence.append(
+                "runtime_probe:best_candidate_score="
+                f"{best_score}/{len(SAMPLEREVERSE_TARGET_PREFIX)} "
+                f"mask={best_mask:0{len(SAMPLEREVERSE_TARGET_PREFIX)}b}"
+            )
 
     if found:
         evidence.append(f"runtime_candidate:{found}")
@@ -1056,9 +1399,17 @@ def run_samplereverse_resumable_search(
             "m60_index": m60_index,
             "m64_tier": m64_tier,
             "m64_index": m64_index,
-            "m68_tier": m68_tier,
-            "m68_index": m68_index,
+            "m72_tier": m72_tier,
+            "m72_index": m72_index,
+            "m76_tier": m76_tier,
+            "m76_index": m76_index,
+            "m80_tier": m80_tier,
+            "m80_index": m80_index,
+            # Keep legacy aliases so older checkpoints can still resume cleanly.
+            "m68_tier": m72_tier,
+            "m68_index": m72_index,
             "best_hex": best_hex,
+            "best_prefix_hex": best_prefix_hex,
             "best_score": best_score,
             "best_mask": best_mask,
             "best_distance": best_distance,
@@ -1119,6 +1470,10 @@ def _score_candidate_prefix(candidate: str) -> tuple[int, int, str]:
     return score, mask, prefix.hex()
 
 
+def _score_candidate_bytes(candidate: bytes) -> tuple[int, int, str]:
+    return _score_candidate_prefix(candidate.decode("latin1"))
+
+
 def _decrypt_prefix(candidate: str, prefix_len: int) -> bytes:
     key_bytes = candidate.encode("latin1", errors="ignore")
     expanded = _expand_input_bytes(key_bytes)
@@ -1166,6 +1521,10 @@ def _index_to_candidate(charset: str, length: int, index: int) -> str:
     return "".join(chars)
 
 
+def _key_length_for_input_length(input_len: int) -> int:
+    return 4 * math.ceil((4 * input_len) / 3)
+
+
 def _load_checkpoint(path: Path) -> dict[str, int | str | float]:
     default_payload = {
         "cartesian_length": 4,
@@ -1182,9 +1541,17 @@ def _load_checkpoint(path: Path) -> dict[str, int | str | float]:
         "m60_index": 0,
         "m64_tier": 0,
         "m64_index": 0,
+        "m72_tier": 0,
+        "m72_index": 0,
+        "m76_tier": 0,
+        "m76_index": 0,
+        "m80_tier": 0,
+        "m80_index": 0,
+        # Keep legacy fields for backward-compatible checkpoint reads.
         "m68_tier": 0,
         "m68_index": 0,
         "best_hex": "",
+        "best_prefix_hex": "",
         "best_score": 0,
         "best_mask": 0,
         "best_distance": 10_000,
@@ -1202,12 +1569,17 @@ def _load_checkpoint(path: Path) -> dict[str, int | str | float]:
         return default_payload
     payload: dict[str, int | str | float] = {}
     for key, default in default_payload.items():
+        raw_value = data.get(key, default)
+        if key == "m72_tier":
+            raw_value = data.get("m72_tier", data.get("m68_tier", default))
+        elif key == "m72_index":
+            raw_value = data.get("m72_index", data.get("m68_index", default))
         if isinstance(default, str):
-            payload[key] = str(data.get(key, default))
+            payload[key] = str(raw_value)
         elif isinstance(default, float):
-            payload[key] = float(data.get(key, default))
+            payload[key] = float(raw_value)
         else:
-            payload[key] = int(data.get(key, default))
+            payload[key] = int(raw_value)
     return payload
 
 
@@ -1234,11 +1606,122 @@ def _focused_charset_bytes() -> list[int]:
 
 def _prefix_distance(prefix_hex: str) -> int:
     raw = bytes.fromhex(prefix_hex)
-    return sum(abs(raw[i] - SAMPLEREVERSE_TARGET_PREFIX[i]) for i in range(len(SAMPLEREVERSE_TARGET_PREFIX)))
+    compare_len = min(len(raw), len(SAMPLEREVERSE_TARGET_PREFIX))
+    distance = sum(
+        abs(raw[i] - SAMPLEREVERSE_TARGET_PREFIX[i]) for i in range(compare_len)
+    )
+    if len(raw) < len(SAMPLEREVERSE_TARGET_PREFIX):
+        distance += 0x100 * (len(SAMPLEREVERSE_TARGET_PREFIX) - len(raw))
+    elif len(raw) > len(SAMPLEREVERSE_TARGET_PREFIX):
+        distance += sum(raw[len(SAMPLEREVERSE_TARGET_PREFIX) :])
+    return distance
 
 
-def _objective_tuple(prefix_hex: str, score: int, mask: int) -> tuple[int, int, int]:
-    return (score, mask, -_prefix_distance(prefix_hex))
+def _wide_prefix_metrics(prefix_hex: str) -> tuple[int, int]:
+    try:
+        raw = bytes.fromhex(prefix_hex)
+    except Exception:
+        return (0, 0)
+    char_count = min(len(raw) // 2, len(SAMPLEREVERSE_TARGET_PREFIX) // 2)
+    contiguous = 0
+    matched = 0
+    for idx in range(char_count):
+        raw_code = raw[idx * 2] | (raw[idx * 2 + 1] << 8)
+        target_code = (
+            SAMPLEREVERSE_TARGET_PREFIX[idx * 2]
+            | (SAMPLEREVERSE_TARGET_PREFIX[idx * 2 + 1] << 8)
+        )
+        if _to_lower_ascii(raw_code) == _to_lower_ascii(target_code):
+            matched += 1
+            if idx == contiguous:
+                contiguous += 1
+    return contiguous, matched
+
+
+def _objective_tuple(prefix_hex: str, score: int, mask: int) -> tuple[int, int, int, int, int]:
+    wide_prefix, wide_matched = _wide_prefix_metrics(prefix_hex)
+    return (wide_prefix, wide_matched, score, mask, -_prefix_distance(prefix_hex))
+
+
+def _top_single_byte_values(
+    base_bytes: bytes,
+    positions: list[int],
+    top_k: int = 12,
+) -> dict[int, list[int]]:
+    focused_bytes = _focused_charset_bytes()
+    work = bytearray(base_bytes)
+    out: dict[int, list[int]] = {}
+    for pos in positions:
+        if pos >= len(work):
+            continue
+        original = work[pos]
+        scored: list[tuple[tuple[int, int, int, int, int], int]] = []
+        for value in [original, *[b for b in focused_bytes if b != original]]:
+            work[pos] = value
+            score, mask, prefix_hex = _score_candidate_bytes(bytes(work))
+            scored.append((_objective_tuple(prefix_hex, score, mask), value))
+        work[pos] = original
+        scored.sort(key=lambda item: (item[0], item[1]), reverse=True)
+        values: list[int] = []
+        seen_values: set[int] = set()
+        for _, value in scored:
+            if value in seen_values:
+                continue
+            seen_values.add(value)
+            values.append(value)
+            if len(values) >= max(1, top_k):
+                break
+        if original not in seen_values:
+            values.insert(0, original)
+        out[pos] = values
+    return out
+
+
+def _load_optimizer_seed_candidates(
+    artifacts_dir: Path,
+    limit: int = 32,
+) -> list[str]:
+    result_path = artifacts_dir / OPTIMIZER_RESULT_FILE_NAME
+    if not result_path.exists():
+        return []
+    try:
+        payload = json.loads(result_path.read_text(encoding="utf-8"))
+    except Exception:
+        return []
+    if not isinstance(payload, dict):
+        return []
+
+    out: list[str] = []
+    seen: set[str] = set()
+
+    def _push_hex(raw_hex: str) -> None:
+        if len(out) >= limit:
+            return
+        normalized = str(raw_hex or "").strip().lower()
+        if not normalized or normalized in seen:
+            return
+        try:
+            raw = bytes.fromhex(normalized)
+        except Exception:
+            return
+        if len(raw) != 7:
+            return
+        candidate = (raw + b"AAAAAA").decode("latin1")
+        seen.add(normalized)
+        out.append(candidate)
+
+    for key in ("best_prefix", "best_dist4", "best_dist6", "best_dist10"):
+        entry = payload.get(key, {})
+        if isinstance(entry, dict):
+            _push_hex(str(entry.get("cand7_hex", "")))
+    elite_prefixes = payload.get("elite_prefixes", [])
+    if isinstance(elite_prefixes, list):
+        for entry in elite_prefixes:
+            if len(out) >= limit:
+                break
+            if isinstance(entry, dict):
+                _push_hex(str(entry.get("cand7_hex", "")))
+    return out
 
 
 def _dedupe_top_scored(
@@ -1264,6 +1747,34 @@ def _dedupe_top_scored(
             len(item[2]),
             item[2],
         )
+    )
+    return out[:limit]
+
+
+def _dedupe_top_scored_by_prefix(
+    items: list[tuple[int, int, str, str]], limit: int = 2048
+) -> list[tuple[int, int, str, str]]:
+    best_by_prefix: dict[str, tuple[int, int, str, str]] = {}
+    for score, mask, candidate, prefix_hex in items:
+        cur = best_by_prefix.get(prefix_hex)
+        nxt = (score, mask, candidate, prefix_hex)
+        if cur is None or _objective_tuple(prefix_hex, score, mask) > _objective_tuple(
+            cur[3], cur[0], cur[1]
+        ) or (
+            _objective_tuple(prefix_hex, score, mask)
+            == _objective_tuple(cur[3], cur[0], cur[1])
+            and candidate.encode("latin1", errors="ignore").hex()
+            < cur[2].encode("latin1", errors="ignore").hex()
+        ):
+            best_by_prefix[prefix_hex] = nxt
+    out = list(best_by_prefix.values())
+    out.sort(
+        key=lambda item: (
+            _objective_tuple(item[3], item[0], item[1]),
+            -len(item[2]),
+            item[2],
+        ),
+        reverse=True,
     )
     return out[:limit]
 

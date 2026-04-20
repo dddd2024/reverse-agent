@@ -1,5 +1,6 @@
 from pathlib import Path
 
+from reverse_agent.evidence import StructuredEvidence
 from reverse_agent.models import ModelError
 from reverse_agent.pipeline import (
     _candidate_to_gui_text,
@@ -336,6 +337,17 @@ def test_run_pipeline_includes_gui_probe_artifact_for_matching_sample(
         ),
     )
     monkeypatch.setattr(
+        "reverse_agent.pipeline._run_compare_probe_if_needed",
+        lambda file_path, strings, artifacts_dir, log: ToolRunArtifact(  # noqa: ARG005
+            tool_name="CompareProbe",
+            enabled=True,
+            attempted=True,
+            success=False,
+            summary="compare miss",
+            evidence=["runtime_compare:error=no_compare_hit"],
+        ),
+    )
+    monkeypatch.setattr(
         "reverse_agent.pipeline.run_samplereverse_resumable_search",
         lambda **kwargs: __import__("reverse_agent.sample_solver", fromlist=["SampleSearchResult"]).SampleSearchResult(  # noqa: ARG005
             enabled=True,
@@ -367,6 +379,275 @@ def test_run_pipeline_includes_gui_probe_artifact_for_matching_sample(
         log=lambda _: None,
     )
     assert any(item.tool_name == "GUIProbe" for item in result.tool_artifacts)
+
+
+def test_run_pipeline_prefers_compare_probe_and_skips_sample_probe(
+    tmp_path: Path, monkeypatch
+) -> None:
+    sample = tmp_path / "samplereverse.exe"
+    sample.write_bytes(b"MZ")
+
+    monkeypatch.setattr(
+        "reverse_agent.pipeline.extract_strings",
+        lambda file_path, min_length=4, max_items=6000: ["输入的密钥是", "密钥不正确"],  # noqa: ARG005
+    )
+    monkeypatch.setattr("reverse_agent.pipeline._is_windows_gui_exe", lambda fp: True)  # noqa: ARG005
+    monkeypatch.setattr(
+        "reverse_agent.pipeline._run_compare_probe_if_needed",
+        lambda file_path, strings, artifacts_dir, log: ToolRunArtifact(  # noqa: ARG005
+            tool_name="CompareProbe",
+            enabled=True,
+            attempted=True,
+            success=True,
+            summary="compare ok",
+            evidence=[
+                "runtime_compare:site=0x40258c",
+                "runtime_compare:input=AAAAAAA",
+                "runtime_compare:lhs=flag{demo",
+                "runtime_compare:rhs=flag{",
+                "runtime_compare:lhs_ptr=0x1234",
+                "runtime_compare:lhs_prefix_match=1",
+                "runtime_candidate:AAAAAAA source=runtime_compare confidence=0.98",
+            ],
+        ),
+    )
+    monkeypatch.setattr(
+        "reverse_agent.pipeline.run_samplereverse_resumable_search",
+        lambda **kwargs: (_ for _ in ()).throw(AssertionError("sample probe should be skipped")),  # noqa: ARG005
+    )
+    monkeypatch.setattr(
+        "reverse_agent.pipeline.solve_with_angr_stdin",
+        lambda **kwargs: [],  # noqa: ARG005
+    )
+    monkeypatch.setattr(
+        "reverse_agent.pipeline.CopilotCliBackend.solve",
+        lambda self, prompt: "NOT_FOUND\ncompare evidence wins",  # noqa: ARG001
+    )
+
+    result = run_pipeline(
+        input_value=str(sample),
+        analysis_mode="Dynamic Debug",
+        model_type="Copilot CLI",
+        copilot_command='copilot -p "{prompt}" -s',
+        local_base_url="",
+        local_model="",
+        local_api_key="",
+        tool_config=ToolAutomationConfig(enabled=False),
+        runtime_validation_enabled=False,
+        reports_dir=tmp_path / "reports",
+        log=lambda _: None,
+    )
+    assert result.selected_flag == "AAAAAAA"
+    assert any(item.tool_name == "CompareProbe" for item in result.tool_artifacts)
+
+
+def test_run_pipeline_compare_probe_failure_falls_back_to_sample_probe(
+    tmp_path: Path, monkeypatch
+) -> None:
+    sample = tmp_path / "samplereverse.exe"
+    sample.write_bytes(b"MZ")
+
+    monkeypatch.setattr(
+        "reverse_agent.pipeline.extract_strings",
+        lambda file_path, min_length=4, max_items=6000: ["输入的密钥是", "密钥不正确"],  # noqa: ARG005
+    )
+    monkeypatch.setattr("reverse_agent.pipeline._is_windows_gui_exe", lambda fp: True)  # noqa: ARG005
+    monkeypatch.setattr(
+        "reverse_agent.pipeline._run_compare_probe_if_needed",
+        lambda file_path, strings, artifacts_dir, log: ToolRunArtifact(  # noqa: ARG005
+            tool_name="CompareProbe",
+            enabled=True,
+            attempted=True,
+            success=False,
+            summary="compare miss",
+            evidence=["runtime_compare:error=no_compare_hit"],
+        ),
+    )
+
+    from reverse_agent.sample_solver import SampleSearchResult
+
+    monkeypatch.setattr(
+        "reverse_agent.pipeline.run_samplereverse_resumable_search",
+        lambda **kwargs: SampleSearchResult(  # noqa: ARG005
+            enabled=True,
+            summary="sample ok",
+            candidates=["BBBBBBB"],
+            evidence=["runtime_candidate:BBBBBBB"],
+        ),
+    )
+    monkeypatch.setattr(
+        "reverse_agent.pipeline._probe_gui_runtime_outputs",
+        lambda file_path, strings, seed_candidates, per_action_delay=0.18: None,  # noqa: ARG005
+    )
+    monkeypatch.setattr(
+        "reverse_agent.pipeline.solve_with_angr_stdin",
+        lambda **kwargs: [],  # noqa: ARG005
+    )
+    monkeypatch.setattr(
+        "reverse_agent.pipeline.CopilotCliBackend.solve",
+        lambda self, prompt: "NOT_FOUND\nfallback to sample",  # noqa: ARG001
+    )
+
+    result = run_pipeline(
+        input_value=str(sample),
+        analysis_mode="Dynamic Debug",
+        model_type="Copilot CLI",
+        copilot_command='copilot -p "{prompt}" -s',
+        local_base_url="",
+        local_model="",
+        local_api_key="",
+        tool_config=ToolAutomationConfig(enabled=False),
+        runtime_validation_enabled=False,
+        reports_dir=tmp_path / "reports",
+        log=lambda _: None,
+    )
+    assert any(item.tool_name == "SampleProbe" for item in result.tool_artifacts)
+    assert result.selected_flag == "BBBBBBB"
+
+
+def test_run_pipeline_compare_probe_truth_without_candidate_still_runs_sample_probe(
+    tmp_path: Path, monkeypatch
+) -> None:
+    sample = tmp_path / "samplereverse.exe"
+    sample.write_bytes(b"MZ")
+
+    monkeypatch.setattr(
+        "reverse_agent.pipeline.extract_strings",
+        lambda file_path, min_length=4, max_items=6000: ["输入的密钥是", "密钥不正确"],  # noqa: ARG005
+    )
+    monkeypatch.setattr("reverse_agent.pipeline._is_windows_gui_exe", lambda fp: True)  # noqa: ARG005
+    monkeypatch.setattr(
+        "reverse_agent.pipeline._run_compare_probe_if_needed",
+        lambda file_path, strings, artifacts_dir, log: ToolRunArtifact(  # noqa: ARG005
+            tool_name="CompareProbe",
+            enabled=True,
+            attempted=True,
+            success=True,
+            summary="compare truth only",
+            evidence=[
+                "runtime_compare:site=0x40258c",
+                "runtime_compare:input=o~\\xeb\\xb7\\xa207AAAAAA",
+                "runtime_compare:lhs=f\\x286c",
+                "runtime_compare:lhs_ptr=0x1234",
+                "runtime_compare:lhs_prefix_match=0",
+            ],
+        ),
+    )
+
+    from reverse_agent.sample_solver import SampleSearchResult
+
+    def _sample_probe(**kwargs):  # noqa: ANN003
+        assert kwargs["seed_candidates"][0] == "o~\\xeb\\xb7\\xa207AAAAAA"
+        return SampleSearchResult(
+            enabled=True,
+            summary="sample continued",
+            candidates=["CCCCCCC"],
+            evidence=["runtime_candidate:CCCCCCC"],
+        )
+
+    monkeypatch.setattr(
+        "reverse_agent.pipeline.run_samplereverse_resumable_search",
+        _sample_probe,
+    )
+    monkeypatch.setattr(
+        "reverse_agent.pipeline._probe_gui_runtime_outputs",
+        lambda file_path, strings, seed_candidates, per_action_delay=0.18: (_ for _ in ()).throw(AssertionError("gui probe should be skipped when compare truth exists")),  # noqa: ARG005
+    )
+    monkeypatch.setattr(
+        "reverse_agent.pipeline.solve_with_angr_stdin",
+        lambda **kwargs: [],  # noqa: ARG005
+    )
+    monkeypatch.setattr(
+        "reverse_agent.pipeline.CopilotCliBackend.solve",
+        lambda self, prompt: "NOT_FOUND\ncompare truth should continue into sample probe",  # noqa: ARG001
+    )
+
+    result = run_pipeline(
+        input_value=str(sample),
+        analysis_mode="Dynamic Debug",
+        model_type="Copilot CLI",
+        copilot_command='copilot -p "{prompt}" -s',
+        local_base_url="",
+        local_model="",
+        local_api_key="",
+        tool_config=ToolAutomationConfig(enabled=False),
+        runtime_validation_enabled=False,
+        reports_dir=tmp_path / "reports",
+        log=lambda _: None,
+    )
+    assert any(item.tool_name == "CompareProbe" for item in result.tool_artifacts)
+    assert any(item.tool_name == "SampleProbe" for item in result.tool_artifacts)
+    assert result.selected_flag == "CCCCCCC"
+
+
+def test_run_pipeline_records_profile_and_structured_evidence(
+    tmp_path: Path, monkeypatch
+) -> None:
+    sample = tmp_path / "samplereverse.exe"
+    sample.write_bytes(b"MZ")
+
+    monkeypatch.setattr(
+        "reverse_agent.pipeline.extract_strings",
+        lambda file_path, min_length=4, max_items=6000: ["输入的密钥是", "密钥不正确"],  # noqa: ARG005
+    )
+    monkeypatch.setattr(
+        "reverse_agent.pipeline._run_compare_probe_if_needed",
+        lambda file_path, strings, artifacts_dir, log: ToolRunArtifact(  # noqa: ARG005
+            tool_name="CompareProbe",
+            enabled=True,
+            attempted=True,
+            success=True,
+            summary="compare ok",
+            evidence=[
+                "runtime_compare:site=0x40258c",
+                "runtime_compare:input=AAAAAAA",
+                "runtime_compare:lhs=flag{demo",
+                "runtime_compare:rhs=flag{",
+                "runtime_candidate:AAAAAAA source=runtime_compare confidence=0.98",
+            ],
+            structured_evidence=[
+                StructuredEvidence(
+                    kind="RuntimeCompareEvidence",
+                    source_tool="CompareProbe",
+                    summary="compare ok",
+                    payload={"lhs_wide_hex": "66006c00610067007b00"},
+                    confidence=0.98,
+                    derived_candidates=["AAAAAAA"],
+                )
+            ],
+        ),
+    )
+    monkeypatch.setattr(
+        "reverse_agent.pipeline.run_samplereverse_resumable_search",
+        lambda **kwargs: (_ for _ in ()).throw(AssertionError("sample solver should be skipped")),  # noqa: ARG005
+    )
+    monkeypatch.setattr(
+        "reverse_agent.pipeline.solve_with_angr_stdin",
+        lambda **kwargs: [],  # noqa: ARG005
+    )
+    monkeypatch.setattr(
+        "reverse_agent.pipeline.CopilotCliBackend.solve",
+        lambda self, prompt: "NOT_FOUND",  # noqa: ARG001
+    )
+
+    result = run_pipeline(
+        input_value=str(sample),
+        analysis_mode="Dynamic Debug",
+        model_type="Copilot CLI",
+        copilot_command='copilot -p "{prompt}" -s',
+        local_base_url="",
+        local_model="",
+        local_api_key="",
+        tool_config=ToolAutomationConfig(enabled=False),
+        runtime_validation_enabled=False,
+        reports_dir=tmp_path / "reports",
+        log=lambda _: None,
+    )
+
+    assert result.active_profile == "samplereverse"
+    assert "samplereverse" in result.matched_profiles
+    assert "CompareAwareSearchStrategy" in result.applied_strategies
+    assert any(item.kind == "RuntimeCompareEvidence" for item in result.structured_evidence)
 
 
 def test_copilot_timeout_retries_with_compact_prompt(tmp_path: Path, monkeypatch) -> None:
