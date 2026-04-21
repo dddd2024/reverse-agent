@@ -87,6 +87,13 @@ def _structured_evidence_from_json(tool_name: str, data: dict[str, object]) -> l
             "lhs_wide_hex": str(data.get("lhs_wide_hex", "")),
             "rhs_wide_text": str(data.get("rhs_wide_text", "")),
             "rhs_wide_hex": str(data.get("rhs_wide_hex", "")),
+            "runtime_ci_exact_wchars": data.get("runtime_ci_exact_wchars"),
+            "runtime_ci_distance5": data.get("runtime_ci_distance5"),
+            "runtime_lhs_prefix_hex_10": str(data.get("runtime_lhs_prefix_hex_10", "")),
+            "compare_semantics_agree": data.get("compare_semantics_agree"),
+            "offline_ci_exact_wchars": data.get("offline_ci_exact_wchars"),
+            "offline_ci_distance5": data.get("offline_ci_distance5"),
+            "offline_raw_prefix_hex": str(data.get("offline_raw_prefix_hex", "")),
         }
         items.append(
             StructuredEvidence(

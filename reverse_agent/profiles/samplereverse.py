@@ -9,6 +9,7 @@ from ..evidence import StructuredEvidence
 from ..probes.compare import artifact_has_compare_truth
 from ..probes.gui import collect_gui_runtime_outputs, is_windows_gui_exe, validate_candidates_with_gui_session
 from ..sample_solver import CHECKPOINT_FILE_NAME, run_samplereverse_resumable_search
+from ..strategies.compare_aware_search import CompareAwareSearchStrategy
 from ..tool_runners import ToolRunArtifact, run_compare_probe
 from ..transforms.samplereverse import SamplereverseTransformModel
 from .base import ChallengeProfile, ProfileSolveResult, ValidationResult
@@ -58,6 +59,22 @@ def _env_float(name: str, default: float, min_value: float) -> float:
     except ValueError:
         return default
     return value if value >= min_value else default
+
+
+def _env_csv_ints(name: str) -> list[int]:
+    raw = os.getenv(name, "").strip()
+    if not raw:
+        return []
+    out: list[int] = []
+    for item in raw.split(","):
+        token = item.strip()
+        if not token:
+            continue
+        try:
+            out.append(int(token))
+        except ValueError:
+            continue
+    return out
 
 
 def _pipeline_module():
@@ -198,21 +215,62 @@ class SamplereverseProfile(ChallengeProfile):
                 strategies=["CompareAwareSearchStrategy"],
             )
 
-        runner = run_samplereverse_resumable_search
         pipeline_mod = _pipeline_module()
         legacy_runner = getattr(pipeline_mod, "run_samplereverse_resumable_search", None) if pipeline_mod else None
-        if callable(legacy_runner):
-            runner = legacy_runner
-        result = runner(
-            file_path=file_path,
-            strings=strings,
-            seed_candidates=seed_candidates,
-            artifacts_dir=artifacts_dir,
-            log=log,
-            max_attempts=_env_int("REVERSE_AGENT_SAMPLE_MAX_ATTEMPTS", 250_000, 10_000),
-            max_seconds=_env_float("REVERSE_AGENT_SAMPLE_MAX_SECONDS", 6 * 60 * 60, 30.0),
-            random_seed=_env_int("REVERSE_AGENT_SAMPLE_RANDOM_SEED", 1337, 1),
-        )
+        if callable(legacy_runner) and legacy_runner is not run_samplereverse_resumable_search:
+            result = legacy_runner(
+                file_path=file_path,
+                strings=strings,
+                seed_candidates=seed_candidates,
+                artifacts_dir=artifacts_dir,
+                log=log,
+                max_attempts=_env_int("REVERSE_AGENT_SAMPLE_MAX_ATTEMPTS", 250_000, 10_000),
+                max_seconds=_env_float("REVERSE_AGENT_SAMPLE_MAX_SECONDS", 6 * 60 * 60, 30.0),
+                random_seed=_env_int("REVERSE_AGENT_SAMPLE_RANDOM_SEED", 1337, 1),
+            )
+        else:
+            strategy = CompareAwareSearchStrategy()
+            try:
+                strategy_result = strategy.run(
+                    file_path=file_path,
+                    artifacts_dir=artifacts_dir,
+                    log=log,
+                    transform_model=self.transforms()[0],
+                    anchors=[
+                        "4a78f0eaeb4f13b0",
+                        "e05e579fca169e80",
+                    ],
+                    search_budget=_env_int("REVERSE_AGENT_COMPARE_AWARE_MAX_EVALS", 200_000_000, 1),
+                    seed=_env_int("REVERSE_AGENT_COMPARE_AWARE_SEED", 20260420, 1),
+                    snapshot_interval=_env_int("REVERSE_AGENT_COMPARE_AWARE_SNAPSHOT_INTERVAL", 10_000_000, 1),
+                    validate_top=_env_int("REVERSE_AGENT_COMPARE_AWARE_VALIDATE_TOP", 5, 1),
+                    per_probe_timeout=_env_float("REVERSE_AGENT_COMPARE_AWARE_PER_PROBE_TIMEOUT", 2.0, 0.5),
+                )
+            except Exception as exc:
+                log(f"Samplereverse profile: compare-aware strategy 失败，回退 sample_solver。原因: {exc}")
+                result = run_samplereverse_resumable_search(
+                    file_path=file_path,
+                    strings=strings,
+                    seed_candidates=seed_candidates,
+                    artifacts_dir=artifacts_dir,
+                    log=log,
+                    max_attempts=_env_int("REVERSE_AGENT_SAMPLE_MAX_ATTEMPTS", 250_000, 10_000),
+                    max_seconds=_env_float("REVERSE_AGENT_SAMPLE_MAX_SECONDS", 6 * 60 * 60, 30.0),
+                    random_seed=_env_int("REVERSE_AGENT_SAMPLE_RANDOM_SEED", 1337, 1),
+                )
+            else:
+                for artifact in strategy_result.artifacts:
+                    artifact.owner_profile = self.profile_id
+                    artifact.strategy_name = strategy.name
+                return ProfileSolveResult(
+                    enabled=True,
+                    summary=strategy_result.summary,
+                    candidates=strategy_result.candidates,
+                    artifacts=strategy_result.artifacts,
+                    evidence=[line for artifact in strategy_result.artifacts for line in artifact.evidence],
+                    strategies=[strategy.name],
+                    metadata=strategy_result.metadata,
+                )
         if not result.enabled:
             return ProfileSolveResult(enabled=False, summary=result.summary)
 

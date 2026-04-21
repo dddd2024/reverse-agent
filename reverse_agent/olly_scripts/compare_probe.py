@@ -7,6 +7,7 @@ from pathlib import Path
 
 
 COMPARE_SITE_OFFSET = 0x258C
+TARGET_PREFIX = "flag{".encode("utf-16le")
 DEFAULT_PROBE_INPUTS = [
     "AAAAAAA",
     "AAAAAAAA",
@@ -44,6 +45,35 @@ def _candidate_to_gui_text(candidate: str) -> str:
         else:
             out.append(chr(0x0100 | b))
     return "".join(out)
+
+
+def _lower_ascii(value: int) -> int:
+    if 0x41 <= value <= 0x5A:
+        return value + 0x20
+    return value
+
+
+def _score_compare_prefix(raw_prefix: bytes) -> tuple[int, int, str]:
+    raw = bytes(raw_prefix[:10])
+    compare_bytes = min(len(raw), 10)
+    compare_wchars = min(compare_bytes // 2, 5)
+    ci_exact_wchars = 0
+    ci_distance5 = 0
+    for idx in range(compare_wchars):
+        raw_low = raw[idx * 2]
+        raw_high = raw[idx * 2 + 1]
+        target_low = TARGET_PREFIX[idx * 2]
+        target_high = TARGET_PREFIX[idx * 2 + 1]
+        matches = raw_high == target_high and _lower_ascii(raw_low) == _lower_ascii(target_low)
+        ci_distance5 += abs(raw_high - target_high) + abs(_lower_ascii(raw_low) - _lower_ascii(target_low))
+        if matches and idx == ci_exact_wchars:
+            ci_exact_wchars += 1
+    if compare_wchars < 5:
+        for idx in range(compare_wchars, 5):
+            target_low = TARGET_PREFIX[idx * 2]
+            target_high = TARGET_PREFIX[idx * 2 + 1]
+            ci_distance5 += abs(target_high) + abs(_lower_ascii(target_low))
+    return ci_exact_wchars, ci_distance5, raw.hex()
 
 
 def _trigger_decrypt(button) -> None:  # noqa: ANN001
@@ -84,6 +114,13 @@ def _build_payload(
     lhs_wide_hex: str = "",
     rhs_wide_text: str = "",
     rhs_wide_hex: str = "",
+    runtime_ci_exact_wchars: int | None = None,
+    runtime_ci_distance5: int | None = None,
+    runtime_lhs_prefix_hex_10: str = "",
+    offline_ci_exact_wchars: int | None = None,
+    offline_ci_distance5: int | None = None,
+    offline_raw_prefix_hex: str = "",
+    compare_semantics_agree: bool | None = None,
     evidence: list[str] | None = None,
     candidates: list[dict[str, object]] | None = None,
 ) -> dict[str, object]:
@@ -96,6 +133,13 @@ def _build_payload(
         "lhs_wide_hex": lhs_wide_hex,
         "rhs_wide_text": rhs_wide_text,
         "rhs_wide_hex": rhs_wide_hex,
+        "runtime_ci_exact_wchars": runtime_ci_exact_wchars,
+        "runtime_ci_distance5": runtime_ci_distance5,
+        "runtime_lhs_prefix_hex_10": runtime_lhs_prefix_hex_10,
+        "offline_ci_exact_wchars": offline_ci_exact_wchars,
+        "offline_ci_distance5": offline_ci_distance5,
+        "offline_raw_prefix_hex": offline_raw_prefix_hex,
+        "compare_semantics_agree": compare_semantics_agree,
         "evidence": evidence or [],
         "candidates": candidates or [],
     }
@@ -129,11 +173,29 @@ def main() -> int:
         default=2.2,
         help="Seconds to wait for compare hook after each click.",
     )
+    parser.add_argument(
+        "--offline-ci-exact-wchars",
+        type=int,
+        default=None,
+        help="Optional offline compare-aware exact wchar score for the probe candidate.",
+    )
+    parser.add_argument(
+        "--offline-ci-distance5",
+        type=int,
+        default=None,
+        help="Optional offline compare-aware distance score for the probe candidate.",
+    )
+    parser.add_argument(
+        "--offline-raw-prefix-hex",
+        default="",
+        help="Optional offline decrypted compare prefix hex for agreement checks.",
+    )
     args = parser.parse_args()
 
     target = Path(args.target)
     out_path = Path(args.out)
     evidence: list[str] = [f"runtime_compare:target={target}"]
+    offline_raw_prefix_hex = str(args.offline_raw_prefix_hex or "").strip().lower()[:20]
 
     if not target.exists():
         return _write_payload(
@@ -318,6 +380,11 @@ Interceptor.attach(compareSite, {{
         lhs_wide_hex = str(captured.get("lhs_wide_hex", "") or "")
         rhs_wide_hex = str(captured.get("rhs_wide_hex", "") or "")
         compare_site = str(captured.get("compare_site", "") or "")
+        lhs_prefix_raw = bytes.fromhex(lhs_wide_hex[:20]) if len(lhs_wide_hex) >= 20 else bytes.fromhex(lhs_wide_hex) if lhs_wide_hex else b""
+        runtime_ci_exact_wchars, runtime_ci_distance5, runtime_lhs_prefix_hex_10 = _score_compare_prefix(lhs_prefix_raw)
+        compare_semantics_agree = (
+            runtime_lhs_prefix_hex_10 == offline_raw_prefix_hex if offline_raw_prefix_hex else None
+        )
         evidence.extend(
             [
                 f"runtime_compare:site={compare_site}",
@@ -328,10 +395,21 @@ Interceptor.attach(compareSite, {{
                 f"runtime_compare:rhs_ptr={captured.get('rhs_ptr', '')}",
                 f"runtime_compare:count={captured.get('count', '')}",
                 f"runtime_compare:gui_output={_escape_runtime_text(captured_output[:220])}",
+                f"runtime_compare:runtime_ci_exact_wchars={runtime_ci_exact_wchars}",
+                f"runtime_compare:runtime_ci_distance5={runtime_ci_distance5}",
+                f"runtime_compare:runtime_lhs_prefix_hex_10={runtime_lhs_prefix_hex_10}",
             ]
         )
+        if args.offline_ci_exact_wchars is not None:
+            evidence.append(f"runtime_compare:offline_ci_exact_wchars={args.offline_ci_exact_wchars}")
+        if args.offline_ci_distance5 is not None:
+            evidence.append(f"runtime_compare:offline_ci_distance5={args.offline_ci_distance5}")
+        if offline_raw_prefix_hex:
+            evidence.append(f"runtime_compare:offline_raw_prefix_hex={offline_raw_prefix_hex}")
+        if compare_semantics_agree is not None:
+            evidence.append(f"runtime_compare:compare_semantics_agree={1 if compare_semantics_agree else 0}")
         candidates: list[dict[str, object]] = []
-        prefix_match = lhs_wide_text.lower().startswith("flag{")
+        prefix_match = runtime_ci_exact_wchars >= 5
         evidence.append(f"runtime_compare:lhs_prefix_match={1 if prefix_match else 0}")
         if prefix_match and captured_input:
             candidates.append(
@@ -355,6 +433,13 @@ Interceptor.attach(compareSite, {{
                 lhs_wide_hex=lhs_wide_hex,
                 rhs_wide_text=rhs_wide_text,
                 rhs_wide_hex=rhs_wide_hex,
+                runtime_ci_exact_wchars=runtime_ci_exact_wchars,
+                runtime_ci_distance5=runtime_ci_distance5,
+                runtime_lhs_prefix_hex_10=runtime_lhs_prefix_hex_10,
+                offline_ci_exact_wchars=args.offline_ci_exact_wchars,
+                offline_ci_distance5=args.offline_ci_distance5,
+                offline_raw_prefix_hex=offline_raw_prefix_hex,
+                compare_semantics_agree=compare_semantics_agree,
                 evidence=evidence,
                 candidates=candidates,
             ),

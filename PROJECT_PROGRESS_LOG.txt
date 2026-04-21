@@ -373,3 +373,53 @@ Reverse Agent 项目进展日志（截至 2026-04-16）
 2. 基于当前 `m56/m60` 高分家族做更强约束求解，而不是继续泛化随机搜索；
 3. 仅在获得新先验后再扩展更深长度窗口。
 
+十九、交接收尾与最新主线（2026-04-21）
+1) 平台状态
+- `samplereverse` 已迁入 profile 主线：
+  - `reverse_agent\profiles\samplereverse.py`
+  - `reverse_agent\strategies\compare_aware_search.py`
+  - `reverse_agent\transforms\samplereverse.py`
+- `CompareAwareSearchStrategy` 已成为该样本的主策略，`sample_solver.py` 仅保留为回退链。
+- `CompareProbe` 现已统一产出 offline/runtime compare-aware 指标：
+  - `offline_ci_exact_wchars`
+  - `offline_ci_distance5`
+  - `offline_raw_prefix_hex`
+  - `runtime_ci_exact_wchars`
+  - `runtime_ci_distance5`
+  - `runtime_lhs_prefix_hex_10`
+  - `compare_semantics_agree`
+
+2) 当前最强样本进展
+- 当前主线长度固定为：`L15(prefix8)`。
+- 当前最强实机一致 exact2 候选：
+  - `78d540b49c59077041414141414141`
+  - 离线前缀：`46006c004464830d311c`
+  - 运行时前缀：`46006c004464830d311c`
+  - 指标：`runtime_ci_exact_wchars=2`，`runtime_ci_distance5=246`
+- 旧 exact2 对照候选：
+  - `4a78f0eaeb4f13b041414141414141`
+  - 运行时前缀：`46004c007e40b92886f5`
+  - 指标：`runtime_ci_exact_wchars=2`，`runtime_ci_distance5=471`
+- 当前测试基线：`python -m pytest -q` -> `79 passed`。
+
+3) 已验证结论
+- `L15` 前 10 compare 字节只依赖 `prefix8`；后 7 字节固定为 `AAAAAAA` 时，不影响这 10 字节。
+- 旧 exact2 盆地（`4a78...`）与新 exact2 盆地（`78d5...`）的 pair 邻域都较刚性，未直接打出 exact3。
+- 新 exact1 frontier 已被 `CompareProbe` 证实为实机一致盆地：
+  - `95a3f65dcedb629041414141414141`
+  - 运行时前缀：`6600583a481ab842862c`
+  - 指标：`runtime_ci_exact_wchars=1`，`runtime_ci_distance5=305`
+- 经过 strata-aware source 采样后，搜索已不再只围绕旧 exact2 anchor 自转，能够稳定保留 exact2 与 exact1 两类前沿状态。
+
+4) 新对话下一步
+- 不要回到 `L13/L14/L16` 主线，也不要默认回退到旧 `sample_solver` 盲搜。
+- 新对话必须从以下 artifact 开始：
+  - `solve_reports\tool_artifacts\samplereverse_compare_aware_long4_strata\samplereverse_compare_aware_result.json`
+  - `solve_reports\tool_artifacts\samplereverse_compare_aware_long4_strata\samplereverse_compare_aware_compare_1.json`
+  - `solve_reports\tool_artifacts\samplereverse_compare_aware_long5_newbest\samplereverse_compare_aware_result.json`
+  - `solve_reports\tool_artifacts\samplereverse_compare_aware_pairscan_newbest_exact2\pairscan_summary.json`
+- 新对话的优先顺序固定为：
+  1. 围绕新 exact2 盆地 `78d540b49c590770` 做 compare-aware bridge 搜索（triad/quartet/quint）。
+  2. 若 bridge 无进展，再做 strata 长跑，并同时导出总榜与分层榜。
+  3. 只有前两步都无新进展时，才做围绕新 exact2 anchor 的定向 SMT。
+

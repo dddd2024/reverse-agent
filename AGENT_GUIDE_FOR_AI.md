@@ -4,6 +4,8 @@ Use this file as the **first-read startup guide** so a new AI session can begin 
 
 ## Current Project Status (Read First)
 - Latest execution log is maintained in `PROJECT_PROGRESS_LOG.txt`.
+- Start every new `samplereverse` session by reading `PROJECT_PROGRESS_LOG.txt` first.
+- `samplereverse` now runs on the profile + compare-aware strategy path, not the old blind-search-only flow.
 - The file records:
   - what has already been completed,
   - current verified findings on `samplereverse.exe`,
@@ -27,8 +29,28 @@ Use this file as the **first-read startup guide** so a new AI session can begin 
 - `reverse_agent\models.py`: model backends (Copilot CLI / local OpenAI-compatible API).
 - `reverse_agent\tool_runners.py`: IDA / Olly automation entry and artifact normalization.
 - `reverse_agent\advanced_solvers.py`: optional `angr` symbolic fallback solver.
+- `reverse_agent\profiles\samplereverse.py`: sample-specific profile entry and strategy selection.
+- `reverse_agent\strategies\compare_aware_search.py`: compare-aware search and validation driver.
+- `reverse_agent\transforms\samplereverse.py`: canonical compare-aware scoring interface.
 - `reverse_agent\olly_scripts\collect_evidence.py`: built-in default Olly automation script.
 - `reverse_agent\reporter.py`: detailed markdown report writer.
+
+## Samplereverse Current Handoff
+- Fixed main line: `L15(prefix8)` only.
+- Current strongest runtime-consistent exact2 candidate:
+  - `78d540b49c59077041414141414141`
+  - runtime prefix: `46006c004464830d311c`
+  - metrics: `runtime_ci_exact_wchars=2`, `runtime_ci_distance5=246`
+- Secondary exact2 reference:
+  - `4a78f0eaeb4f13b041414141414141`
+  - runtime prefix: `46004c007e40b92886f5`
+  - metrics: `runtime_ci_exact_wchars=2`, `runtime_ci_distance5=471`
+- Read these artifacts before doing new work:
+  - `solve_reports\tool_artifacts\samplereverse_compare_aware_long4_strata\samplereverse_compare_aware_result.json`
+  - `solve_reports\tool_artifacts\samplereverse_compare_aware_long4_strata\samplereverse_compare_aware_compare_1.json`
+  - `solve_reports\tool_artifacts\samplereverse_compare_aware_long5_newbest\samplereverse_compare_aware_result.json`
+  - `solve_reports\tool_artifacts\samplereverse_compare_aware_pairscan_newbest_exact2\pairscan_summary.json`
+- Do not default back to the old `sample_solver` blind search unless the compare-aware main line shows no new progress for two consecutive iterations.
 
 ## Fixed Input/Output Contract
 - Input: executable file path or downloadable URL.

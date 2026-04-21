@@ -91,6 +91,13 @@ def test_compare_probe_runner_parses_structured_payload(
                 "    'lhs_wide_hex': '66006c00610067007b00',",
                 "    'rhs_wide_text': 'flag{',",
                 "    'rhs_wide_hex': '66006c00610067007b00',",
+                "    'runtime_ci_exact_wchars': 5,",
+                "    'runtime_ci_distance5': 0,",
+                "    'runtime_lhs_prefix_hex_10': '66006c00610067007b00',",
+                "    'offline_ci_exact_wchars': 5,",
+                "    'offline_ci_distance5': 0,",
+                "    'offline_raw_prefix_hex': '66006c00610067007b00',",
+                "    'compare_semantics_agree': True,",
                 "    'evidence': [",
                 "        'runtime_compare:site=0x40258c',",
                 "        'runtime_compare:lhs=flag{demo',",
@@ -123,7 +130,13 @@ def test_compare_probe_runner_parses_structured_payload(
     assert Path(artifact.output_path).exists()
     assert any(item.startswith("runtime_compare:lhs=") for item in artifact.evidence)
     assert any("runtime_candidate:AAAAAAA" in item for item in artifact.evidence)
-    assert any(item.kind == "RuntimeCompareEvidence" for item in artifact.structured_evidence)
+    compare_evidence = next(item for item in artifact.structured_evidence if item.kind == "RuntimeCompareEvidence")
+    assert compare_evidence.payload["runtime_ci_exact_wchars"] == 5
+    assert compare_evidence.payload["runtime_ci_distance5"] == 0
+    assert compare_evidence.payload["offline_ci_exact_wchars"] == 5
+    assert compare_evidence.payload["offline_ci_distance5"] == 0
+    assert compare_evidence.payload["offline_raw_prefix_hex"] == "66006c00610067007b00"
+    assert compare_evidence.payload["compare_semantics_agree"] is True
     assert any(item.kind == "CandidateEvidence" for item in artifact.structured_evidence)
 
 

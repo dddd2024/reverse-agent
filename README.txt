@@ -8,7 +8,7 @@ Reverse Agent（GUI 逆向解题助手）
 - 模型：Copilot CLI 或 OpenAI 兼容接口。
 - 工具链：IDA 自动化 + OllyDbg 脚本自动化（可注入结构化 evidence/candidates）。
 - 验证：支持 stdin 校验与 GUI（pywinauto）窗口级校验。
-- 样本增强：`samplereverse` 已支持 GUI 运行时证据采集、低字节精确注入、可选 Z3 分区求解。
+- 样本增强：`samplereverse` 已支持 profile + compare-aware search + runtime compare validation。
 - 输出：`solve_reports\` 下生成结果与证据报告。
 
 项目结构
@@ -18,10 +18,11 @@ Reverse Agent（GUI 逆向解题助手）
 - `reverse_agent\pipeline.py`：主流程编排（证据采集、候选生成、验证、报告）。
 - `reverse_agent\models.py`：Copilot CLI / 本地模型调用封装。
 - `reverse_agent\tool_runners.py`：IDA / Olly / angr 等工具调用。
-- `reverse_agent\sample_solver.py`：`samplereverse` 专项求解与 checkpoint。
+- `reverse_agent\profiles\samplereverse.py` / `reverse_agent\strategies\compare_aware_search.py`：`samplereverse` profile 主线与 compare-aware 搜索。
+- `reverse_agent\sample_solver.py`：`samplereverse` 旧专项搜索与回退 checkpoint。
 - `reverse_agent\reporter.py`：报告生成。
 - `tests\`：pytest 测试集。
-- `PROJECT_PROGRESS_LOG.txt`：详细迭代日志与样本进展（长文档已从 README 中拆出）。
+- `PROJECT_PROGRESS_LOG.txt`：最新样本进展与新会话接力入口（长文档已从 README 中拆出）。
 
 快速开始
 1) 安装依赖  
@@ -86,13 +87,13 @@ Reverse Agent（GUI 逆向解题助手）
 - `solve_reports\` 是运行产物目录，默认不应提交。
 - 历史与细粒度进展请查看：`PROJECT_PROGRESS_LOG.txt`。
 
-当前状态（2026-04-18）
-- 测试基线：`python -m pytest -q` -> `50 passed`。
+当前状态（2026-04-21）
+- 测试基线：`python -m pytest -q` -> `79 passed`。
 - `samplereverse.exe` 仍未解出，但针对该样本的运行时可观测性已明显增强：
-  - 可稳定采集 GUI 输出证据；
-  - 可向 GUI 输入框注入低字节候选（不再局限于可打印 ASCII）；
-  - 已新增结构化长窗口搜索与 Z3 分区探测入口。
+  - 已迁入 profile 主线并使用 compare-aware search；
+  - 可稳定产出 runtime compare 前真值与 offline/runtime 一致性证据；
+  - 当前最强实机一致 exact2 候选为 `78d540b49c59077041414141414141`。
 - 本轮结束时的结论：
-  - `m40/m44/m48` 既有搜索窗口仍无命中；
-  - 新增长窗口定向搜索可稳定得到 `3/5` 前缀近似解，但尚未到 `5/5`；
-  - 若继续攻关，最高优先级仍是“compare 前真值提取”或更强的约束求解，而不是继续无约束盲搜。
+  - 主线固定为 `L15(prefix8)`；
+  - 下一轮应从 `PROJECT_PROGRESS_LOG.txt` 记录的最新 compare-aware artifacts 接力；
+  - 若继续攻关，最高优先级是围绕新 exact2 盆地做 bridge 搜索和 strata 长跑，而不是回到旧长度窗口盲搜。
