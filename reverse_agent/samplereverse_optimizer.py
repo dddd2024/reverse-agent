@@ -281,7 +281,15 @@ def validate_optimizer_results(
             compare_payload = _load_json(compare_out)
             record["compare_summary"] = compare_payload.get("summary", "")
             record["lhs_wide_hex"] = compare_payload.get("lhs_wide_hex", "")
-            record["runtime_lhs_prefix_hex_10"] = str(compare_payload.get("lhs_wide_hex", ""))[:20]
+            record["runtime_lhs_prefix_hex_10"] = str(
+                compare_payload.get("runtime_lhs_prefix_hex_10")
+                or compare_payload.get("lhs_wide_hex", "")
+            )[:20]
+            record["runtime_lhs_prefix_hex_16"] = str(
+                compare_payload.get("runtime_lhs_prefix_hex_16")
+                or compare_payload.get("lhs_wide_hex", "")
+            )[:32]
+            record["runtime_lhs_prefix_bytes_captured"] = compare_payload.get("runtime_lhs_prefix_bytes_captured", 0)
             record["prefix_agrees_with_offline"] = (
                 record["runtime_lhs_prefix_hex_10"] == offline_lhs_prefix_hex
             )
@@ -292,6 +300,8 @@ def validate_optimizer_results(
             record["compare_summary"] = f"compare probe failed with exit code {proc.returncode}"
             record["lhs_wide_hex"] = ""
             record["runtime_lhs_prefix_hex_10"] = ""
+            record["runtime_lhs_prefix_hex_16"] = ""
+            record["runtime_lhs_prefix_bytes_captured"] = 0
             record["prefix_agrees_with_offline"] = False
             record["matched_target_prefix"] = False
 

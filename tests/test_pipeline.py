@@ -15,6 +15,7 @@ from reverse_agent.pipeline import (
     find_binary_prefix_candidates,
     run_pipeline,
 )
+from reverse_agent.strategies.base import StrategyResult
 from reverse_agent.tool_runners import ToolAutomationConfig
 from reverse_agent.tool_runners import ToolRunArtifact
 
@@ -203,15 +204,21 @@ def test_sample_deadline_hard_stop_skips_angr_and_model(tmp_path: Path, monkeypa
         lambda file_path, min_length=4, max_items=6000: ["输入的密钥是", "密钥不正确"],  # noqa: ARG005
     )
 
-    from reverse_agent.sample_solver import SampleSearchResult
-
+    deadline_artifact = ToolRunArtifact(
+        tool_name="CompareAwareBridge",
+        enabled=True,
+        attempted=True,
+        success=True,
+        summary="deadline reached",
+        evidence=["runtime_probe:deadline_reached=1"],
+    )
     monkeypatch.setattr(
-        "reverse_agent.pipeline.run_samplereverse_resumable_search",
-        lambda **kwargs: SampleSearchResult(  # noqa: ARG005
-            enabled=True,
+        "reverse_agent.profiles.samplereverse.CompareAwareSearchStrategy.run",
+        lambda self, **kwargs: StrategyResult(  # noqa: ARG005
+            strategy_name="CompareAwareSearchStrategy",
             summary="deadline reached",
             candidates=["flag{"],
-            evidence=["runtime_probe:deadline_reached=1"],
+            artifacts=[deadline_artifact],
         ),
     )
     monkeypatch.setattr(
@@ -348,12 +355,12 @@ def test_run_pipeline_includes_gui_probe_artifact_for_matching_sample(
         ),
     )
     monkeypatch.setattr(
-        "reverse_agent.pipeline.run_samplereverse_resumable_search",
-        lambda **kwargs: __import__("reverse_agent.sample_solver", fromlist=["SampleSearchResult"]).SampleSearchResult(  # noqa: ARG005
-            enabled=True,
-            summary="probe",
+        "reverse_agent.profiles.samplereverse.CompareAwareSearchStrategy.run",
+        lambda self, **kwargs: StrategyResult(  # noqa: ARG005
+            strategy_name="CompareAwareSearchStrategy",
+            summary="bridge ok",
             candidates=[],
-            evidence=[],
+            artifacts=[],
         ),
     )
     monkeypatch.setattr(
@@ -464,15 +471,20 @@ def test_run_pipeline_compare_probe_failure_falls_back_to_sample_probe(
         ),
     )
 
-    from reverse_agent.sample_solver import SampleSearchResult
-
+    bridge_artifact = ToolRunArtifact(
+        tool_name="CompareAwareBridge",
+        enabled=True,
+        attempted=True,
+        success=True,
+        summary="bridge ok",
+    )
     monkeypatch.setattr(
-        "reverse_agent.pipeline.run_samplereverse_resumable_search",
-        lambda **kwargs: SampleSearchResult(  # noqa: ARG005
-            enabled=True,
-            summary="sample ok",
+        "reverse_agent.profiles.samplereverse.CompareAwareSearchStrategy.run",
+        lambda self, **kwargs: StrategyResult(  # noqa: ARG005
+            strategy_name="CompareAwareSearchStrategy",
+            summary="bridge ok",
             candidates=["BBBBBBB"],
-            evidence=["runtime_candidate:BBBBBBB"],
+            artifacts=[bridge_artifact],
         ),
     )
     monkeypatch.setattr(
@@ -501,7 +513,7 @@ def test_run_pipeline_compare_probe_failure_falls_back_to_sample_probe(
         reports_dir=tmp_path / "reports",
         log=lambda _: None,
     )
-    assert any(item.tool_name == "SampleProbe" for item in result.tool_artifacts)
+    assert any(item.tool_name == "CompareAwareBridge" for item in result.tool_artifacts)
     assert result.selected_flag == "BBBBBBB"
 
 
@@ -534,20 +546,22 @@ def test_run_pipeline_compare_probe_truth_without_candidate_still_runs_sample_pr
         ),
     )
 
-    from reverse_agent.sample_solver import SampleSearchResult
-
-    def _sample_probe(**kwargs):  # noqa: ANN003
-        assert kwargs["seed_candidates"][0] == "o~\\xeb\\xb7\\xa207AAAAAA"
-        return SampleSearchResult(
-            enabled=True,
-            summary="sample continued",
-            candidates=["CCCCCCC"],
-            evidence=["runtime_candidate:CCCCCCC"],
-        )
-
     monkeypatch.setattr(
-        "reverse_agent.pipeline.run_samplereverse_resumable_search",
-        _sample_probe,
+        "reverse_agent.profiles.samplereverse.CompareAwareSearchStrategy.run",
+        lambda self, **kwargs: StrategyResult(  # noqa: ARG005
+            strategy_name="CompareAwareSearchStrategy",
+            summary="bridge continued",
+            candidates=["CCCCCCC"],
+            artifacts=[
+                ToolRunArtifact(
+                    tool_name="CompareAwareBridge",
+                    enabled=True,
+                    attempted=True,
+                    success=True,
+                    summary="bridge continued",
+                )
+            ],
+        ),
     )
     monkeypatch.setattr(
         "reverse_agent.pipeline._probe_gui_runtime_outputs",
@@ -559,7 +573,7 @@ def test_run_pipeline_compare_probe_truth_without_candidate_still_runs_sample_pr
     )
     monkeypatch.setattr(
         "reverse_agent.pipeline.CopilotCliBackend.solve",
-        lambda self, prompt: "NOT_FOUND\ncompare truth should continue into sample probe",  # noqa: ARG001
+        lambda self, prompt: "NOT_FOUND\ncompare truth should continue into bridge strategy",  # noqa: ARG001
     )
 
     result = run_pipeline(
@@ -576,7 +590,7 @@ def test_run_pipeline_compare_probe_truth_without_candidate_still_runs_sample_pr
         log=lambda _: None,
     )
     assert any(item.tool_name == "CompareProbe" for item in result.tool_artifacts)
-    assert any(item.tool_name == "SampleProbe" for item in result.tool_artifacts)
+    assert any(item.tool_name == "CompareAwareBridge" for item in result.tool_artifacts)
     assert result.selected_flag == "CCCCCCC"
 
 

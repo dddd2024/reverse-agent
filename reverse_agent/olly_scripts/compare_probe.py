@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import time
 from pathlib import Path
 
@@ -76,6 +77,13 @@ def _score_compare_prefix(raw_prefix: bytes) -> tuple[int, int, str]:
     return ci_exact_wchars, ci_distance5, raw.hex()
 
 
+def _prefix_hex(raw_hex: str, byte_count: int) -> str:
+    normalized = "".join(ch for ch in str(raw_hex or "").strip().lower() if ch in "0123456789abcdef")
+    if byte_count <= 0:
+        return ""
+    return normalized[: byte_count * 2]
+
+
 def _trigger_decrypt(button) -> None:  # noqa: ANN001
     try:
         invoke = getattr(button, "invoke", None)
@@ -116,7 +124,10 @@ def _build_payload(
     rhs_wide_hex: str = "",
     runtime_ci_exact_wchars: int | None = None,
     runtime_ci_distance5: int | None = None,
+    runtime_lhs_prefix_hex: str = "",
     runtime_lhs_prefix_hex_10: str = "",
+    runtime_lhs_prefix_hex_16: str = "",
+    runtime_lhs_prefix_bytes_captured: int | None = None,
     offline_ci_exact_wchars: int | None = None,
     offline_ci_distance5: int | None = None,
     offline_raw_prefix_hex: str = "",
@@ -135,7 +146,10 @@ def _build_payload(
         "rhs_wide_hex": rhs_wide_hex,
         "runtime_ci_exact_wchars": runtime_ci_exact_wchars,
         "runtime_ci_distance5": runtime_ci_distance5,
+        "runtime_lhs_prefix_hex": runtime_lhs_prefix_hex,
         "runtime_lhs_prefix_hex_10": runtime_lhs_prefix_hex_10,
+        "runtime_lhs_prefix_hex_16": runtime_lhs_prefix_hex_16,
+        "runtime_lhs_prefix_bytes_captured": runtime_lhs_prefix_bytes_captured,
         "offline_ci_exact_wchars": offline_ci_exact_wchars,
         "offline_ci_distance5": offline_ci_distance5,
         "offline_raw_prefix_hex": offline_raw_prefix_hex,
@@ -190,12 +204,20 @@ def main() -> int:
         default="",
         help="Optional offline decrypted compare prefix hex for agreement checks.",
     )
+    parser.add_argument(
+        "--capture-prefix-bytes",
+        type=int,
+        default=10,
+        help="How many compare-time lhs bytes to highlight in the normalized payload.",
+    )
     args = parser.parse_args()
 
     target = Path(args.target)
     out_path = Path(args.out)
     evidence: list[str] = [f"runtime_compare:target={target}"]
     offline_raw_prefix_hex = str(args.offline_raw_prefix_hex or "").strip().lower()[:20]
+    capture_prefix_bytes = min(64, max(10, int(args.capture_prefix_bytes or 10)))
+    probe_max_chars = max(16, math.ceil(capture_prefix_bytes / 2))
 
     if not target.exists():
         return _write_payload(
@@ -250,7 +272,7 @@ def main() -> int:
 
     script_source = f"""
 const compareOffset = ptr("{COMPARE_SITE_OFFSET:#x}");
-const maxChars = 16;
+const maxChars = {probe_max_chars};
 
 function readWide(ptrValue) {{
     try {{
@@ -380,11 +402,17 @@ Interceptor.attach(compareSite, {{
         lhs_wide_hex = str(captured.get("lhs_wide_hex", "") or "")
         rhs_wide_hex = str(captured.get("rhs_wide_hex", "") or "")
         compare_site = str(captured.get("compare_site", "") or "")
-        lhs_prefix_raw = bytes.fromhex(lhs_wide_hex[:20]) if len(lhs_wide_hex) >= 20 else bytes.fromhex(lhs_wide_hex) if lhs_wide_hex else b""
+        runtime_lhs_prefix_hex = _prefix_hex(lhs_wide_hex, capture_prefix_bytes)
+        runtime_lhs_prefix_hex_10 = _prefix_hex(lhs_wide_hex, 10)
+        runtime_lhs_prefix_hex_16 = _prefix_hex(lhs_wide_hex, 16) if capture_prefix_bytes >= 16 else ""
+        lhs_prefix_raw = bytes.fromhex(runtime_lhs_prefix_hex_10) if runtime_lhs_prefix_hex_10 else b""
         runtime_ci_exact_wchars, runtime_ci_distance5, runtime_lhs_prefix_hex_10 = _score_compare_prefix(lhs_prefix_raw)
         compare_semantics_agree = (
             runtime_lhs_prefix_hex_10 == offline_raw_prefix_hex if offline_raw_prefix_hex else None
         )
+        runtime_lhs_prefix_bytes_captured = len(
+            runtime_lhs_prefix_hex if runtime_lhs_prefix_hex else runtime_lhs_prefix_hex_10
+        ) // 2
         evidence.extend(
             [
                 f"runtime_compare:site={compare_site}",
@@ -397,9 +425,13 @@ Interceptor.attach(compareSite, {{
                 f"runtime_compare:gui_output={_escape_runtime_text(captured_output[:220])}",
                 f"runtime_compare:runtime_ci_exact_wchars={runtime_ci_exact_wchars}",
                 f"runtime_compare:runtime_ci_distance5={runtime_ci_distance5}",
+                f"runtime_compare:runtime_lhs_prefix_hex={runtime_lhs_prefix_hex}",
                 f"runtime_compare:runtime_lhs_prefix_hex_10={runtime_lhs_prefix_hex_10}",
+                f"runtime_compare:runtime_lhs_prefix_bytes_captured={runtime_lhs_prefix_bytes_captured}",
             ]
         )
+        if runtime_lhs_prefix_hex_16:
+            evidence.append(f"runtime_compare:runtime_lhs_prefix_hex_16={runtime_lhs_prefix_hex_16}")
         if args.offline_ci_exact_wchars is not None:
             evidence.append(f"runtime_compare:offline_ci_exact_wchars={args.offline_ci_exact_wchars}")
         if args.offline_ci_distance5 is not None:
@@ -435,7 +467,10 @@ Interceptor.attach(compareSite, {{
                 rhs_wide_hex=rhs_wide_hex,
                 runtime_ci_exact_wchars=runtime_ci_exact_wchars,
                 runtime_ci_distance5=runtime_ci_distance5,
+                runtime_lhs_prefix_hex=runtime_lhs_prefix_hex,
                 runtime_lhs_prefix_hex_10=runtime_lhs_prefix_hex_10,
+                runtime_lhs_prefix_hex_16=runtime_lhs_prefix_hex_16,
+                runtime_lhs_prefix_bytes_captured=runtime_lhs_prefix_bytes_captured,
                 offline_ci_exact_wchars=args.offline_ci_exact_wchars,
                 offline_ci_distance5=args.offline_ci_distance5,
                 offline_raw_prefix_hex=offline_raw_prefix_hex,

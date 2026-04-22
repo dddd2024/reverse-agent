@@ -6,6 +6,9 @@ TARGET_PREFIX = "flag{".encode("utf-16le")
 TARGET_WCHARS = "flag{"
 TARGET_COMPARE_BYTES = 10
 TARGET_COMPARE_WCHARS = 5
+LONG_PREFIX_BYTES = 64
+STRUCTURE_PREFIX_BYTES = 16
+TAIL_FLAGLIKE_BYTES = set(b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_{}-")
 
 
 def _lower_ascii(value: int) -> int:
@@ -58,6 +61,41 @@ def score_compare_prefix(raw_prefix: bytes) -> dict[str, int | str]:
     }
 
 
+def _is_wide_ascii_pair(raw_low: int, raw_high: int) -> bool:
+    return raw_high == 0x00 and 0x20 <= raw_low <= 0x7E
+
+
+def score_prefix_oracle_metrics(raw_prefix: bytes) -> dict[str, int | str]:
+    raw = bytes(raw_prefix[:LONG_PREFIX_BYTES])
+    structure = raw[:STRUCTURE_PREFIX_BYTES]
+    wide_ascii_contiguous_16 = 0
+    wide_ascii_total_16 = 0
+    wide_zero_high_pairs_16 = 0
+    flaglike_tail_pairs_16 = 0
+    pair_count = min(len(structure) // 2, STRUCTURE_PREFIX_BYTES // 2)
+
+    for idx in range(pair_count):
+        raw_low = structure[idx * 2]
+        raw_high = structure[idx * 2 + 1]
+        is_ascii_pair = _is_wide_ascii_pair(raw_low, raw_high)
+        if raw_high == 0x00:
+            wide_zero_high_pairs_16 += 1
+        if is_ascii_pair:
+            wide_ascii_total_16 += 1
+            if idx == wide_ascii_contiguous_16:
+                wide_ascii_contiguous_16 += 1
+        if 5 <= idx <= 7 and raw_high == 0x00 and raw_low in TAIL_FLAGLIKE_BYTES:
+            flaglike_tail_pairs_16 += 1
+
+    return {
+        "raw_prefix_hex_64": raw.hex(),
+        "wide_ascii_contiguous_16": wide_ascii_contiguous_16,
+        "wide_ascii_total_16": wide_ascii_total_16,
+        "wide_zero_high_pairs_16": wide_zero_high_pairs_16,
+        "flaglike_tail_pairs_16": flaglike_tail_pairs_16,
+    }
+
+
 class SamplereverseTransformModel(TransformModel):
     name = "SamplereverseTransform"
 
@@ -65,4 +103,7 @@ class SamplereverseTransformModel(TransformModel):
         return "nibble expand -> UTF-16LE -> Base64 -> RC4 prefix decrypt -> __wcsnicmp(L\"flag{\", 5)"
 
     def score_prefix(self, raw_prefix: bytes) -> dict[str, int | str]:
-        return score_compare_prefix(raw_prefix)
+        return {
+            **score_compare_prefix(raw_prefix),
+            **score_prefix_oracle_metrics(raw_prefix),
+        }

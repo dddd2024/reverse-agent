@@ -89,7 +89,10 @@ def _structured_evidence_from_json(tool_name: str, data: dict[str, object]) -> l
             "rhs_wide_hex": str(data.get("rhs_wide_hex", "")),
             "runtime_ci_exact_wchars": data.get("runtime_ci_exact_wchars"),
             "runtime_ci_distance5": data.get("runtime_ci_distance5"),
+            "runtime_lhs_prefix_hex": str(data.get("runtime_lhs_prefix_hex", "")),
             "runtime_lhs_prefix_hex_10": str(data.get("runtime_lhs_prefix_hex_10", "")),
+            "runtime_lhs_prefix_hex_16": str(data.get("runtime_lhs_prefix_hex_16", "")),
+            "runtime_lhs_prefix_bytes_captured": data.get("runtime_lhs_prefix_bytes_captured"),
             "compare_semantics_agree": data.get("compare_semantics_agree"),
             "offline_ci_exact_wchars": data.get("offline_ci_exact_wchars"),
             "offline_ci_distance5": data.get("offline_ci_distance5"),
@@ -310,6 +313,7 @@ def run_compare_probe(
     artifacts_dir: Path,
     log: LogFn,
     timeout_seconds: int = 120,
+    capture_prefix_bytes: int = 10,
 ) -> ToolRunArtifact:
     artifacts_dir.mkdir(parents=True, exist_ok=True)
     artifact = ToolRunArtifact(
@@ -334,6 +338,9 @@ def run_compare_probe(
         "--out",
         str(output_path),
     ]
+    normalized_capture_prefix_bytes = max(10, int(capture_prefix_bytes or 10))
+    if normalized_capture_prefix_bytes != 10:
+        command_args.extend(["--capture-prefix-bytes", str(normalized_capture_prefix_bytes)])
     artifact.command = " ".join(shlex.quote(a) for a in command_args)
     artifact.output_path = str(output_path)
     artifact.attempted = True

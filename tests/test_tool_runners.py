@@ -93,7 +93,10 @@ def test_compare_probe_runner_parses_structured_payload(
                 "    'rhs_wide_hex': '66006c00610067007b00',",
                 "    'runtime_ci_exact_wchars': 5,",
                 "    'runtime_ci_distance5': 0,",
+                "    'runtime_lhs_prefix_hex': '66006c00610067007b00640065006d00',",
                 "    'runtime_lhs_prefix_hex_10': '66006c00610067007b00',",
+                "    'runtime_lhs_prefix_hex_16': '66006c00610067007b00640065006d00',",
+                "    'runtime_lhs_prefix_bytes_captured': 16,",
                 "    'offline_ci_exact_wchars': 5,",
                 "    'offline_ci_distance5': 0,",
                 "    'offline_raw_prefix_hex': '66006c00610067007b00',",
@@ -133,6 +136,9 @@ def test_compare_probe_runner_parses_structured_payload(
     compare_evidence = next(item for item in artifact.structured_evidence if item.kind == "RuntimeCompareEvidence")
     assert compare_evidence.payload["runtime_ci_exact_wchars"] == 5
     assert compare_evidence.payload["runtime_ci_distance5"] == 0
+    assert compare_evidence.payload["runtime_lhs_prefix_hex"] == "66006c00610067007b00640065006d00"
+    assert compare_evidence.payload["runtime_lhs_prefix_hex_16"] == "66006c00610067007b00640065006d00"
+    assert compare_evidence.payload["runtime_lhs_prefix_bytes_captured"] == 16
     assert compare_evidence.payload["offline_ci_exact_wchars"] == 5
     assert compare_evidence.payload["offline_ci_distance5"] == 0
     assert compare_evidence.payload["offline_raw_prefix_hex"] == "66006c00610067007b00"

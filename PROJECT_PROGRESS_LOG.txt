@@ -423,3 +423,975 @@ Reverse Agent 项目进展日志（截至 2026-04-16）
   2. 若 bridge 无进展，再做 strata 长跑，并同时导出总榜与分层榜。
   3. 只有前两步都无新进展时，才做围绕新 exact2 anchor 的定向 SMT。
 
+二十、bridge-first 实跑收口与 compare 前真值扩展（2026-04-21）
+1) 真实样本 bridge-first 主线已完整执行
+- 真实样本：
+  - `E:\xwechat_files\wxid_9ky6h8wz58b912_a1e5\msg\file\2026-04\samplereverse.exe`
+- 本轮主线 artifact：
+  - `solve_reports\tool_artifacts\samplereverse_compare_aware_bridge_refresh_20260421\run_summary.json`
+  - `solve_reports\tool_artifacts\samplereverse_compare_aware_bridge_refresh_20260421\bridge\pairscan_summary.json`
+  - `solve_reports\tool_artifacts\samplereverse_compare_aware_bridge_refresh_20260421\bridge\bridge_search_result.json`
+  - `solve_reports\tool_artifacts\samplereverse_compare_aware_bridge_refresh_20260421\bridge\bridge_validation\bridge_validation.json`
+  - `solve_reports\tool_artifacts\samplereverse_compare_aware_bridge_refresh_20260421\samplereverse_compare_aware_result.json`
+  - `solve_reports\tool_artifacts\samplereverse_compare_aware_bridge_refresh_20260421\samplereverse_compare_aware_strata_summary.json`
+- 主 anchor：
+  - `78d540b49c590770`
+- 执行顺序已验证为：
+  - `pairscan -> triad/quartet/quint -> bridge validation -> refine -> SMT`
+
+2) 本轮真实样本结果
+- bridge 未超过旧基线：
+  - `bridge_validation` 最优仍为 `78d540b49c59077041414141414141`
+  - `runtime_ci_exact_wchars=2`
+  - `runtime_ci_distance5=246`
+  - `compare_semantics_agree=true`
+- refine 未超过 bridge：
+  - `samplereverse_compare_aware_result.json` 最优仍为同一 exact2 候选
+  - `strata_summary` 中 `bridge_promoted` 为空，`refine_anchors` 仅保留 `78d540b49c590770` 与 `95a3f65dcedb6290`
+- SMT 仅复现旧盆地：
+  - `completed_stage=smt`
+  - 未出现 `runtime_ci_exact_wchars >= 3`
+  - 未出现 `runtime_ci_distance5 < 246`
+
+3) 停滞位置判断
+- 停滞首先发生在 bridge：
+  - `pairscan` 热点位只稳定收敛到 `[0, 1]`
+  - 未形成可用 `hot_nibbles`
+  - 无 bridge promoted anchor
+- refine 和 SMT 只是复现旧 exact2 盆地，没有产生新的 runtime 改善。
+- 因此下一阶段不应继续加长跑预算，优先级切换为 compare 前真值提取。
+
+4) compare 前真值扩展已落地
+- `reverse_agent\olly_scripts\compare_probe.py` 现新增并统一输出：
+  - `runtime_lhs_prefix_hex_16`
+  - `runtime_lhs_prefix_bytes_captured`
+- `RuntimeCompareEvidence` 与 compare-aware validation 已同步携带这些字段，不再只保留前 10 字节摘要。
+- `SamplereverseProfile.collect_runtime_probes()` 已对 `run_compare_probe()` 显式启用 16 字节 capture。
+- 当前测试基线：
+  - `python -m pytest -q` -> `81 passed`
+
+5) 新真值 artifact
+- 已对当前最优 exact2 候选执行扩展 CompareProbe：
+  - `solve_reports\tool_artifacts\samplereverse_compare_truth_refresh_20260421\compare_probe_exact2_anchor.json`
+- 结果：
+  - `runtime_lhs_prefix_hex_10=46006c004464830d311c`
+  - `runtime_lhs_prefix_hex_16=46006c004464830d311c701038525b85`
+  - `runtime_lhs_prefix_bytes_captured=16`
+  - `runtime_ci_exact_wchars=2`
+  - `runtime_ci_distance5=246`
+  - `compare_semantics_agree=true`
+
+6) 下一对话固定起点
+- 不再继续扩 bridge/refine 预算来碰运气。
+- 下一步优先做：
+  1. 围绕 `runtime_lhs_prefix_hex_16` 增加 compare 前真值对齐分析，确认第 6 到 8 个字节是否能反推出新的 bridge 热点位。
+  2. 若 extended runtime prefix 暴露出稳定结构偏差，再回到 `compare_aware_search.py` 修正热点位提取或局部评分。
+  3. 只有在 extended truth 仍无法提供额外约束时，才继续收缩到单 anchor 的局部 SMT。 
+
+二十一、64 字节 compare 真值与局部盆地复核（2026-04-21）
+1) CompareProbe 已支持更长的 compare 前缓冲区抓取
+- `reverse_agent\olly_scripts\compare_probe.py` 现已真正按 `--capture-prefix-bytes` 放宽 Frida 读取长度，不再只是输出层截断参数。
+- 新增统一字段：
+  - `runtime_lhs_prefix_hex`
+  - `runtime_lhs_prefix_bytes_captured`
+- 兼容字段仍保留：
+  - `runtime_lhs_prefix_hex_10`
+  - `runtime_lhs_prefix_hex_16`
+- 回归：
+  - `python -m pytest -q` -> `81 passed`
+
+2) 当前最优 exact2 anchor 的 64 字节运行时/离线一致性
+- 真实样本 artifact：
+  - `solve_reports\tool_artifacts\samplereverse_compare_truth_refresh_20260421\compare_probe_exact2_anchor_64b.json`
+- 候选：
+  - `78d540b49c59077041414141414141`
+- 结果：
+  - `runtime_lhs_prefix_bytes_captured=64`
+  - `runtime_lhs_prefix_hex == lhs_wide_hex`
+  - 运行时 64 字节：
+    - `46006c004464830d311c701038525b853072ee18c26f2b523688e43ab9670038ac3d9da73cee402b95cf8934602bfb99ba4173702e4f23659def4313aa338f64`
+  - 离线 `_decrypt_prefix(candidate, 64)` 与上面完全一致。
+- 结论：
+  - 当前 transform/RC4 模型不仅在前 10 或 16 字节上有效，在当前 exact2 盆地上对前 64 字节也与实机一致。
+  - 因此后续优化重点不再是“怀疑模型失真”，而是“如何让搜索目标利用更长窗口结构”。
+
+3) 局部盆地复核
+- 对主 anchor `78d540b49c590770` 做了两类离线组合实验：
+  - 前 5 个位置高价值单字节池组合；
+  - 全 8 个位置高价值单字节池组合（`4^8 = 390625`）。
+- 结果：
+  - 两类实验都未超过当前最优 `runtime_ci_exact_wchars=2 / ci_distance5=246` 对应的离线盆地。
+  - 说明“仅靠当前 exact2 anchor 周围的局部单字节高价值组合”不足以打出 `exact3`。
+
+4) 历史长窗口家族的真实样本复核
+- 本轮已对以下历史候选执行 CompareProbe：
+  - `m56_family = 720df805616041414141`
+  - `m60_family = 5542f10a7b764141414141`
+  - `legacy_best = 455f7d39010101`
+- 结果均不优于 L15 主线：
+  - `m56_family` -> `runtime_ci_exact_wchars=0`, `runtime_ci_distance5=620`
+  - `m60_family` -> `runtime_ci_exact_wchars=0`, `runtime_ci_distance5=1042`
+  - `legacy_best` -> `runtime_ci_exact_wchars=0`, `runtime_ci_distance5=617`
+- 结论：
+  - 旧 `m56/m60` 家族不足以推翻当前 `L15(prefix8)` 主线假设。
+  - 下一轮不要把精力切回旧长度家族盲搜。
+
+5) 下一轮固定方向
+- 可以做：
+  1. 在 `compare_aware_search.py` 中引入“长窗口结构目标”，让排序/引导阶段消费 `runtime_lhs_prefix_hex` 或离线 64 字节结构，而不只看前 10 字节。
+  2. 在保持 `L15(prefix8)` 的前提下，尝试更强的约束式 prefix8 搜索，而不是继续只做局部 pair/triad 邻域。
+- 不建议做：
+ 1. 继续单纯增加 bridge/refine 预算；
+ 2. 回退到旧 `sample_solver` 全局盲搜；
+ 3. 重新主攻 `m56/m60` 旧长度窗口。 
+
+二十二、长窗口评分与 guided pool 主线落地（2026-04-21）
+1) 代码实现已完成
+- 关键改动：
+  - `reverse_agent\transforms\samplereverse.py`
+  - `reverse_agent\strategies\compare_aware_search.py`
+  - `reverse_agent\profiles\samplereverse.py`
+  - `tests\test_compare_aware_search_strategy.py`
+- 已落地内容：
+  - `score_prefix()` 新增长窗口结构指标：
+    - `raw_prefix_hex_64`
+    - `wide_ascii_contiguous_16`
+    - `wide_ascii_total_16`
+    - `wide_zero_high_pairs_16`
+    - `flaglike_tail_pairs_16`
+  - compare-aware 主线阶段顺序改为：
+    - `bridge -> guided_pool -> refine -> smt`
+  - `SamplereverseProfile.collect_runtime_probes()` 默认已改为 `capture_prefix_bytes=64`
+  - 新 artifact：
+    - `samplereverse_compare_aware_guided_pool_result.json`
+    - `samplereverse_compare_aware_guided_pool_validation.json`
+
+2) 自动化回归
+- 当前测试基线：
+  - `python -m pytest -q` -> `85 passed`
+
+3) 64 字节 recheck
+- 新 artifact：
+  - `solve_reports\tool_artifacts\samplereverse_compare_truth_refresh_20260421\compare_probe_exact2_anchor_64b_recheck.json`
+- 候选：
+  - `78d540b49c59077041414141414141`
+- 结果：
+  - `runtime_lhs_prefix_bytes_captured=64`
+  - `runtime_ci_exact_wchars=2`
+  - `runtime_ci_distance5=246`
+  - 运行时 `runtime_lhs_prefix_hex` 与离线 `_decrypt_prefix(candidate, 64)` 完全一致
+
+4) 真实样本新主线回归
+- artifact 目录：
+  - `solve_reports\tool_artifacts\samplereverse_compare_aware_guided_pool_refresh_20260421`
+- 阶段执行情况：
+  - `bridge` 最优仍为主 anchor `78d540b49c59077041414141414141`
+  - `guided_pool` 已真实执行，覆盖位置 `[0,1,2,3,4]`，每位小池 10 个值，beam 上限 16
+  - `refine` 与 `smt` 均已执行；`smt` 返回 `unknown`
+- 当前最优：
+  - `best bridge = 78d540b49c59077041414141414141`
+  - `best refine = 78d540b49c59077041414141414141`
+  - `best smt = none`
+  - `compare_semantics_agree = true`
+  - `runtime_ci_exact_wchars = 2`
+  - `runtime_ci_distance5 = 246`
+- 结论：
+  - 本轮没有超过基线 `246`
+  - 停滞点已可明确归因到：
+    - `bridge` 未突破旧 exact2 盆地
+    - `guided_pool` 也未筛出优于主 anchor 的 runtime 结果
+    - `refine` 复现旧盆地
+    - `smt` 未得到可用候选
+
+5) 下一轮固定方向
+- 应优先做：
+  1. 让 long-window 结构目标不只做 tie-break，而是进入更强约束或更强筛选；
+  2. 基于当前 `guided_pool` value pool 和 64 字节真值，分析第 0 到 4 字节是否存在更有信息量的组合/约束方式；
+  3. 若继续使用 SMT，优先把长窗口结构目标并入求解后筛选，而不是继续扩大变量位。
+- 不建议做：
+  1. 继续单纯放大 `guided_pool` / `refine` 预算；
+  2. 回退到旧 `sample_solver` 盲搜；
+  3. 重新切回 `m56/m60` 长度主线。 
+
+2026-04-21 继续迭代：exploratory guided pool
+
+1) 本轮代码调整
+- 文件：
+  - `reverse_agent/strategies/compare_aware_search.py`
+  - `tests/test_compare_aware_search_strategy.py`
+- 变更：
+  - `guided_pool` 的 beam 保留策略从“只保 exact_floor 命中项”改为“双轨保留”：
+    - 先保 `ci_exact_wchars >= exact_floor` 的主线候选；
+    - 再追加少量 compare-aware 排序最优的探索候选，默认 `exploration_slots=4`。
+  - guided pool artifact 新增：
+    - `exploration_slots`
+    - `stage_stats`
+    - 每一层的 `primary_kept` / `exploratory_kept` / `floor_matched` / `beam_size`
+  - 新增单测，确认 beam 会保留有限探索尾部，而不会重新退化成盲搜。
+
+2) 自动化回归
+- 当前测试基线：
+  - `python -m pytest -q` -> `86 passed`
+
+3) 真实样本回归
+- artifact 目录：
+  - `solve_reports\tool_artifacts\samplereverse_compare_aware_exploratory_pool_refresh_20260421`
+- 阶段执行情况：
+  - `bridge` 仍停在主 anchor `78d540b49c59077041414141414141`
+  - `guided_pool` 已不再塌成 beam=1，而是稳定为：
+    - 每层 `primary=1`
+    - 每层 `explore=4`
+    - 每层 `beam=5`
+  - `guided_pool` Top 5 候选已进入真实 CompareProbe 校验
+  - `refine` 与 `smt` 仍然执行；`smt` 继续返回 `unknown`
+- 当前最优：
+  - `best bridge = 78d540b49c59077041414141414141`
+  - `best guided_pool = 78d540b49c59077041414141414141`
+  - `best refine = 78d540b49c59077041414141414141`
+  - `best smt = none`
+  - `compare_semantics_agree = true`
+  - `runtime_ci_exact_wchars = 2`
+  - `runtime_ci_distance5 = 246`
+- 探索候选实机结果：
+  - `788940b49c590770...` -> `runtime_ci_distance5 = 293`
+  - `78d540c79c590770...` -> `runtime_ci_distance5 = 346`
+  - `3e0940b49c590770...` -> `runtime_ci_distance5 = 408`
+  - `780940b49c590770...` -> `runtime_ci_distance5 = 424`
+
+4) 本轮结论
+- 这轮已经证伪“问题只是 beam 过窄”这个假设：
+  - beam 现在已稳定展开；
+  - 探索候选也已进入真实 compare；
+  - 但仍没有任何候选把 `runtime_ci_distance5` 压到 `246` 以下。
+- 因此当前停滞点不是 guided pool 没展开，而是：
+  - 第 0 到 4 字节的小池组合本身没有导向更优盆地；
+  - 继续单纯扩 pool/beam 预算的收益预计很低。
+
+5) 下一轮固定方向
+- 应优先做：
+  1. 把 long-window 结构目标从 tie-break 提升为更强筛选或约束；
+  2. 利用现有 `stage_stats` 和 `position_profiles`，重新设计 position/value 组合规则，而不是继续均匀组合；
+  3. 若继续使用 SMT，优先把这些结构目标并入目标函数或候选过滤。
+- 不建议做：
+  1. 继续只加 `guided_pool` 的 `beam_limit` 或 `exploration_slots`；
+  2. 回退到 blind brute force；
+  3. 重新开放旧长度主线。
+
+2026-04-21 继续迭代：frontier validation + frontier anchors
+
+1) 本轮代码调整
+- 文件：
+  - `reverse_agent/strategies/compare_aware_search.py`
+  - `tests/test_compare_aware_search_strategy.py`
+- 变更：
+  - 新增 `_diverse_validation_candidates()`，final validation 不再只盯 `ci_exact_wchars>=2` 主盆地，而是显式混入：
+    - best overall
+    - best exact2
+    - best exact1
+    - best exact0
+    - best distance / best raw-distance frontiers
+  - `CompareAwareSearchStrategy.run()` 在 refine 后会把 `guided + bridge + refine` 的跨阶段 frontier 写入 `validation_candidates`，再统一跑 CompareProbe。
+  - `guided_pool` 的 `exact_floor` 调整为跟随 base exact：
+    - exact2 base 仍保守；
+    - exact0 base 允许 `exact_floor=0`，避免 frontier basin 被提前截断。
+  - 新增单测，确认多样化 validation frontier 会保留跨盆地候选。
+
+2) 自动化回归
+- 当前测试基线：
+  - `python -m pytest -q` -> `87 passed`
+
+3) 真实样本主线回归
+- artifact 目录：
+  - `solve_reports\tool_artifacts\samplereverse_compare_aware_frontier_validation_refresh_20260421`
+- 结果：
+  - 主 anchor `78d540b49c590770...` 仍是最强 exact2，`runtime_ci_distance5=246`
+  - 但 final validation 已首次把低 exact / 低 distance frontier 候选送入真实 CompareProbe
+- 关键新盆地：
+  - `f649b64b5e97dbd0...` -> `runtime_ci_exact_wchars=0`, `runtime_ci_distance5=218`, `compare_semantics_agree=true`
+  - `0d4e75f7e9609a10...` -> `runtime_ci_distance5=227`, `compare_semantics_agree=true`
+  - `7526c36cd2e52b60...` -> `runtime_ci_distance5=238`, `compare_semantics_agree=true`
+  - `e80c7471d342f6f0...` 离线 `174`，但运行时 `242` 且 `compare_semantics_agree=false`
+- 结论：
+  - compare-aware 主线不再只有一个 exact2 盆地；
+  - 已确认存在更低 runtime distance 的 compare-agree exact0 frontier。
+
+4) frontier anchor 定向实验
+- artifact 目录：
+  - `solve_reports\tool_artifacts\samplereverse_frontier_anchor_probe_20260421`
+  - `solve_reports\tool_artifacts\samplereverse_frontier_anchor_probe_floor0_20260421`
+  - `solve_reports\tool_artifacts\samplereverse_refine_frontier_mix_20260421`
+  - `solve_reports\tool_artifacts\samplereverse_refine_frontier_mix2_20260421`
+  - `solve_reports\tool_artifacts\samplereverse_anchor_a47a_probe_20260421`
+- 结果：
+  - 把 `f649...` 混入 refine anchor 后，打出新的 compare-agree 更优盆地：
+    - `a47a0a74bd353550...` -> `runtime_ci_distance5=208`, `compare_semantics_agree=true`
+  - 围绕 `a47a...` 的 bridge / guided pool 没再低于 `208`
+  - 对 `a47a...` 做 8 个字节位的单字节画像后确认：
+    - 所有单字节最优都不优于 base 自身；
+    - 当前 `208` 盆地在单字节层面已局部稳定。
+
+5) 本轮结论
+- 当前最优 runtime compare frontiers：
+  - exact2 主盆地：`78d540b49c590770...` -> `246`
+  - exact0 frontier：`a47a0a74bd353550...` -> `208`
+- 这说明：
+  - “低 exact 但低 distance”的 frontier 不是噪声，已经能稳定通过 compare-agree 校验；
+  - 继续只围绕 exact2 盆地搜索会漏掉真实更优 basin；
+  - 但 `a47a...` 和 `f649...` 两个 frontier 在当前单字节/局部 bridge 条件下都没有直接转成更高 exact。
+
+6) 下一轮固定方向
+- 应优先做：
+  1. 把 `runtime_ci_distance5=208` 的 compare-agree frontier anchor 正式接入主线，而不是只靠手工实验；
+  2. 让 guided/SMT 面向 frontier anchor 时使用“多字节联动”目标，而不是单字节画像；
+  3. 对 `a47a...` 盆地优先做 pair/triad 式的 distance-driven 搜索，而不是 exact-driven bridge 排序。
+- 不建议做：
+  1. 再次只扩单字节小池；
+  2. 再次只复跑 `78d540...` 主盆地；
+  3. 把 `e80c...` 这类 `compare_semantics_agree=false` 的假前沿当成主突破点。
+
+2026-04-21 继续迭代：frontier mainline implementation
+
+1) 本轮代码调整
+- 文件：
+  - `reverse_agent/strategies/compare_aware_search.py`
+  - `reverse_agent/samplereverse_z3.py`
+  - `tests/test_compare_aware_search_strategy.py`
+- 变更：
+  - `CompareAwareSearchStrategy` 新增正式的 frontier anchor 选择逻辑：
+    - `exact2_seed`
+    - `exact1_frontier`
+    - `exact0_frontier`
+    - `distance_probe`
+  - final validation 记录新增：
+    - `offline_raw_distance10`
+    - `frontier_role`
+  - guided pool 新增 `anchor_mode` 分流：
+    - `exact2` 保持现有 exact-aware 排序
+    - `frontier` 改为 distance-driven 排序
+  - frontier 模式新增 byte-pair profiling：
+    - `pair_profiles`
+    - `pair_stage_stats`
+    - 以 pair profile 先产 seed，再进入 bounded beam 扩展
+  - refine 主线新增 frontier-guided 与 frontier-refine 接力：
+    - 主线先跑初始 refine
+    - 再从 compare-agree frontier 自动提取 anchors
+    - 再跑 frontier-guided
+    - 再跑一轮 frontier-refine
+  - SMT 新增 `anchor_mode`，frontier base 时改为优先最小化距离。
+
+2) 自动化回归
+- 当前测试基线：
+  - `python -m pytest -q` -> `89 passed`
+
+3) 真实样本回归
+- artifact 目录：
+  - `solve_reports\tool_artifacts\samplereverse_frontier_mainline_refresh_20260421`
+  - `solve_reports\tool_artifacts\samplereverse_frontier_mainline_refresh2_20260421`
+- 结果：
+  - frontier anchors 已正式进入主线，不再需要手工回灌：
+    - `95a3...` 会自动进入 frontier-guided
+    - `f649...` 会自动进入 frontier-guided
+    - `a47a...` 会自动出现在 final frontier summary 中
+  - 当前最优仍未超过：
+    - `a47a0a74bd353550...` -> `runtime_ci_distance5=208`, `compare_semantics_agree=true`
+  - exact2 主盆地仍为：
+    - `78d540b49c590770...` -> `runtime_ci_distance5=246`
+- 结论：
+  - “frontier anchor 主线化”已经生效；
+  - 但本轮 mainline refresh 和 refresh2 都没有把 `208` 再压低；
+  - 当前 `a47a...` frontier 已被稳定确认，但还没有被多字节搜索转成更高 exact。
+
+4) 当前判断
+- 现在主要瓶颈已经不是：
+  - frontier 没进入主线
+  - guided beam 太窄
+  - exact0 basin 被 gate 截断
+- 现在主要瓶颈是：
+  - 当前 distance-driven pair-profile 还不够强，没把 `a47a...` 推到更低 distance；
+  - current frontier mainline 仍然更擅长“发现更优 basin”，不擅长“在该 basin 内继续深挖”。
+
+5) 下一轮固定方向
+- 应优先做：
+  1. 对 `a47a...` 引入更强的 pair/triad distance-driven排序与保留规则，不再只把 pair 当 seed；
+  2. 让 frontier-guided 在第二轮 frontier-refine 产生新盆地后继续闭环一轮，而不是本轮止于 summary；
+  3. 若继续尝试 SMT，优先围绕 `a47a...` 这类 compare-agree frontier 做局部多字节约束。
+- 不建议做：
+  1. 再次只放大 exact2 主盆地预算；
+  2. 回退到 blind brute force；
+  3. 把 `compare_semantics_agree=false` 的低 distance 假前沿当成主线。
+
+2026-04-22 继续迭代：frontier closure verification
+
+1) 本轮代码与测试收口
+- 文件：
+  - `reverse_agent/strategies/compare_aware_search.py`
+  - `tests/test_compare_aware_search_strategy.py`
+- 变更：
+  - frontier-guided result/validation 统一带上：
+    - `source_anchor`
+    - `anchor_mode`
+    - `anchor_lineage`
+  - frontier 模式新增：
+    - `pair_frontier_pool`
+    - `triad_frontier_pool`
+  - 主线新增：
+    - `frontier_iterations`
+    - `frontier_converged_reason`
+    - 至多 2 轮 frontier 闭环
+  - 自动化测试新增：
+    - lineage 透传验证
+    - frontier 改善时进入第二轮 guided 的控制流验证
+
+2) 自动化回归
+- 当前测试基线：
+  - `python -m pytest -q tests/test_compare_aware_search_strategy.py` -> `19 passed`
+  - `python -m pytest -q` -> `91 passed`
+
+3) 真实样本闭环回归
+- 真实样本路径：
+  - `E:\xwechat_files\wxid_9ky6h8wz58b912_a1e5\msg\file\2026-04\samplereverse.exe`
+- 新 artifact 目录：
+  - `solve_reports\tool_artifacts\samplereverse_frontier_closure_refresh_20260422`
+- 结果：
+  - 新闭环主线已真实执行：
+    - `bridge -> guided(seed) -> refine(seed) -> guided(frontier) -> refine(frontier) -> smt`
+  - `frontier_converged_reason = distance_not_improved`
+  - 第二轮 frontier-guided 未触发，原因不是控制流缺失，而是第一轮 frontier-refine 后没有产生更优 frontier
+  - 当前 best exact2 runtime 仍为：
+    - `78d540b49c590770...` -> `runtime_ci_exact_wchars=2`, `runtime_ci_distance5=246`
+  - 当前 best frontier runtime 更新为：
+    - `5a3e7f46ddd474d0...` -> `runtime_ci_exact_wchars=1`, `runtime_ci_distance5=258`, `compare_semantics_agree=true`
+  - 旧的 `a47a... -> 208` 没有在这轮闭环里复现成 active frontier
+
+4) 结论
+- 本轮计划的“先验证新闭环”已经完成，且得到真实样本证据：
+  - 闭环控制流是通的；
+  - 停滞点现在可以由 `frontier_summary` / `strata_summary` 直接定位；
+  - frontier 方向仍有收益，但当前更像是从 exact0 盆地切换到了 exact1 / `258` 盆地。
+- 下一轮若继续推进，应优先围绕：
+  - `5a3e7f46ddd474d0...`
+  - 以及 `pair_frontier_pool` / `triad_frontier_pool`
+  做 feedback 型 frontier-guided 或更强 frontier SMT，
+  而不是重新扩大 exact2 主盆地预算。
+
+## 2026-04-22 反馈式 Frontier Value Pool 实施
+
+1) 代码实现
+- 已在 `reverse_agent/strategies/compare_aware_search.py` 落地 feedback 型 frontier-guided：
+  - 新增 frontier stage-local improvement gate：
+    - `ci_distance5` 严格下降；
+    - 或 `ci_distance5` 持平且 `raw_distance10` 严格下降；
+    - 或 runtime `runtime_ci_distance5` 严格下降。
+  - `pair_frontier_pool` / `triad_frontier_pool` 现在会标注 `improvement_gate_passed`
+  - 新增 feedback value pool 聚合：
+    - 从 improved pair/triad 候选提取高频字节值；
+    - 回填到下一轮 frontier 的 `value_pools`
+  - frontier refresh 改成优先使用 improved frontier lineage 作为下一轮 active frontier
+  - frontier summary / strata summary 新增：
+    - `improved_pair_frontier_pool_count`
+    - `improved_triad_frontier_pool_count`
+    - `feedback_value_pools`
+    - `active_frontier_candidates`
+    - `frontier_stall_stage`
+  - SMT payload 现会记录 frontier feedback value pool 上下文
+
+2) 自动化回归
+- 新增测试覆盖：
+  - improvement gate 的严格判定
+  - improved pair/triad -> feedback value pool 聚合
+  - frontier refresh 只晋升 improved frontier
+  - SMT payload 会保留 feedback value pool
+- 当前测试基线：
+  - `python -m pytest -q tests/test_compare_aware_search_strategy.py` -> `23 passed`
+  - `python -m pytest -q` -> `95 passed`
+
+3) 真实样本回归
+- 真实样本路径：
+  - `E:\xwechat_files\wxid_9ky6h8wz58b912_a1e5\msg\file\2026-04\samplereverse.exe`
+- 新 artifact 目录：
+  - `solve_reports\tool_artifacts\samplereverse_frontier_feedback_refresh_20260422`
+- 结果：
+  - 新 feedback 主线已真实执行到：
+    - `bridge -> guided(seed) -> refine(seed) -> guided(frontier) -> refine(frontier) -> smt`
+  - `frontier_converged_reason = distance_not_improved`
+  - `frontier_stall_stage = frontier_refine`
+  - 当前 best exact2 runtime 仍为：
+    - `78d540b49c590770...` -> `runtime_ci_exact_wchars=2`, `runtime_ci_distance5=246`
+  - 当前 best frontier runtime 仍为：
+    - `5a3e7f46ddd474d0...` -> `runtime_ci_exact_wchars=1`, `runtime_ci_distance5=258`
+  - feedback 机制已真实改变第二条 frontier 的搜索空间：
+    - `frontier_guided_1_788940...` 中出现
+      - `improved_pair_frontier_pool_count = 1`
+      - `improved_triad_frontier_pool_count = 1`
+      - 非空 `feedback_sources` 与 `feedback_value_pools`
+  - 但这些 improved pair/triad 仍未在 runtime validation / frontier refine 后形成更优 compare-agree frontier
+  - `frontier_guided_1_5a3e...` 这条 exact1 frontier 上，improved pair/triad 计数仍为 0，说明当前停滞主要发生在 exact1 frontier 的局部深挖不足，而不是反馈控制流缺失
+
+4) 结论
+- 本轮计划已完成：
+  - feedback 型 value pool 已进入主线；
+  - improvement gate 已进入 frontier refresh；
+  - 停滞点现在能被 artifact 直接定位。
+- 当前最重要的新证据是：
+  - feedback 机制本身已生效；
+  - 但真正需要突破的是 `5a3e7f46ddd474d0...` 这条 exact1 frontier 在 `pair/triad -> validation -> refine` 之后仍没有 runtime 改善。
+- 下一轮若继续推进，应优先考虑：
+  - 提升 exact1 frontier 上 pair/triad 值池的质量，而不是再扩大 beam；
+  - 或把 long-window / runtime compare 信号更强地接入 exact1 frontier 的保留规则。
+
+## 2026-04-22 Exact1 Frontier Lane 实施
+
+1) 代码实现
+- 已在 `reverse_agent/strategies/compare_aware_search.py` 将 frontier lane 正式拆成 exact1 / exact0 两条内部子模式：
+  - 新增 `frontier_submode`
+    - `frontier_exact1`
+    - `frontier_exact0`
+  - exact1 lane 的 guided pool 改成：
+    - 默认只放开前 `3-4` 个热点位
+    - `exact_floor` 不再退回 `0`，而是保持 `>= 1`
+    - value pool 以
+      - base byte
+      - small perturbation
+      - exact1 pair/triad winning values
+      为主，不再把单字节 profile 当成唯一主来源
+  - exact1 lane 不再吸收 exact0 的 `incoming_feedback`
+  - exact1 improvement gate 现在允许：
+    - `ci_distance5` 持平
+    - `raw_distance10` 改善
+    - 且 `ci_exact_wchars` 不下降
+  - frontier refine / refresh 现在按 active lane 隔离：
+    - 有 exact1 improved frontier 时优先 exact1
+    - 只有 exact1 没有 improved candidate 时才允许 exact0 接棒
+  - frontier refine 的 top entry 上下文改成按 candidate anchor 回填，避免 exact2 候选被错误标成 exact1 lineage
+  - SMT base 选择新增 exact1 优先规则，且 exact1 SMT 只消费 exact1 lineage 的 comparison entries / feedback pool
+
+2) 自动化回归
+- 新增测试覆盖：
+  - `frontier_submode` 透传
+  - exact1 improvement gate
+  - exact1 value pool 不吸收 exact0 incoming feedback
+  - SMT base 优先 exact1 frontier
+- 当前测试基线：
+  - `python -m pytest -q tests/test_compare_aware_search_strategy.py` -> `26 passed`
+  - `python -m pytest -q` -> `98 passed`
+
+3) 真实样本回归
+- 真实样本路径：
+  - `E:\xwechat_files\wxid_9ky6h8wz58b912_a1e5\msg\file\2026-04\samplereverse.exe`
+- 新 run 目录：
+  - `solve_reports\harness_runs\samplereverse_exact1_frontier_quality_20260422`
+- 关键 artifact：
+  - `solve_reports\harness_runs\samplereverse_exact1_frontier_quality_20260422\reports\tool_artifacts\samplereverse\samplereverse_compare_aware_frontier_summary.json`
+  - `solve_reports\harness_runs\samplereverse_exact1_frontier_quality_20260422\reports\tool_artifacts\samplereverse\samplereverse_compare_aware_strata_summary.json`
+  - `solve_reports\harness_runs\samplereverse_exact1_frontier_quality_20260422\reports\tool_artifacts\samplereverse\frontier_guided_1_5a3e7f46ddd474d0\samplereverse_compare_aware_guided_pool_result.json`
+- 结果：
+  - 新 lane 逻辑已真实执行，且 active frontier 明确变成：
+    - `frontier_active_lane = frontier_exact1`
+  - 当前收敛状态：
+    - `frontier_converged_reason = distance_not_improved`
+    - `frontier_stall_stage = pair_pool`
+    - `frontier_exact1_stall_reason = distance_not_improved`
+  - 当前 best exact2 runtime 仍为：
+    - `78d540b49c590770...` -> `runtime_ci_exact_wchars=2`, `runtime_ci_distance5=246`
+  - 当前 best exact1 frontier runtime 仍为：
+    - `5a3e7f46ddd474d0...` -> `runtime_ci_exact_wchars=1`, `runtime_ci_distance5=258`
+  - exact1 lane 的搜索空间已经明显变化：
+    - `frontier_submode = frontier_exact1`
+    - `positions = [0,1,2,3]`
+    - `exact_floor = 1`
+    - `feedback_value_pools` 已不再只是单字节 profile，示例：
+      - pos0 -> `[0x5a, 0x59, 0x5b, 0x58, 0x5c, 0x33]`
+  - 但这轮 exact1 lane 的 `pair/triad` 仍未产出 improved candidate：
+    - `improved_pair_frontier_pool_count = 0`
+    - `improved_triad_frontier_pool_count = 0`
+  - 这说明瓶颈已经进一步收敛到：
+    - exact1 lane 的 pair-level 组合质量
+    - 而不是 beam、feedback 控制流或 refine/SMT 编排
+- 备注：
+  - harness 在模型阶段有一次 `gbk` 编码错误，但 compare-aware artifact 已完整落盘；本轮判断以这些 artifact 为准，不受该错误影响
+
+4) 结论
+- 本轮计划已完成，且关键假设已被真实样本验证：
+  - exact1 / exact0 lane 分流是有效的；
+  - exact1 不再被 exact0 feedback 污染；
+  - 当前真正的停滞点已经从 `frontier_refine` 前移到了 `exact1 pair_pool`
+- 下一轮若继续推进，优先级应改为：
+  - 针对 `5a3e7f46ddd474d0...` 做更强的 exact1 pair-value 生成，而不是继续扩 beam
+  - 或把 exact1 lane 的 pair ranking 再向 runtime/offline 长窗口结构信号倾斜
+
+## 2026-04-22 Exact1 Locked Pair 生成实施
+
+1) 代码实现
+- 已在 `reverse_agent/strategies/compare_aware_search.py` 为 exact1 lane 加入 pair-level 定向生成：
+  - 新增 exact1 pair locking：
+    - `locked_pair_positions`
+    - 默认只保留前 `2-3` 组 exact1 局部 pair
+  - exact1 pair generation mode：
+    - `pair_generation_mode = exact1_locked_pairs`
+  - exact1 pair generation sources 会落盘：
+    - `source_anchor_diff_positions`
+    - `bridge_diff_positions`
+    - `top_ranked_pairs`
+  - exact1 pair soft gate 已加入：
+    - `ci_exact_wchars` 从 `1 -> 0` 时默认丢弃
+    - 只有 distance 改善足够大时才允许逃逸
+  - 修复了 pair pool 的一个控制流问题：
+    - 某一层 rank 全被 soft gate 过滤时，搜索不再提前中断，后续更深 rank 仍可继续尝试
+  - guided pool artifact 现新增：
+    - `locked_pair_positions`
+    - `pair_generation_mode`
+    - `pair_generation_sources`
+    - `pair_drop_reasons`
+
+2) 自动化回归
+- 新增测试覆盖：
+  - exact1 locked pair 只生成被锁定的 pair positions
+  - exact1 soft gate 会过滤“降 exact 且无明显收益”的 pair
+  - pair pool 深层 rank 不会因中间层被过滤而提前中断
+- 当前测试基线：
+  - `python -m pytest -q tests/test_compare_aware_search_strategy.py` -> `28 passed`
+  - `python -m pytest -q` -> `100 passed`
+
+3) 真实样本回归
+- 真实样本路径：
+  - `E:\xwechat_files\wxid_9ky6h8wz58b912_a1e5\msg\file\2026-04\samplereverse.exe`
+- 新 run 目录：
+  - `solve_reports\harness_runs\samplereverse_exact1_pair_quality_20260422`
+- 关键 artifact：
+  - `solve_reports\harness_runs\samplereverse_exact1_pair_quality_20260422\reports\tool_artifacts\samplereverse\samplereverse_compare_aware_frontier_summary.json`
+  - `solve_reports\harness_runs\samplereverse_exact1_pair_quality_20260422\reports\tool_artifacts\samplereverse\samplereverse_compare_aware_strata_summary.json`
+  - `solve_reports\harness_runs\samplereverse_exact1_pair_quality_20260422\reports\tool_artifacts\samplereverse\frontier_guided_1_5a3e7f46ddd474d0\samplereverse_compare_aware_guided_pool_result.json`
+- 结果：
+  - exact1 lane 继续真实成为 active lane：
+    - `frontier_active_lane = frontier_exact1`
+  - 当前仍未突破：
+    - `frontier_converged_reason = distance_not_improved`
+    - `frontier_stall_stage = pair_pool`
+    - `improved_pair_frontier_pool_count = 0`
+    - `improved_triad_frontier_pool_count = 0`
+  - 但 pair 生成已经明显收缩并具备可诊断性：
+    - `pair_generation_mode = exact1_locked_pairs`
+    - `locked_pair_positions = [[0,1],[0,2],[0,3]]`
+    - `pair_frontier_pool_size = 1`
+    - `triad_frontier_pool_size = 5`
+    - `pair_drop_reasons = {"exact_regressed_without_distance_escape": 15}`
+  - 当前 best exact1 frontier 仍为：
+    - `5a3e7f46ddd474d0...` -> `runtime_ci_exact_wchars=1`, `runtime_ci_distance5=258`
+  - 当前 best exact2 仍为：
+    - `78d540b49c590770...` -> `runtime_ci_exact_wchars=2`, `runtime_ci_distance5=246`
+- 备注：
+  - 本轮 harness 收尾依旧在模型阶段踩到 `gbk` 编码错误，但 compare-aware 主线 artifact 已完整产出；结论仍以 artifact 为准
+
+4) 结论
+- 本轮计划已完成，并且把瓶颈进一步定位到了更细一级：
+  - 不是 exact1 lane 没锁对 pair
+  - 也不是 pair gate 完全不工作
+  - 而是当前 exact1 locked pairs 生成出的候选，几乎全部落入
+    - `exact_regressed_without_distance_escape`
+- 下一轮若继续推进，优先级应改为：
+  - 重做 exact1 lane 的 pair value ranking / escape 条件
+  - 或引入更强的 exact1 pair-level runtime/offline 结构信号
+
+[2026-04-22 16:02] Exact1 Pair Escape 双池与真实回归
+
+1) 实现完成
+- 已在 `reverse_agent/strategies/compare_aware_search.py` 为 exact1 lane 接入 pair preserve/escape 双池：
+  - `pair_escape_mode = exact1_dual_lane`
+  - 新增 exact1 pair preserve pool / escape pool 值源
+  - exact1 `1 -> 0` pair 候选不再使用旧的单一硬阈值，而改为：
+    - `ci_distance5` 严格下降；或
+    - `ci_distance5` 持平且 `raw_distance10` 严格下降，并且 pair-level 结构信号更优
+- 新增 pair-level 结构字段并接入 exact1 frontier 排序：
+  - `pair_raw_prefix_hex_16`
+  - `pair_wide_ascii_contiguous_8`
+  - `pair_wide_zero_high_pairs_8`
+  - `pair_flaglike_tail_pairs_8`
+- guided pool artifact 现新增 exact1 pair 诊断字段：
+  - `pair_escape_mode`
+  - `pair_preserve_pool`
+  - `pair_escape_pool`
+  - `pair_escape_candidates_kept`
+  - `pair_escape_candidates_dropped`
+  - `pair_best_preserve_candidate`
+  - `pair_best_escape_candidate`
+- SMT 侧已继承新的 exact1 feedback value pool 上下文，但不改外部接口
+
+2) 自动化回归
+- 新增/更新测试覆盖：
+  - exact1 pair entries 返回 preserve/escape 双池元数据
+  - exact1 escape signal 会过滤“降 exact 但无有效逃逸”的 pair
+  - exact1 escape candidate ranked out 会被单独诊断
+- 当前测试基线：
+  - `python -m pytest -q tests/test_compare_aware_search_strategy.py` -> `29 passed`
+  - `python -m pytest -q` -> `101 passed`
+
+3) 真实样本回归
+- 真实样本路径：
+  - `E:\xwechat_files\wxid_9ky6h8wz58b912_a1e5\msg\file\2026-04\samplereverse.exe`
+- 新 run 目录：
+  - `solve_reports\harness_runs\samplereverse_exact1_pair_escape_20260422`
+- 关键 artifact：
+  - `solve_reports\harness_runs\samplereverse_exact1_pair_escape_20260422\reports\tool_artifacts\samplereverse\samplereverse_compare_aware_frontier_summary.json`
+  - `solve_reports\harness_runs\samplereverse_exact1_pair_escape_20260422\reports\tool_artifacts\samplereverse\samplereverse_compare_aware_strata_summary.json`
+  - `solve_reports\harness_runs\samplereverse_exact1_pair_escape_20260422\reports\tool_artifacts\samplereverse\frontier_guided_1_5a3e7f46ddd474d0\samplereverse_compare_aware_guided_pool_result.json`
+- 结果：
+  - exact1 lane 仍是 active lane：
+    - `frontier_active_lane = frontier_exact1`
+  - 当前仍未突破：
+    - `frontier_converged_reason = distance_not_improved`
+    - `frontier_stall_stage = pair_pool`
+    - `improved_pair_frontier_pool_count = 0`
+    - `improved_triad_frontier_pool_count = 0`
+  - exact1 pair 诊断现在更细了：
+    - `pair_escape_mode = exact1_dual_lane`
+    - `pair_drop_reasons = {"exact_regressed_without_escape_signal": 15}`
+    - `pair_escape_candidates_kept = 0`
+    - `pair_escape_candidates_dropped = 15`
+  - 当前 best exact1 frontier 仍为：
+    - `5a3e7f46ddd474d0...` -> `runtime_ci_exact_wchars=1`, `runtime_ci_distance5=258`
+  - 当前 best exact2 仍为：
+    - `78d540b49c590770...` -> `runtime_ci_exact_wchars=2`, `runtime_ci_distance5=246`
+- 备注：
+  - 本轮 harness 仍在模型阶段踩到 `gbk` 编码错误，但 compare-aware 主线 artifact 已完整产出；结论继续以 artifact 为准
+
+4) 结论
+- 本轮计划已完成。
+- 当前瓶颈进一步缩小为：
+  - exact1 lane 不是没有 escape 值池
+  - 而是当前 escape 候选几乎全部被新的 escape signal 判定为“仍然不够像有效逃逸”
+- 下一轮若继续推进，优先级应改为：
+  - 重做 exact1 escape pool 的值源本身，而不是继续调 beam 或 refine
+  - 或把 runtime/offline 结构信号更直接地接进 exact1 escape signal
+
+[2026-04-22 20:08] Exact1 Lineage Escape 值源接线与真实回归
+
+1) 实现完成
+- 已在 `reverse_agent/strategies/compare_aware_search.py` 将 exact1 escape 值源改为 lineage-driven：
+  - 新增 exact1 lineage value mining
+  - 逃逸值源优先吸收：
+    - `source_anchor_diff`
+    - exact1 lineage context entries
+    - recent compare-aware payload 中的 exact1 候选
+  - 不再以大半径 generic perturbation 作为主 escape source
+- guided artifact 新增/补齐：
+  - `pair_escape_pool_strategy`
+  - `pair_escape_source_values`
+  - `pair_escape_source_counts`
+  - `pair_escape_source_origins`
+  - `lineage_value_mining_summary`
+  - `pair_escape_source_statuses`
+- SMT 的 feedback/value pool 也已优先吸收 exact1 lineage-derived bytes
+
+2) 自动化回归
+- 新增/更新测试覆盖：
+  - exact1 lineage source 优先于 generic perturbation
+  - exact1 pair-local source 不共享 fallback 值
+  - exact1 lineage source 不吸收 exact0 lane 污染
+  - SMT feedback pool 会包含 exact1 lineage-derived bytes
+- 当前测试基线：
+  - `python -m pytest -q tests/test_compare_aware_search_strategy.py` -> `31 passed`
+  - `python -m pytest -q` -> `103 passed`
+
+3) 真实样本回归
+- 新 run 目录：
+  - `solve_reports\harness_runs\samplereverse_exact1_lineage_escape_20260422`
+- 关键 artifact：
+  - `solve_reports\harness_runs\samplereverse_exact1_lineage_escape_20260422\reports\tool_artifacts\samplereverse\samplereverse_compare_aware_frontier_summary.json`
+  - `solve_reports\harness_runs\samplereverse_exact1_lineage_escape_20260422\reports\tool_artifacts\samplereverse\samplereverse_compare_aware_strata_summary.json`
+  - `solve_reports\harness_runs\samplereverse_exact1_lineage_escape_20260422\reports\tool_artifacts\samplereverse\frontier_guided_1_5a3e7f46ddd474d0\samplereverse_compare_aware_guided_pool_result.json`
+- 结果：
+  - exact1 lane 仍是 active lane：
+    - `frontier_active_lane = frontier_exact1`
+  - 当前 best frontier 仍未突破：
+    - `5a3e7f46ddd474d0...` -> `runtime_ci_exact_wchars=1`, `runtime_ci_distance5=258`
+  - lineage-driven source 已真实生效：
+    - `pair_escape_pool_strategy = lineage_driven_exact1`
+    - `pair_escape_source_values` 不再是纯 generic perturbation
+    - 例如位置 `0` 已出现 `120/164/83/80`，位置 `1` 已出现 `213/222/116/11`
+  - 但本轮仍未出现 escape kept：
+    - `pair_escape_candidates_kept = 0`
+    - `pair_escape_candidates_dropped = 15`
+    - `improved_pair_frontier_pool_count = 0`
+  - 新瓶颈已更清楚：
+    - `pair_escape_source_values` 已非空
+    - 但 `pair_escape_source_statuses` 仍显示 `source_empty`
+    - 这说明问题已从“没有 escape source”收缩为“escape source 没有进入 pair_profiles 前排”，即 top-per-pair 截断/排序层面仍在压制 escape 候选
+- 备注：
+  - harness 收尾依旧在模型阶段踩到 `gbk` 编码错误，但 compare-aware artifact 完整；结论继续以 artifact 为准
+
+4) 结论
+- 本轮计划已完成，并且把 exact1 瓶颈再缩小了一层：
+  - 不是没有 lineage-driven source
+  - 而是这些 source 生成的 escape 候选还没成功穿过 pair profile 的前排截断
+- 下一轮若继续推进，优先级应改为：
+  - 重做 exact1 pair profile 的保留/截断策略，使 escape 候选能进入 `pair_profiles[:top_per_pair]`
+  - 或给 exact1 escape 候选单独的 rank lane，避免在 pair profile 阶段就被 preserve 候选完全淹没
+
+## 2026-04-22 21:33:00 Exact1 Pair Profile 双通道保留已落地
+
+1) 本轮目标
+- 按最新计划把 exact1 lane 的 pair profile 从单通道 `top_per_pair` 截断改成 preserve/escape 双通道保留。
+- 目标不是直接解题，而是验证 lineage-driven escape 候选能否真正进入 `pair_profiles`，并把瓶颈从 `profile truncation` 继续往后推。
+
+2) 代码改动
+- 修改文件：
+  - `reverse_agent/strategies/compare_aware_search.py`
+  - `tests/test_compare_aware_search_strategy.py`
+- 关键实现：
+  - 新增 exact1 profile 配额：
+    - `EXACT1_PAIR_PROFILE_PRESERVE_TOP = 4`
+    - `EXACT1_PAIR_PROFILE_ESCAPE_TOP = 2`
+  - 新增 `_exact1_escape_profile_sort_key()`，让 escape 候选先在自己的 lane 内排序。
+  - `_top_compare_aware_pair_entries()` 现在会：
+    - 分别生成 `pair_profile_preserve_entries` / `pair_profile_escape_entries`
+    - 分别保留 `pair_profile_kept_preserve` / `pair_profile_kept_escape`
+    - 产出 `pair_profile_drop_reasons` / `pair_profile_truncation_summary`
+  - `_diverse_pair_frontier_pool()` 现在会消费 profile 级诊断，并把 exact1 escape 状态区分为：
+    - `profile_source_empty`
+    - `profile_ranked_out`
+    - `frontier_gate_failed`
+    - `source_used`
+  - `run_compare_aware_guided_pool()` payload 和返回值已带出新的 profile 级字段。
+  - `run_compare_aware_smt()` / `_smt_feedback_value_pools()` 已改为优先吸收 exact1 `pair_profile_kept_escape`，其次 `pair_profile_kept_preserve`，再回退到 lineage source。
+
+3) 自动化回归
+- 测试结果：
+  - `python -m pytest -q tests/test_compare_aware_search_strategy.py` -> `33 passed`
+  - `python -m pytest -q` -> `105 passed`
+- 新增覆盖点：
+  - exact1 pair profile 会保留 escape lane
+  - profile 层失败会被归因到 `profile_ranked_out`
+  - SMT feedback pool 会继承 exact1 kept profile values
+
+4) 真实样本回归
+- 新 run 目录：
+  - `solve_reports\harness_runs\samplereverse_exact1_profile_escape_20260422`
+- 关键 artifact：
+  - `solve_reports\harness_runs\samplereverse_exact1_profile_escape_20260422\reports\tool_artifacts\samplereverse\samplereverse_compare_aware_frontier_summary.json`
+  - `solve_reports\harness_runs\samplereverse_exact1_profile_escape_20260422\reports\tool_artifacts\samplereverse\samplereverse_compare_aware_strata_summary.json`
+  - `solve_reports\harness_runs\samplereverse_exact1_profile_escape_20260422\reports\tool_artifacts\samplereverse\frontier_guided_1_5a3e7f46ddd474d0\samplereverse_compare_aware_guided_pool_result.json`
+- 真实结果：
+  - exact1 lane 仍然是 active lane：
+    - `frontier_active_lane = frontier_exact1`
+  - 当前 best frontier 仍未突破：
+    - `5a3e7f46ddd474d0...` -> `runtime_ci_exact_wchars=1`, `runtime_ci_distance5=258`
+  - exact1 escape 候选已经真正进入 pair profile：
+    - `pair_profile_kept_escape = 6`
+    - 每个 locked pair 都从原来的“进不了 profile”变成了：
+      - `preserve_kept = 4`
+      - `escape_kept = 2`
+  - profile 层已不再是主瓶颈：
+    - `pair_escape_source_statuses = frontier_gate_failed`
+    - 不再是上一轮的 `source_empty`
+  - 但 frontier gate 仍未放行任何 exact1 escape 候选：
+    - `pair_escape_candidates_kept = 0`
+    - `pair_escape_candidates_dropped = 15`
+    - `improved_pair_frontier_pool_count = 0`
+  - frontier 仍以：
+    - `frontier_converged_reason = distance_not_improved`
+    - `frontier_stall_stage = pair_pool`
+    收敛
+
+5) 结论
+- 本轮计划已完成，并且把瓶颈再次后移了一层：
+  - 旧瓶颈：escape 候选进不了 pair profile
+  - 新瓶颈：escape 候选已经进入 profile，但全部死在 exact1 frontier gate
+- 这说明下一轮不该再改值源，也不该再改 profile 截断；应转向：
+  - 重做 exact1 escape signal / gate 排序
+  - 或给 exact1 escape lane 一套更能识别“值得牺牲 exact1 换 distance 改善”的保留规则
+
+## 2026-04-22 22:16:00 Exact1 Escape Signal 已结构化并完成真实样本回归
+
+1) 本轮目标
+- 不再改 exact1 的值源和 pair profile 保留，转而重做 exact1 escape signal / frontier gate。
+- 目标是把 exact1 escape 的失败从“单一布尔 gate”细化成可诊断的 `local_escape / hard_escape` 两类，并验证是否有 escape 能穿过 gate。
+
+2) 代码改动
+- 修改文件：
+  - `reverse_agent/strategies/compare_aware_search.py`
+  - `tests/test_compare_aware_search_strategy.py`
+- 关键实现：
+  - `_exact1_pair_escape_signal()` 从布尔返回改成结构化结果，输出：
+    - `passed`
+    - `score`
+    - `reason`
+    - `lane`
+    - `distance_delta`
+    - `raw_delta`
+    - `locality_score`
+  - 新增 exact1 gate 上限：
+    - `EXACT1_PAIR_ESCAPE_KEEP_SCORE_MAX = 3`
+  - exact1 escape 现在会在 gate 前被分成：
+    - `local_escape`
+    - `hard_escape`
+  - `_diverse_pair_frontier_pool()` 对 exact1 现在会：
+    - 标注 `pair_escape_signal_score`
+    - 标注 `pair_escape_signal_reason`
+    - 标注 `pair_escape_lane`
+    - 按 `gate_filtered_hard_escape` / `gate_filtered_local_escape` 分流
+  - guided artifact 新增：
+    - `pair_gate_input_summary`
+    - `pair_gate_failed_escape`
+    - `pair_gate_kept_escape`
+  - `pair_escape_source_statuses` 在 exact1 lane 现在固定使用新状态：
+    - `profile_source_empty`
+    - `profile_ranked_out`
+    - `gate_filtered_hard_escape`
+    - `gate_filtered_local_escape`
+    - `gate_kept_escape`
+  - SMT feedback 值优先级已改成：
+    - exact1 preserve kept
+    - exact1 gate kept escape
+    - 再回退 lineage values
+
+3) 自动化回归
+- 测试结果：
+  - `python -m pytest -q tests/test_compare_aware_search_strategy.py` -> `34 passed`
+  - `python -m pytest -q` -> `106 passed`
+- 新增/更新覆盖点：
+  - exact1 escape signal 会区分 `local_escape` 与 `hard_escape`
+  - exact1 gate 不再依赖单个布尔返回
+  - SMT feedback pool 会优先吸收 `pair_gate_kept_escape`
+
+4) 真实样本回归
+- 新 run 目录：
+  - `solve_reports\harness_runs\samplereverse_exact1_escape_signal_20260422`
+- 关键 artifact：
+  - `solve_reports\harness_runs\samplereverse_exact1_escape_signal_20260422\reports\tool_artifacts\samplereverse\frontier_guided_1_5a3e7f46ddd474d0\samplereverse_compare_aware_guided_pool_result.json`
+  - `solve_reports\harness_runs\samplereverse_exact1_escape_signal_20260422\reports\tool_artifacts\samplereverse\samplereverse_compare_aware_frontier_summary.json`
+  - `solve_reports\harness_runs\samplereverse_exact1_escape_signal_20260422\reports\tool_artifacts\samplereverse\samplereverse_compare_aware_strata_summary.json`
+- 真实结果：
+  - exact1 lane 仍然是 active lane：
+    - `frontier_active_lane = frontier_exact1`
+  - best frontier 仍未突破：
+    - `5a3e7f46ddd474d0...` -> `runtime_ci_exact_wchars=1`, `runtime_ci_distance5=258`
+  - gate 细分已经真实生效：
+    - `pair_gate_kept_escape = 0`
+    - `pair_gate_failed_escape = 15`
+    - `pair_drop_reasons = { gate_filtered_hard_escape: 7, gate_filtered_local_escape: 8 }`
+  - 当前 exact1 escape 候选被清楚分成两类：
+    - `hard_escape_far_from_anchor`
+    - `local_escape_but_signal_weak`
+  - `pair_escape_source_statuses` 已不再是旧的一锅端失败：
+    - `0,3 -> gate_filtered_hard_escape`
+    - `0,1 -> gate_filtered_hard_escape`
+    - `0,2 -> gate_filtered_hard_escape`
+  - `pair_gate_input_summary` 已能逐 pair 显示：
+    - 哪些候选是 `hard_escape`
+    - 哪些候选是 `local_escape`
+    - 以及对应的 `pair_escape_signal_score`
+  - 但本轮仍未产生任何 gate-kept escape，也没有新的 improved pair：
+    - `pair_escape_candidates_kept = 0`
+    - `improved_pair_frontier_pool_count = 0`
+    - `frontier_stall_stage = pair_pool`
+    - `frontier_converged_reason = distance_not_improved`
+
+5) 结论
+- 本轮计划已完成，并且把瓶颈再次往前推进了一步：
+  - 旧瓶颈：escape 进不了 profile
+  - 上一轮瓶颈：escape 进了 profile，但全被同一个布尔 gate 拒掉
+  - 当前瓶颈：exact1 gate 已能识别 `hard_escape` 和 `local_escape`，但 `local_escape` 仍然全部是 `signal_weak`
+- 这说明下一轮不该再打 source/profile，也不该再扩 beam；最值得继续做的是：
+  - 重做 `local_escape` 的 signal 分数与阈值
+  - 或调整 exact1 locked pair 集合，让真正接近盆地的 local escape 能出现 `gate_kept_escape`
+

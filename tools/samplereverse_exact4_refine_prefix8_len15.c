@@ -44,8 +44,9 @@ static const uint8_t TARGET[PREFIX_BYTES] = {
 static const uint8_t B64_TABLE[64] =
     "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
-static const char *DEFAULT_ANCHOR_1 = "4a78f0eaeb4f13b0";
-static const char *DEFAULT_ANCHOR_2 = "e05e579fca169e80";
+static const char *DEFAULT_ANCHOR_1 = "78d540b49c590770";
+static const char *DEFAULT_ANCHOR_2 = "4a78f0eaeb4f13b0";
+static const char *DEFAULT_ANCHOR_3 = "95a3f65dcedb6290";
 static const char *DEFAULT_FIXED_SUFFIX_HEX = "41414141414141";
 
 static inline uint64_t next_rand(uint64_t *state) {
@@ -539,6 +540,11 @@ int main(int argc, char **argv) {
         anchor_count += 1;
         if (!parse_hex_seed(DEFAULT_ANCHOR_2, anchors[anchor_count])) {
             fprintf(stderr, "invalid default anchor 2\n");
+            return 2;
+        }
+        anchor_count += 1;
+        if (!parse_hex_seed(DEFAULT_ANCHOR_3, anchors[anchor_count])) {
+            fprintf(stderr, "invalid default anchor 3\n");
             return 2;
         }
         anchor_count += 1;
