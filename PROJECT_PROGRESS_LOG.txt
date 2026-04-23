@@ -1395,3 +1395,149 @@ Reverse Agent 项目进展日志（截至 2026-04-16）
   - 重做 `local_escape` 的 signal 分数与阈值
   - 或调整 exact1 locked pair 集合，让真正接近盆地的 local escape 能出现 `gate_kept_escape`
 
+## 2026-04-23 继续推进：exact1 local escape 评分 + pair-set 轮换
+
+1) 实现改动
+- 已完成 exact1 `local_escape` / `hard_escape` 的新一轮策略升级：
+  - `_exact1_pair_escape_signal()` 现在会输出更细的局部移动特征：
+    - `local_step_count`
+    - `large_step_count`
+    - `local_move_score`
+  - exact1 `local_escape` 新增了更宽的“弱可接受区间”：
+    - `local_escape_within_tight_tolerance`
+    - `local_escape_near_anchor`
+    - `local_escape_weak_but_acceptable`
+  - exact1 gate 上限更新为：
+    - `EXACT1_PAIR_ESCAPE_KEEP_SCORE_MAX = 5`
+- `_diverse_pair_frontier_pool()` 的 exact1 分支已改成：
+  - 先按 pair 内部挑 `top_local_escape_per_pair`
+  - 再收 preserve
+  - hard escape 只保留极少量诊断样本
+- exact1 per-pair 诊断已补齐：
+  - `pair_escape_lane_counts`
+  - `pair_escape_status_by_lane`
+  - `pair_best_local_escape`
+  - `pair_best_hard_escape`
+- exact1 guided 现在会评估两套 pair 集：
+  - `primary_pair_set`
+  - `alternate_pair_set`
+  - 并把比较结果写入：
+    - `pair_set_mode`
+    - `alternate_locked_pair_positions`
+    - `pair_set_comparison_summary`
+- SMT exact1 值优先级已同步更新：
+  - exact1 preserve kept
+  - exact1 `pair_gate_kept_escape`
+  - exact1 `pair_best_local_escape`
+  - 再回退 lineage values
+
+2) 自动化回归
+- 测试结果：
+  - `python -m pytest -q tests/test_compare_aware_search_strategy.py` -> `36 passed`
+  - `python -m pytest -q` -> `108 passed`
+- 新增覆盖点：
+  - exact1 per-pair 能同时区分 `local_escape` 与 `hard_escape`
+  - exact1 候补 pair 集会被实际评估
+  - exact1 local escape 进入 gate 后的诊断字段会原样落盘
+
+3) 真实样本回归
+- 新 run 目录：
+  - `solve_reports\\harness_runs\\samplereverse_exact1_local_escape_pairs_20260423`
+- 关键 artifact：
+  - `solve_reports\\harness_runs\\samplereverse_exact1_local_escape_pairs_20260423\\reports\\tool_artifacts\\samplereverse\\frontier_guided_1_5a3e7f46ddd474d0\\samplereverse_compare_aware_guided_pool_result.json`
+  - `solve_reports\\harness_runs\\samplereverse_exact1_local_escape_pairs_20260423\\reports\\tool_artifacts\\samplereverse\\samplereverse_compare_aware_frontier_summary.json`
+  - `solve_reports\\harness_runs\\samplereverse_exact1_local_escape_pairs_20260423\\reports\\tool_artifacts\\samplereverse\\samplereverse_compare_aware_strata_summary.json`
+- 真实结果：
+  - exact1 仍是 active lane：
+    - `frontier_active_lane = frontier_exact1`
+  - best frontier 仍未突破：
+    - `5a3e7f46ddd474d0...` -> `runtime_ci_exact_wchars=1`, `runtime_ci_distance5=258`
+  - pair-set 轮换已真实执行：
+    - `primary_pair_set = [[0,1],[0,2],[0,3]]`
+    - `alternate_pair_set = [[1,2],[1,3],[2,3]]`
+    - `exact1_pair_set_winner = primary_pair_set`
+  - 当前两套 pair 集结果一致，都没有放行 exact1 local escape：
+    - `pair_gate_kept_escape = 0`
+    - `exact1_local_escape_kept_count = 0`
+    - `exact1_hard_escape_filtered_count = 6`
+  - 这轮新的关键发现不是“local 还太弱”，而是：
+    - 当前 exact1 escape 候选已经全部被判成 `hard_escape`
+    - `pair_escape_lane_counts` 显示：
+      - `0,3 -> { local_escape: 0, hard_escape: 2 }`
+      - `0,1 -> { local_escape: 0, hard_escape: 2 }`
+      - `0,2 -> { local_escape: 0, hard_escape: 2 }`
+    - `pair_best_local_escape = {}`
+    - `pair_best_hard_escape` 非空
+  - 也就是说，这轮实现成功验证了：
+    - pair-set 轮换本身不是当前瓶颈
+    - profile 和 source 也不是当前瓶颈
+    - 当前真正卡住的是 exact1 候选在进入 gate 前就已经“偏离到只剩 hard_escape”
+
+4) 结论
+- 本轮计划已完成，但没有出现新的 `gate_kept_escape`，也没有 runtime 改善。
+- 瓶颈已经进一步收缩为：
+  - exact1 当前 locked pair / 值源组合产生的 escape 候选，已经不再形成任何 `local_escape`
+  - 所以下一轮不该继续只调 gate 阈值，而应优先检查：
+    - exact1 locked pair 集是否仍然选错
+    - exact1 preserve/escape 的局部生成是否过早把候选推离 exact1 盆地
+
+[2026-04-23 13:18 China Standard Time] Exact1 local-neighbor candidate generation landed
+
+1) 代码与测试
+- 已在 `reverse_agent/strategies/compare_aware_search.py` 实现 exact1 的局部邻域候选生成：
+  - exact1 pair 生成不再默认混入远距离 fallback 值；
+  - 现在会为每个 locked pair 生成 `preserve_neighbors` 与 `escape_neighbors`；
+  - 每个候选都会附带：
+    - `pair_candidate_origin`
+    - `pair_mutation_radius`
+    - `pair_neighbor_mode`
+    - `pair_value_origin_by_pos`
+- guided payload / diagnostics 新增：
+  - `pair_neighbor_generation_summary`
+  - `pair_local_escape_candidate_count`
+  - `pair_hard_escape_candidate_count`
+  - `pair_mutation_radius_summary`
+- 测试已更新：
+  - `python -m pytest -q tests/test_compare_aware_search_strategy.py` -> `36 passed`
+  - `python -m pytest -q` -> `108 passed`
+
+2) 真实样本回归
+- 新 run:
+  - `solve_reports\\harness_runs\\samplereverse_exact1_local_neighbor_candidates_20260423`
+- 目标：
+  - `E:\\xwechat_files\\wxid_9ky6h8wz58b912_a1e5\\msg\\file\\2026-04\\samplereverse.exe`
+- 注意：
+  - harness 在最后模型兜底阶段因 `gbk` 编码错误报错退出；
+  - 但 compare-aware strategy 的 artifact 已完整产出，本轮结论可用。
+
+3) 关键结果
+- exact1 候选生成方向第一次出现了实质性突破：
+  - `pair_local_escape_candidate_count = 6`
+  - `pair_hard_escape_candidate_count = 0`
+  - `pair_escape_lane_counts`：
+    - `0,2 -> { local_escape: 2, hard_escape: 0 }`
+    - `0,1 -> { local_escape: 2, hard_escape: 0 }`
+    - `0,3 -> { local_escape: 2, hard_escape: 0 }`
+- 说明这一轮已经把瓶颈从“生成出来全是 hard_escape”推进到了：
+  - `local_escape` 已经生成出来了；
+  - 但仍全部停在 `gate_filtered_local_escape`；
+  - `pair_gate_kept_escape = 0`
+  - `improved_pair_frontier_pool_count = 0`
+- 当前 best runtime 仍未变：
+  - exact2:
+    - `78d540b49c590770...` -> `runtime_ci_exact_wchars=2`, `runtime_ci_distance5=246`
+  - exact1:
+    - `5a3e7f46ddd474d0...` -> `runtime_ci_exact_wchars=1`, `runtime_ci_distance5=258`
+- pair-set 轮换结果：
+  - `exact1_pair_set_winner = primary_pair_set`
+  - `alternate_pair_set` 也真实执行了，但没有优于主集合
+
+4) 结论
+- 本轮计划已完成，而且是有效推进：
+  - 当前主问题已经不再是 source/profile/pair-set/candidate-generation；
+  - 现在真正卡住的是 exact1 `local_escape` 的 gate / refine handoff。
+- 下一轮优化重点应切换为：
+  - 为什么 `local_escape_but_signal_weak` 仍无法穿过 exact1 gate；
+  - 哪些 `local_escape` 候选最接近可放行边界；
+  - 是否要针对 exact1 `local_escape` 改 gate 分段或 rerank，而不是继续重做候选生成。
+

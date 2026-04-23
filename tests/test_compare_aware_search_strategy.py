@@ -16,6 +16,7 @@ from reverse_agent.strategies.compare_aware_search import (
     GUIDED_POOL_TOP_VALUES,
     RESULT_FILE_NAME,
     VALIDATION_FILE_NAME,
+    _alternate_locked_pair_positions_for_exact1,
     _annotate_frontier_improvement_gate,
     _candidate_sort_key,
     _collect_validation_entries,
@@ -1033,9 +1034,16 @@ def test_top_compare_aware_pair_entries_exact1_respects_locked_pairs_and_feedbac
     assert all(entry["pair_positions"] == [1, 3] for entry in pair_profiles[(1, 3)])
     assert generation_details["pair_escape_mode"] == "exact1_dual_lane"
     assert "0,1" in generation_details["pair_preserve_pool"]
-    assert generation_details["pair_escape_pool_strategy"] == "lineage_driven_exact1"
+    assert generation_details["pair_escape_pool_strategy"] == "exact1_local_neighbors"
     assert generation_details["pair_escape_source_values"]["0,1"]["0"][0] == 0x78
     assert "source_anchor_diff" in generation_details["pair_escape_source_origins"]["0,1"]["0"]
+    assert 0x33 not in generation_details["pair_escape_pool"]["0,1"]["0"]
+    assert 0x18 not in generation_details["pair_escape_pool"]["0,1"]["1"]
+    assert all(
+        abs(int(value) - 0x5A) <= compare_aware_search.EXACT1_ESCAPE_NEIGHBOR_RADIUS
+        for value in generation_details["pair_escape_pool"]["0,1"]["0"]
+    )
+    assert generation_details["pair_neighbor_generation_summary"]["0,1"]["escape_neighbor_mode"] == "escape_neighbors"
 
 
 def test_top_compare_aware_pair_entries_exact1_pair_local_sources_do_not_share_values() -> None:
@@ -1067,10 +1075,12 @@ def test_top_compare_aware_pair_entries_exact1_pair_local_sources_do_not_share_v
 def test_top_compare_aware_pair_entries_exact1_keeps_escape_lane_in_pair_profile(monkeypatch) -> None:
     monkeypatch.setattr(
         compare_aware_search,
-        "_exact1_pair_value_pools",
-        lambda *, base_value, profile_values, incoming_values, lineage_values, fallback_radius=1: (
-            [int(base_value) & 0xFF],
-            [0x18] if (int(base_value) & 0xFF) == 0x3E else [int(base_value) & 0xFF],
+        "_exact1_neighbor_value_maps",
+        lambda *, base_value, profile_values, incoming_values, lineage_values: (
+            {int(base_value) & 0xFF: ["anchor"]},
+            {0x5A: ["anchor"], 0x3B: ["escape_neighbor"]}
+            if (int(base_value) & 0xFF) == 0x3E
+            else {int(base_value) & 0xFF: ["anchor"]},
         ),
     )
 
@@ -1088,13 +1098,13 @@ def test_top_compare_aware_pair_entries_exact1_keeps_escape_lane_in_pair_profile
                 "pair_wide_zero_high_pairs_8": 1,
                 "pair_flaglike_tail_pairs_8": 0,
             }
-        if second_byte == 0x18:
+        if second_byte == 0x3B:
             return {
                 "candidate_hex": candidate_hex,
                 "cand8_hex": cand8,
                 "ci_exact_wchars": 0,
-                "ci_distance5": 230,
-                "raw_distance10": 260,
+                "ci_distance5": 252,
+                "raw_distance10": 282,
                 "pair_wide_ascii_contiguous_8": 2,
                 "pair_wide_zero_high_pairs_8": 2,
                 "pair_flaglike_tail_pairs_8": 1,
@@ -1135,7 +1145,11 @@ def test_top_compare_aware_pair_entries_exact1_keeps_escape_lane_in_pair_profile
 
     kept_escape = generation_details["pair_profile_kept_escape"]["0,1"]
     assert kept_escape
-    assert kept_escape[0]["cand8_hex"] == "5a187f46ddd474d0"
+    assert kept_escape[0]["cand8_hex"] == "5a3b7f46ddd474d0"
+    assert kept_escape[0]["pair_candidate_origin"] == "exact1_escape_neighbors"
+    assert kept_escape[0]["pair_neighbor_mode"] == "escape_neighbors"
+    assert kept_escape[0]["pair_mutation_radius"] <= compare_aware_search.EXACT1_ESCAPE_NEIGHBOR_RADIUS
+    assert kept_escape[0]["pair_value_origin_by_pos"]["1"] == ["escape_neighbor"]
     assert any(entry["pair_escape_mode"] == "escape" for entry in pair_profiles[(0, 1)])
     assert generation_details["pair_profile_drop_reasons"]["0,1"]["escape"] == "profile_kept"
 
@@ -1283,9 +1297,76 @@ def test_diverse_pair_frontier_pool_exact1_records_escape_ranked_out(monkeypatch
     )
 
     assert len(selected) == 2
-    assert drop_reasons["escape_signal_but_ranked_out"] >= 1
-    assert diagnostics["pair_escape_candidates_dropped"]
+    assert all(entry["pair_escape_mode"] == "escape" for entry in selected)
+    assert "escape_signal_but_ranked_out" not in drop_reasons
     assert diagnostics["pair_escape_source_statuses"]["0,2"] == "gate_kept_escape"
+    assert diagnostics["pair_escape_status_by_lane"]["0,2"]["local_escape"] == "gate_kept_escape"
+
+
+def test_diverse_pair_frontier_pool_exact1_tracks_local_and_hard_escape_per_pair(monkeypatch) -> None:
+    monkeypatch.setattr(
+        compare_aware_search,
+        "_guided_sort_key",
+        lambda entry, transform_model, **kwargs: (
+            int(entry.get("ci_distance5", 1 << 30)),
+            int(entry.get("raw_distance10", 1 << 30)),
+            -int(entry.get("ci_exact_wchars", 0)),
+            str(entry.get("candidate_hex", "")),
+        ),
+    )
+    _, drop_reasons, diagnostics = compare_aware_search._diverse_pair_frontier_pool(
+        {
+            (0, 1): [
+                {
+                    "candidate_hex": "5a187f46ddd474d041414141414141",
+                    "cand8_hex": "5a187f46ddd474d0",
+                    "ci_exact_wchars": 0,
+                    "ci_distance5": 258,
+                    "raw_distance10": 292,
+                    "pair_escape_mode": "escape",
+                    "pair_wide_ascii_contiguous_8": 2,
+                    "pair_wide_zero_high_pairs_8": 2,
+                    "pair_flaglike_tail_pairs_8": 1,
+                    "pair_positions": [0, 1],
+                    "pair_values": [0x5A, 0x18],
+                },
+                {
+                    "candidate_hex": "a4707f46ddd474d041414141414141",
+                    "cand8_hex": "a4707f46ddd474d0",
+                    "ci_exact_wchars": 0,
+                    "ci_distance5": 677,
+                    "raw_distance10": 675,
+                    "pair_escape_mode": "escape",
+                    "pair_wide_ascii_contiguous_8": 0,
+                    "pair_wide_zero_high_pairs_8": 0,
+                    "pair_flaglike_tail_pairs_8": 0,
+                    "pair_positions": [0, 1],
+                    "pair_values": [0xA4, 0x70],
+                },
+            ]
+        },
+        transform_model=SamplereverseTransformModel(),
+        anchor_mode=FRONTIER_ANCHOR_MODE,
+        frontier_submode=FRONTIER_EXACT1_SUBMODE,
+        baseline_entry={
+            "candidate_hex": "5a3e7f46ddd474d041414141414141",
+            "cand8_hex": "5a3e7f46ddd474d0",
+            "ci_exact_wchars": 1,
+            "ci_distance5": 258,
+            "raw_distance10": 290,
+            "pair_wide_ascii_contiguous_8": 1,
+            "pair_wide_zero_high_pairs_8": 1,
+            "pair_flaglike_tail_pairs_8": 0,
+        },
+        keep_limit=2,
+    )
+
+    assert diagnostics["pair_escape_lane_counts"]["0,1"] == {"local_escape": 1, "hard_escape": 1}
+    assert diagnostics["pair_escape_status_by_lane"]["0,1"]["local_escape"] == "gate_kept_escape"
+    assert diagnostics["pair_escape_status_by_lane"]["0,1"]["hard_escape"] == "gate_filtered_hard_escape"
+    assert diagnostics["pair_best_local_escape"]["0,1"]["cand8_hex"] == "5a187f46ddd474d0"
+    assert diagnostics["pair_best_hard_escape"]["0,1"]["cand8_hex"] == "a4707f46ddd474d0"
+    assert drop_reasons["gate_filtered_hard_escape"] == 1
 
 
 def test_diverse_pair_frontier_pool_exact1_reports_profile_ranked_out_before_frontier_gate(monkeypatch) -> None:
@@ -1344,6 +1425,32 @@ def test_diverse_pair_frontier_pool_exact1_reports_profile_ranked_out_before_fro
     )
 
     assert diagnostics["pair_escape_source_statuses"]["0,1"] == "profile_ranked_out"
+
+
+def test_alternate_locked_pair_positions_for_exact1_prefers_local_escape_heavy_pairs() -> None:
+    alternate, details = _alternate_locked_pair_positions_for_exact1(
+        primary_locked_pairs=[(0, 1), (0, 2), (0, 3)],
+        source_details={
+            "candidate_pairs": [[0, 1], [1, 2], [2, 3], [3, 4]],
+        },
+        pair_gate_input_summary={
+            "1,2": [
+                {"pair_escape_lane": "local_escape"},
+                {"pair_escape_lane": "local_escape"},
+            ],
+            "2,3": [
+                {"pair_escape_lane": "local_escape"},
+            ],
+            "0,3": [
+                {"pair_escape_lane": "hard_escape"},
+            ],
+        },
+    )
+
+    assert alternate[0] == (1, 2)
+    assert (2, 3) in alternate
+    assert all(pair not in {(0, 1), (0, 2), (0, 3)} for pair in alternate)
+    assert details["local_escape_counts"]["1,2"] == 2
 
 
 def test_exact1_pair_escape_signal_classifies_hard_and_local_escape() -> None:

@@ -68,8 +68,13 @@ EXACT1_PAIR_PRESERVE_VALUE_LIMIT = 6
 EXACT1_PAIR_ESCAPE_VALUE_LIMIT = 6
 EXACT1_PAIR_PROFILE_PRESERVE_TOP = 4
 EXACT1_PAIR_PROFILE_ESCAPE_TOP = 2
-EXACT1_PAIR_ESCAPE_KEEP_SCORE_MAX = 3
+EXACT1_PAIR_ESCAPE_KEEP_SCORE_MAX = 5
+EXACT1_PAIR_TOP_LOCAL_ESCAPE_PER_PAIR = 1
+EXACT1_PAIR_HARD_ESCAPE_DIAG_SAMPLES = 1
 EXACT1_LINEAGE_SOURCE_LIMIT = 4
+EXACT1_PRESERVE_NEIGHBOR_RADIUS = 2
+EXACT1_ESCAPE_NEIGHBOR_RADIUS = 4
+EXACT1_LOCAL_SOURCE_RADIUS = 6
 EXACT2_ANCHOR_MODE = "exact2"
 FRONTIER_ANCHOR_MODE = "frontier"
 FRONTIER_EXACT1_SUBMODE = "frontier_exact1"
@@ -698,14 +703,24 @@ def _exact1_pair_escape_signal(
     candidate_bytes = _entry_anchor_bytes(candidate)
     baseline_bytes = _entry_anchor_bytes(baseline_entry)
     locality_score = 0
-    for position in [int(item) for item in candidate.get("pair_positions", []) if isinstance(item, int) or str(item).isdigit()]:
+    local_step_count = 0
+    large_step_count = 0
+    pair_positions = [int(item) for item in candidate.get("pair_positions", []) if isinstance(item, int) or str(item).isdigit()]
+    for position in pair_positions:
         if 0 <= position < len(candidate_bytes) and 0 <= position < len(baseline_bytes):
-            if abs(candidate_bytes[position] - baseline_bytes[position]) <= 4:
+            delta = abs(candidate_bytes[position] - baseline_bytes[position])
+            if delta <= 4:
                 locality_score += 1
+                local_step_count += 1
+            elif delta >= 16:
+                large_step_count += 1
     if any(value > 0 for value in candidate_pair_rank[:3]):
         locality_score += 1
     distance_delta = candidate_distance - baseline_distance
     raw_delta = candidate_raw - baseline_raw
+    pair_structure_delta = tuple(int(a) - int(b) for a, b in zip(candidate_pair_rank, baseline_pair_rank))
+    pair_structure_gain = sum(max(0, value) for value in pair_structure_delta[:3])
+    local_move_score = local_step_count + pair_structure_gain
     hard_escape = (
         candidate_exact < baseline_exact
         and sum(candidate_pair_rank[:3]) == 0
@@ -716,20 +731,40 @@ def _exact1_pair_escape_signal(
     if candidate_distance < baseline_distance:
         score = 0
         reason = "distance_improved"
+    elif (
+        candidate_distance <= baseline_distance + 8
+        and candidate_raw <= baseline_raw + 8
+        and local_move_score >= 2
+    ):
+        score = 2
+        reason = "local_escape_within_tight_tolerance"
     elif candidate_distance == baseline_distance and candidate_raw < baseline_raw and candidate_pair_rank > baseline_pair_rank:
         score = 1
         reason = "raw_improved_with_structure"
     elif candidate_distance == baseline_distance and candidate_raw < baseline_raw and locality_score > 0:
-        score = 2
-        reason = "raw_improved_local_escape"
-    elif locality_score > 1 and distance_delta <= max(EXACT1_PAIR_DISTANCE_ESCAPE * 2, 48):
         score = 3
+        reason = "raw_improved_local_escape"
+    elif (
+        candidate_distance <= baseline_distance + EXACT1_PAIR_DISTANCE_ESCAPE
+        and candidate_raw <= baseline_raw + max(16, EXACT1_PAIR_DISTANCE_ESCAPE)
+        and local_move_score >= 2
+    ):
+        score = 4
         reason = "local_escape_near_anchor"
+    elif (
+        locality_score > 0
+        and local_step_count > 0
+        and large_step_count < len(pair_positions)
+        and candidate_distance <= baseline_distance + max(EXACT1_PAIR_DISTANCE_ESCAPE * 2, 56)
+        and candidate_raw <= baseline_raw + max(EXACT1_PAIR_DISTANCE_ESCAPE * 2, 48)
+    ):
+        score = 5
+        reason = "local_escape_weak_but_acceptable"
     elif hard_escape:
         score = 10
         reason = "hard_escape_far_from_anchor"
     else:
-        score = 6
+        score = 7
         reason = "local_escape_but_signal_weak" if locality_score > 0 else "hard_escape_signal_weak"
     lane = "hard_escape" if hard_escape else "local_escape"
     return {
@@ -740,7 +775,10 @@ def _exact1_pair_escape_signal(
         "distance_delta": distance_delta,
         "raw_delta": raw_delta,
         "locality_score": locality_score,
-        "pair_structure_delta": tuple(int(a) - int(b) for a, b in zip(candidate_pair_rank, baseline_pair_rank)),
+        "pair_structure_delta": pair_structure_delta,
+        "local_step_count": local_step_count,
+        "large_step_count": large_step_count,
+        "local_move_score": local_move_score,
     }
 
 
@@ -818,28 +856,74 @@ def _small_perturbation_values(base_value: int, *, radius: int = 2) -> list[int]
     return deduped
 
 
-def _exact1_pair_value_pools(
+def _append_exact1_value_origin(
+    target: dict[int, list[str]],
+    *,
+    value: int,
+    origin: str,
+) -> None:
+    normalized_value = int(value) & 0xFF
+    bucket = target.setdefault(normalized_value, [])
+    if origin not in bucket:
+        bucket.append(origin)
+
+
+def _exact1_neighbor_value_maps(
     *,
     base_value: int,
     profile_values: Sequence[int],
     incoming_values: Sequence[int],
     lineage_values: Sequence[int],
-    fallback_radius: int = 1,
-) -> tuple[list[int], list[int]]:
-    preserve_pool = _bounded_value_pool(
-        base_value=base_value,
-        profile_values=_small_perturbation_values(base_value, radius=2),
-        feedback_values=[*lineage_values[:2], *incoming_values[:2], *profile_values[:1]],
-        limit=EXACT1_PAIR_PRESERVE_VALUE_LIMIT,
-    )
-    escape_pool = _bounded_value_pool(
-        base_value=base_value,
-        profile_values=[*profile_values[:2], *_small_perturbation_values(base_value, radius=fallback_radius)],
-        feedback_values=[*lineage_values, *incoming_values[2:], *profile_values[2:FRONTIER_PAIR_VALUE_LIMIT]],
-        limit=EXACT1_PAIR_ESCAPE_VALUE_LIMIT,
-    )
-    escape_pool = [value for value in escape_pool if value not in preserve_pool]
-    return preserve_pool, escape_pool
+) -> tuple[dict[int, list[str]], dict[int, list[str]]]:
+    base = int(base_value) & 0xFF
+    preserve_sources: dict[int, list[str]] = {}
+    escape_sources: dict[int, list[str]] = {}
+
+    _append_exact1_value_origin(preserve_sources, value=base, origin="anchor")
+    for value in _small_perturbation_values(base, radius=EXACT1_PRESERVE_NEIGHBOR_RADIUS):
+        if value == base:
+            continue
+        _append_exact1_value_origin(preserve_sources, value=value, origin="preserve_neighbor")
+    for value in _small_perturbation_values(base, radius=EXACT1_ESCAPE_NEIGHBOR_RADIUS):
+        if value == base:
+            continue
+        if abs(int(value) - base) <= EXACT1_PRESERVE_NEIGHBOR_RADIUS:
+            continue
+        _append_exact1_value_origin(escape_sources, value=value, origin="escape_neighbor")
+
+    for origin_prefix, values in (
+        ("profile", profile_values),
+        ("incoming", incoming_values),
+        ("lineage", lineage_values),
+    ):
+        for raw_value in values:
+            value = int(raw_value) & 0xFF
+            delta = abs(value - base)
+            if value == base:
+                _append_exact1_value_origin(preserve_sources, value=value, origin=f"{origin_prefix}_anchor")
+                continue
+            if delta <= EXACT1_PRESERVE_NEIGHBOR_RADIUS:
+                _append_exact1_value_origin(preserve_sources, value=value, origin=f"{origin_prefix}_local")
+            elif delta <= EXACT1_LOCAL_SOURCE_RADIUS:
+                _append_exact1_value_origin(escape_sources, value=value, origin=f"{origin_prefix}_near")
+
+    for value in list(preserve_sources):
+        escape_sources.pop(value, None)
+
+    return preserve_sources, escape_sources
+
+
+def _bounded_exact1_value_map(
+    value_origins: dict[int, list[str]],
+    *,
+    limit: int,
+) -> dict[int, list[str]]:
+    bounded: dict[int, list[str]] = {}
+    for value, origins in value_origins.items():
+        bounded[int(value) & 0xFF] = list(origins)
+        if len(bounded) >= limit:
+            break
+    return bounded
 
 
 def _diff_positions_for_anchor(candidate_anchor: str, reference_anchor: str) -> list[int]:
@@ -894,12 +978,11 @@ def _locked_pair_positions_for_exact1(
             continue
         seen.add(pair)
         deduped_pairs.append(pair)
-        if len(deduped_pairs) >= EXACT1_PAIR_LOCK_LIMIT:
-            break
-    return deduped_pairs, {
+    return deduped_pairs[:EXACT1_PAIR_LOCK_LIMIT], {
         "source_anchor_diff_positions": source_diff_positions,
         "bridge_diff_positions": ordered_bridge_positions,
         "top_ranked_pairs": ranked_pairs[:FRONTIER_TOP_PAIR_LIMIT],
+        "candidate_pairs": [list(pair) for pair in deduped_pairs],
     }
 
 
@@ -921,7 +1004,83 @@ def _compact_pair_candidate(entry: dict[str, object]) -> dict[str, object]:
         "pair_escape_signal_score": int(entry.get("pair_escape_signal_score", 1 << 30) or (1 << 30)),
         "pair_escape_signal_reason": str(entry.get("pair_escape_signal_reason", "")),
         "pair_escape_lane": str(entry.get("pair_escape_lane", "")),
+        "pair_candidate_origin": str(entry.get("pair_candidate_origin", "")),
+        "pair_mutation_radius": int(entry.get("pair_mutation_radius", 0) or 0),
+        "pair_neighbor_mode": str(entry.get("pair_neighbor_mode", "")),
+        "pair_value_origin_by_pos": {
+            str(key): list(value)
+            for key, value in dict(entry.get("pair_value_origin_by_pos", {})).items()
+        },
     }
+
+
+def _alternate_locked_pair_positions_for_exact1(
+    *,
+    primary_locked_pairs: Sequence[tuple[int, int]],
+    source_details: dict[str, object],
+    pair_gate_input_summary: dict[str, list[dict[str, object]]],
+) -> tuple[list[tuple[int, int]], dict[str, object]]:
+    primary = [tuple(sorted((int(left), int(right)))) for left, right in primary_locked_pairs]
+    candidate_pairs = [
+        tuple(sorted((int(pair[0]), int(pair[1]))))
+        for pair in source_details.get("candidate_pairs", [])
+        if isinstance(pair, list) and len(pair) == 2
+    ]
+    local_escape_counts: dict[tuple[int, int], int] = {}
+    for pair_key, rows in pair_gate_input_summary.items():
+        try:
+            left_s, right_s = pair_key.split(",", 1)
+            pair = tuple(sorted((int(left_s), int(right_s))))
+        except ValueError:
+            continue
+        count = sum(1 for row in rows if str(row.get("pair_escape_lane", "")) == "local_escape")
+        if count:
+            local_escape_counts[pair] = count
+    ranked_local_pairs = [
+        pair
+        for pair, _ in sorted(
+            local_escape_counts.items(),
+            key=lambda item: (-item[1], item[0]),
+        )
+    ]
+
+    ordered: list[tuple[int, int]] = []
+    seen: set[tuple[int, int]] = set()
+    for pair in [*ranked_local_pairs, *candidate_pairs]:
+        if pair in seen or pair in primary:
+            continue
+        seen.add(pair)
+        ordered.append(pair)
+        if len(ordered) >= EXACT1_PAIR_LOCK_LIMIT:
+            break
+    if not ordered:
+        ordered = list(primary)
+    return ordered[:EXACT1_PAIR_LOCK_LIMIT], {
+        "primary_locked_pair_positions": [list(pair) for pair in primary],
+        "alternate_candidate_pairs": [list(pair) for pair in ordered],
+        "local_escape_counts": {f"{left},{right}": count for (left, right), count in local_escape_counts.items()},
+    }
+
+
+def _exact1_pair_set_selection_key(result: dict[str, object]) -> tuple[int, int, int, int, int]:
+    diagnostics = dict(result.get("pair_frontier_diagnostics", {}))
+    pair_drop_reasons = dict(result.get("pair_drop_reasons", {}))
+    best_local_by_pair = diagnostics.get("pair_best_local_escape", {})
+    best_local_score = min(
+        (
+            int(entry.get("pair_escape_signal_score", 1 << 30) or (1 << 30))
+            for entry in best_local_by_pair.values()
+            if isinstance(entry, dict)
+        ),
+        default=1 << 30,
+    )
+    return (
+        -len(diagnostics.get("pair_gate_kept_escape", [])),
+        -sum(1 for entry in result.get("pair_frontier_pool", []) if bool(entry.get("improvement_gate_passed"))),
+        int(pair_drop_reasons.get("gate_filtered_local_escape", 0) or 0),
+        int(pair_drop_reasons.get("gate_filtered_hard_escape", 0) or 0),
+        best_local_score,
+    )
 
 
 def _entry_anchor_bytes(entry: dict[str, object]) -> bytes:
@@ -2369,6 +2528,8 @@ def _top_compare_aware_pair_entries(
         "pair_preserve_pool": {},
         "pair_escape_pool": {},
         "pair_escape_pool_strategy": "generic_profile",
+        "pair_neighbor_generation_summary": {},
+        "pair_mutation_radius_summary": {},
         "pair_profile_preserve_entries": {},
         "pair_profile_escape_entries": {},
         "pair_profile_kept_preserve": {},
@@ -2396,22 +2557,46 @@ def _top_compare_aware_pair_entries(
         preserve_right_values: list[int] = []
         escape_left_values: list[int] = []
         escape_right_values: list[int] = []
+        preserve_left_origins: dict[int, list[str]] = {}
+        preserve_right_origins: dict[int, list[str]] = {}
+        escape_left_origins: dict[int, list[str]] = {}
+        escape_right_origins: dict[int, list[str]] = {}
         if frontier_submode == FRONTIER_EXACT1_SUBMODE:
-            preserve_left_values, escape_left_values = _exact1_pair_value_pools(
+            preserve_left_origins, escape_left_origins = _exact1_neighbor_value_maps(
                 base_value=base_bytes[left],
                 profile_values=left_values,
                 incoming_values=[int(value) & 0xFF for value in incoming.get(int(left), [])],
                 lineage_values=[int(value) & 0xFF for value in lineage_sources.get(int(left), [])],
             )
-            preserve_right_values, escape_right_values = _exact1_pair_value_pools(
+            preserve_right_origins, escape_right_origins = _exact1_neighbor_value_maps(
                 base_value=base_bytes[right],
                 profile_values=right_values,
                 incoming_values=[int(value) & 0xFF for value in incoming.get(int(right), [])],
                 lineage_values=[int(value) & 0xFF for value in lineage_sources.get(int(right), [])],
             )
+            preserve_left_origins = _bounded_exact1_value_map(
+                preserve_left_origins,
+                limit=EXACT1_PAIR_PRESERVE_VALUE_LIMIT,
+            )
+            preserve_right_origins = _bounded_exact1_value_map(
+                preserve_right_origins,
+                limit=EXACT1_PAIR_PRESERVE_VALUE_LIMIT,
+            )
+            escape_left_origins = _bounded_exact1_value_map(
+                escape_left_origins,
+                limit=EXACT1_PAIR_ESCAPE_VALUE_LIMIT,
+            )
+            escape_right_origins = _bounded_exact1_value_map(
+                escape_right_origins,
+                limit=EXACT1_PAIR_ESCAPE_VALUE_LIMIT,
+            )
+            preserve_left_values = list(preserve_left_origins)
+            preserve_right_values = list(preserve_right_origins)
+            escape_left_values = list(escape_left_origins)
+            escape_right_values = list(escape_right_origins)
             pair_key = f"{left},{right}"
             pair_generation_details["pair_escape_mode"] = "exact1_dual_lane"
-            pair_generation_details["pair_escape_pool_strategy"] = "lineage_driven_exact1"
+            pair_generation_details["pair_escape_pool_strategy"] = "exact1_local_neighbors"
             pair_generation_details["pair_preserve_pool"][pair_key] = {
                 str(left): preserve_left_values[:EXACT1_PAIR_PRESERVE_VALUE_LIMIT],
                 str(right): preserve_right_values[:EXACT1_PAIR_PRESERVE_VALUE_LIMIT],
@@ -2419,6 +2604,18 @@ def _top_compare_aware_pair_entries(
             pair_generation_details["pair_escape_pool"][pair_key] = {
                 str(left): escape_left_values[:EXACT1_PAIR_ESCAPE_VALUE_LIMIT],
                 str(right): escape_right_values[:EXACT1_PAIR_ESCAPE_VALUE_LIMIT],
+            }
+            pair_generation_details["pair_neighbor_generation_summary"][pair_key] = {
+                "preserve_generated": len(preserve_left_values) * len(preserve_right_values),
+                "escape_generated": len(escape_left_values) * len(escape_right_values),
+                "preserve_neighbor_mode": "preserve_neighbors",
+                "escape_neighbor_mode": "escape_neighbors",
+            }
+            pair_generation_details["pair_mutation_radius_summary"][pair_key] = {
+                "preserve_left": [abs(value - base_bytes[left]) for value in preserve_left_values],
+                "preserve_right": [abs(value - base_bytes[right]) for value in preserve_right_values],
+                "escape_left": [abs(value - base_bytes[left]) for value in escape_left_values],
+                "escape_right": [abs(value - base_bytes[right]) for value in escape_right_values],
             }
             pair_generation_details["pair_escape_source_values"][pair_key] = {
                 str(left): [int(value) & 0xFF for value in lineage_sources.get(int(left), [])[:EXACT1_LINEAGE_SOURCE_LIMIT]],
@@ -2438,6 +2635,8 @@ def _top_compare_aware_pair_entries(
             right_candidates: Sequence[int],
             *,
             escape_mode: str,
+            left_origin_map: dict[int, list[str]] | None = None,
+            right_origin_map: dict[int, list[str]] | None = None,
         ) -> list[dict[str, object]]:
             entries: list[dict[str, object]] = []
             for left_value in dict.fromkeys(left_candidates):
@@ -2447,11 +2646,34 @@ def _top_compare_aware_pair_entries(
                     work[right] = right_value
                     candidate_hex = bytes(work).hex() + DEFAULT_FIXED_SUFFIX_HEX
                     entry = dict(_entry_for(candidate_hex))
+                    mutation_radius = max(
+                        abs(int(left_value) - int(base_bytes[left])),
+                        abs(int(right_value) - int(base_bytes[right])),
+                    )
                     entry.update(
                         {
                             "pair_positions": [int(left), int(right)],
                             "pair_values": [int(left_value), int(right_value)],
                             "pair_escape_mode": escape_mode,
+                            "pair_candidate_origin": (
+                                "exact1_escape_neighbors"
+                                if frontier_submode == FRONTIER_EXACT1_SUBMODE and escape_mode == "escape"
+                                else "exact1_preserve_neighbors"
+                                if frontier_submode == FRONTIER_EXACT1_SUBMODE
+                                else "profile_pairs"
+                            ),
+                            "pair_neighbor_mode": (
+                                "escape_neighbors"
+                                if frontier_submode == FRONTIER_EXACT1_SUBMODE and escape_mode == "escape"
+                                else "preserve_neighbors"
+                                if frontier_submode == FRONTIER_EXACT1_SUBMODE
+                                else "profile_pairs"
+                            ),
+                            "pair_mutation_radius": int(mutation_radius),
+                            "pair_value_origin_by_pos": {
+                                str(left): list(dict.fromkeys((left_origin_map or {}).get(int(left_value), []))),
+                                str(right): list(dict.fromkeys((right_origin_map or {}).get(int(right_value), []))),
+                            },
                         }
                     )
                     entries.append(entry)
@@ -2471,6 +2693,8 @@ def _top_compare_aware_pair_entries(
                 preserve_left_values,
                 preserve_right_values,
                 escape_mode="preserve",
+                left_origin_map=preserve_left_origins,
+                right_origin_map=preserve_right_origins,
             )
             escape_entries: list[dict[str, object]] = []
             if baseline_entry and not any(
@@ -2481,6 +2705,8 @@ def _top_compare_aware_pair_entries(
                     escape_left_values,
                     escape_right_values,
                     escape_mode="escape",
+                    left_origin_map=escape_left_origins,
+                    right_origin_map=escape_right_origins,
                 )
                 escape_entries.sort(
                     key=lambda item: _exact1_escape_profile_sort_key(
@@ -2571,6 +2797,268 @@ def _diverse_pair_frontier_pool(
     baseline_entry: dict[str, object] | None = None,
     keep_limit: int = FRONTIER_PAIR_SEED_LIMIT,
 ) -> tuple[list[dict[str, object]], dict[str, int], dict[str, object]]:
+    if frontier_submode == FRONTIER_EXACT1_SUBMODE and baseline_entry:
+        profile_details_provided = pair_profile_details is not None
+        ranked_pairs = [
+            (pair_positions, entries)
+            for pair_positions, entries in sorted(
+                pair_profiles.items(),
+                key=lambda item: _guided_sort_key(
+                    item[1][0],
+                    transform_model,
+                    anchor_mode=anchor_mode,
+                    frontier_submode=frontier_submode,
+                )
+                if item[1]
+                else (1 << 30,),
+            )
+            if entries
+        ]
+        drop_reasons: dict[str, int] = {}
+        diagnostics: dict[str, object] = {
+            "pair_escape_mode": "exact1_dual_lane",
+            "pair_preserve_pool": [],
+            "pair_escape_pool": [],
+            "pair_neighbor_generation_summary": dict((pair_profile_details or {}).get("pair_neighbor_generation_summary", {})),
+            "pair_mutation_radius_summary": dict((pair_profile_details or {}).get("pair_mutation_radius_summary", {})),
+            "pair_escape_candidates_kept": [],
+            "pair_escape_candidates_dropped": [],
+            "pair_gate_failed_escape": [],
+            "pair_gate_kept_escape": [],
+            "pair_best_preserve_candidate": None,
+            "pair_best_escape_candidate": None,
+            "pair_best_local_escape": {},
+            "pair_best_hard_escape": {},
+            "pair_local_escape_candidate_count": 0,
+            "pair_hard_escape_candidate_count": 0,
+            "pair_escape_source_statuses": {},
+            "pair_escape_status_by_lane": {},
+            "pair_escape_lane_counts": {},
+            "pair_gate_input_summary": {},
+            "pair_profile_preserve_entries": dict((pair_profile_details or {}).get("pair_profile_preserve_entries", {})),
+            "pair_profile_escape_entries": dict((pair_profile_details or {}).get("pair_profile_escape_entries", {})),
+            "pair_profile_kept_preserve": dict((pair_profile_details or {}).get("pair_profile_kept_preserve", {})),
+            "pair_profile_kept_escape": dict((pair_profile_details or {}).get("pair_profile_kept_escape", {})),
+            "pair_profile_drop_reasons": dict((pair_profile_details or {}).get("pair_profile_drop_reasons", {})),
+            "pair_profile_truncation_summary": dict((pair_profile_details or {}).get("pair_profile_truncation_summary", {})),
+        }
+        accepted_local: list[dict[str, object]] = []
+        accepted_preserve: list[dict[str, object]] = []
+        hard_diag_samples: list[dict[str, object]] = []
+        seen_local: set[str] = set()
+        seen_preserve: set[str] = set()
+
+        for pair_positions, entries in ranked_pairs[:FRONTIER_TOP_PAIR_LIMIT]:
+            pair_key = f"{pair_positions[0]},{pair_positions[1]}"
+            profile_escape_entries = diagnostics["pair_profile_escape_entries"].get(pair_key, [])
+            kept_escape_entries = diagnostics["pair_profile_kept_escape"].get(pair_key, [])
+            pair_lane_counts = {"local_escape": 0, "hard_escape": 0}
+            pair_status_by_lane = {"local_escape": "profile_source_empty", "hard_escape": "profile_source_empty"}
+            preserve_candidates: list[dict[str, object]] = []
+            local_kept_candidates: list[dict[str, object]] = []
+            local_filtered_candidates: list[dict[str, object]] = []
+            hard_filtered_candidates: list[dict[str, object]] = []
+
+            for raw_entry in entries:
+                candidate = dict(raw_entry)
+                candidate.setdefault("pair_positions", list(pair_positions))
+                candidate_hex = _candidate_hex_from_entry(candidate)
+                if not candidate_hex:
+                    continue
+                candidate_exact = int(candidate.get("ci_exact_wchars", 0) or 0)
+                pair_escape_mode = str(candidate.get("pair_escape_mode", "")).strip()
+                if not pair_escape_mode:
+                    pair_escape_mode = "escape" if candidate_exact < int(baseline_entry.get("ci_exact_wchars", 0) or 0) else "preserve"
+                candidate["pair_escape_mode"] = pair_escape_mode
+                if pair_escape_mode != "escape":
+                    preserve_candidates.append(candidate)
+                    continue
+
+                signal = _exact1_pair_escape_signal(candidate, baseline_entry, transform_model=transform_model)
+                candidate["pair_escape_signal_score"] = int(signal.get("score", 1 << 30))
+                candidate["pair_escape_signal_reason"] = str(signal.get("reason", ""))
+                candidate["pair_escape_lane"] = str(signal.get("lane", ""))
+                compact = _compact_pair_candidate(candidate)
+                diagnostics["pair_gate_input_summary"].setdefault(pair_key, []).append(compact)
+                lane = str(signal.get("lane", ""))
+                pair_lane_counts[lane] = pair_lane_counts.get(lane, 0) + 1
+                if lane == "local_escape":
+                    diagnostics["pair_local_escape_candidate_count"] = int(
+                        diagnostics.get("pair_local_escape_candidate_count", 0)
+                    ) + 1
+                elif lane == "hard_escape":
+                    diagnostics["pair_hard_escape_candidate_count"] = int(
+                        diagnostics.get("pair_hard_escape_candidate_count", 0)
+                    ) + 1
+                if lane == "local_escape":
+                    if not diagnostics["pair_best_local_escape"].get(pair_key) or int(compact.get("pair_escape_signal_score", 1 << 30)) < int(
+                        diagnostics["pair_best_local_escape"][pair_key].get("pair_escape_signal_score", 1 << 30)
+                    ):
+                        diagnostics["pair_best_local_escape"][pair_key] = compact
+                    if bool(signal.get("passed")):
+                        local_kept_candidates.append(candidate)
+                    else:
+                        candidate["pair_drop_reason"] = "gate_filtered_local_escape"
+                        local_filtered_candidates.append(candidate)
+                else:
+                    if not diagnostics["pair_best_hard_escape"].get(pair_key) or int(compact.get("pair_escape_signal_score", 1 << 30)) < int(
+                        diagnostics["pair_best_hard_escape"][pair_key].get("pair_escape_signal_score", 1 << 30)
+                    ):
+                        diagnostics["pair_best_hard_escape"][pair_key] = compact
+                    candidate["pair_drop_reason"] = "gate_filtered_hard_escape"
+                    hard_filtered_candidates.append(candidate)
+
+            preserve_candidates.sort(
+                key=lambda item: _guided_sort_key(
+                    item,
+                    transform_model,
+                    anchor_mode=anchor_mode,
+                    frontier_submode=frontier_submode,
+                )
+            )
+            local_kept_candidates.sort(
+                key=lambda item: (
+                    int(item.get("pair_escape_signal_score", 1 << 30) or (1 << 30)),
+                    _guided_sort_key(
+                        item,
+                        transform_model,
+                        anchor_mode=anchor_mode,
+                        frontier_submode=frontier_submode,
+                    ),
+                )
+            )
+            local_filtered_candidates.sort(
+                key=lambda item: (
+                    int(item.get("pair_escape_signal_score", 1 << 30) or (1 << 30)),
+                    _guided_sort_key(
+                        item,
+                        transform_model,
+                        anchor_mode=anchor_mode,
+                        frontier_submode=frontier_submode,
+                    ),
+                )
+            )
+            hard_filtered_candidates.sort(
+                key=lambda item: (
+                    int(item.get("pair_escape_signal_score", 1 << 30) or (1 << 30)),
+                    _guided_sort_key(
+                        item,
+                        transform_model,
+                        anchor_mode=anchor_mode,
+                        frontier_submode=frontier_submode,
+                    ),
+                )
+            )
+
+            if profile_details_provided and not profile_escape_entries:
+                pair_status_by_lane["local_escape"] = "profile_source_empty"
+                pair_status_by_lane["hard_escape"] = "profile_source_empty"
+            elif profile_details_provided and profile_escape_entries and not kept_escape_entries:
+                pair_status_by_lane["local_escape"] = "profile_ranked_out"
+                pair_status_by_lane["hard_escape"] = "profile_ranked_out"
+            else:
+                if local_kept_candidates:
+                    pair_status_by_lane["local_escape"] = "gate_kept_escape"
+                elif local_filtered_candidates:
+                    pair_status_by_lane["local_escape"] = "gate_filtered_local_escape"
+                elif profile_escape_entries:
+                    pair_status_by_lane["local_escape"] = "profile_ranked_out"
+                if hard_filtered_candidates:
+                    pair_status_by_lane["hard_escape"] = "gate_filtered_hard_escape"
+                elif profile_escape_entries:
+                    pair_status_by_lane["hard_escape"] = "gate_filtered_hard_escape"
+
+            diagnostics["pair_escape_lane_counts"][pair_key] = pair_lane_counts
+            diagnostics["pair_escape_status_by_lane"][pair_key] = pair_status_by_lane
+            if pair_status_by_lane["local_escape"] == "gate_kept_escape":
+                diagnostics["pair_escape_source_statuses"][pair_key] = "gate_kept_escape"
+            elif pair_status_by_lane["local_escape"] == "gate_filtered_local_escape":
+                diagnostics["pair_escape_source_statuses"][pair_key] = "gate_filtered_local_escape"
+            elif pair_status_by_lane["hard_escape"] == "gate_filtered_hard_escape":
+                diagnostics["pair_escape_source_statuses"][pair_key] = "gate_filtered_hard_escape"
+            else:
+                diagnostics["pair_escape_source_statuses"][pair_key] = pair_status_by_lane["local_escape"]
+
+            for candidate in local_kept_candidates[:EXACT1_PAIR_TOP_LOCAL_ESCAPE_PER_PAIR]:
+                candidate_hex = _candidate_hex_from_entry(candidate)
+                if candidate_hex in seen_local:
+                    continue
+                seen_local.add(candidate_hex)
+                candidate["pair_drop_reason"] = ""
+                accepted_local.append(candidate)
+                diagnostics["pair_gate_kept_escape"].append(_compact_pair_candidate(candidate))
+            for candidate in local_kept_candidates[EXACT1_PAIR_TOP_LOCAL_ESCAPE_PER_PAIR:]:
+                candidate["pair_drop_reason"] = "escape_signal_but_ranked_out"
+                drop_reasons["escape_signal_but_ranked_out"] = drop_reasons.get("escape_signal_but_ranked_out", 0) + 1
+                diagnostics["pair_escape_candidates_dropped"].append(_compact_pair_candidate(candidate))
+            for candidate in local_filtered_candidates:
+                drop_reasons["gate_filtered_local_escape"] = drop_reasons.get("gate_filtered_local_escape", 0) + 1
+                diagnostics["pair_gate_failed_escape"].append(_compact_pair_candidate(candidate))
+                diagnostics["pair_escape_candidates_dropped"].append(_compact_pair_candidate(candidate))
+            for candidate in hard_filtered_candidates:
+                drop_reasons["gate_filtered_hard_escape"] = drop_reasons.get("gate_filtered_hard_escape", 0) + 1
+                diagnostics["pair_gate_failed_escape"].append(_compact_pair_candidate(candidate))
+                diagnostics["pair_escape_candidates_dropped"].append(_compact_pair_candidate(candidate))
+            for candidate in hard_filtered_candidates[:EXACT1_PAIR_HARD_ESCAPE_DIAG_SAMPLES]:
+                hard_diag_samples.append(candidate)
+            for candidate in preserve_candidates:
+                candidate_hex = _candidate_hex_from_entry(candidate)
+                if candidate_hex in seen_preserve or candidate_hex in seen_local:
+                    continue
+                seen_preserve.add(candidate_hex)
+                accepted_preserve.append(candidate)
+
+        accepted = [*accepted_local, *accepted_preserve]
+        selected = accepted[:keep_limit]
+        preserve_candidates_all = [item for item in accepted_preserve]
+        escape_candidates_all = [item for item in accepted_local]
+        diagnostics["pair_preserve_pool"] = [_compact_pair_candidate(item) for item in preserve_candidates_all[:keep_limit]]
+        diagnostics["pair_escape_pool"] = [_compact_pair_candidate(item) for item in escape_candidates_all[:keep_limit]]
+        diagnostics["pair_escape_candidates_kept"] = [_compact_pair_candidate(item) for item in selected if str(item.get("pair_escape_mode", "")) == "escape"]
+        if preserve_candidates_all:
+            diagnostics["pair_best_preserve_candidate"] = _compact_pair_candidate(
+                min(
+                    preserve_candidates_all,
+                    key=lambda item: _guided_sort_key(
+                        item,
+                        transform_model,
+                        anchor_mode=anchor_mode,
+                        frontier_submode=frontier_submode,
+                    ),
+                )
+            )
+        all_escape_candidates = [
+            *(item for item in accepted_local),
+            *(item for item in hard_diag_samples),
+        ]
+        if all_escape_candidates:
+            diagnostics["pair_best_escape_candidate"] = _compact_pair_candidate(
+                min(
+                    all_escape_candidates,
+                    key=lambda item: (
+                        int(item.get("pair_escape_signal_score", 1 << 30) or (1 << 30)),
+                        _guided_sort_key(
+                            item,
+                            transform_model,
+                            anchor_mode=anchor_mode,
+                            frontier_submode=frontier_submode,
+                        ),
+                    ),
+                )
+            )
+        selected.sort(
+            key=lambda item: (
+                0 if str(item.get("pair_escape_mode", "")) == "escape" else 1,
+                _guided_sort_key(
+                    item,
+                    transform_model,
+                    anchor_mode=anchor_mode,
+                    frontier_submode=frontier_submode,
+                ),
+            )
+        )
+        return selected[:keep_limit], drop_reasons, diagnostics
+
     profile_details_provided = pair_profile_details is not None
     ranked_pairs = [
         (pair_positions, entries)
@@ -3160,7 +3648,10 @@ def run_compare_aware_guided_pool(
     lineage_value_origins: dict[int, list[str]] = {}
     lineage_value_mining_summary: dict[str, object] = {}
     locked_pair_positions: list[tuple[int, int]] = []
+    alternate_locked_pair_positions: list[tuple[int, int]] = []
     pair_generation_sources: dict[str, object] = {}
+    pair_set_mode = "single_pair_set"
+    pair_set_comparison_summary: dict[str, object] = {}
     if anchor_mode == FRONTIER_ANCHOR_MODE:
         if frontier_submode == FRONTIER_EXACT1_SUBMODE:
             lineage_value_pools, lineage_value_counts, lineage_value_origins, lineage_value_mining_summary = (
@@ -3173,57 +3664,116 @@ def run_compare_aware_guided_pool(
                 )
             )
         if frontier_submode == FRONTIER_EXACT1_SUBMODE:
-            locked_pair_positions, pair_generation_sources = _locked_pair_positions_for_exact1(
+            primary_locked_pair_positions, pair_generation_sources = _locked_pair_positions_for_exact1(
                 base_anchor=base_anchor,
                 source_anchor=normalized_source_anchor,
                 bridge_entries=bridge_entries,
                 pair_profiles={},
             )
-        pair_profiles, pair_generation_details = _top_compare_aware_pair_entries(
-            base_anchor=base_anchor,
-            positions=list(range(8)),
-            position_profiles=position_profiles,
-            transform_model=transform_model,
-            anchor_mode=anchor_mode,
-            frontier_submode=frontier_submode,
-            locked_pair_positions=locked_pair_positions,
-            incoming_feedback_value_pools=normalized_feedback_value_pools if frontier_submode == FRONTIER_EXACT1_SUBMODE else {},
-            lineage_value_pools=lineage_value_pools if frontier_submode == FRONTIER_EXACT1_SUBMODE else {},
-            lineage_value_counts=lineage_value_counts if frontier_submode == FRONTIER_EXACT1_SUBMODE else {},
-            lineage_value_origins=lineage_value_origins if frontier_submode == FRONTIER_EXACT1_SUBMODE else {},
-            baseline_entry=base_entry if frontier_submode == FRONTIER_EXACT1_SUBMODE else None,
-        )
-        if frontier_submode == FRONTIER_EXACT1_SUBMODE:
-            locked_pair_positions, pair_generation_sources = _locked_pair_positions_for_exact1(
-                base_anchor=base_anchor,
-                source_anchor=normalized_source_anchor,
-                bridge_entries=bridge_entries,
-                pair_profiles=pair_profiles,
+            pair_set_mode = "primary_pair_set"
+
+            def _evaluate_exact1_pair_set(
+                pair_set_name: str,
+                candidate_locked_pairs: Sequence[tuple[int, int]],
+            ) -> dict[str, object]:
+                candidate_set = [tuple(sorted((int(left), int(right)))) for left, right in candidate_locked_pairs][:EXACT1_PAIR_LOCK_LIMIT]
+                candidate_pair_profiles, candidate_generation_details = _top_compare_aware_pair_entries(
+                    base_anchor=base_anchor,
+                    positions=list(range(8)),
+                    position_profiles=position_profiles,
+                    transform_model=transform_model,
+                    anchor_mode=anchor_mode,
+                    frontier_submode=frontier_submode,
+                    locked_pair_positions=candidate_set,
+                    incoming_feedback_value_pools=normalized_feedback_value_pools,
+                    lineage_value_pools=lineage_value_pools,
+                    lineage_value_counts=lineage_value_counts,
+                    lineage_value_origins=lineage_value_origins,
+                    baseline_entry=base_entry,
+                )
+                candidate_pair_frontier_pool, candidate_pair_drop_reasons, candidate_pair_diagnostics = _diverse_pair_frontier_pool(
+                    candidate_pair_profiles,
+                    transform_model=transform_model,
+                    anchor_mode=anchor_mode,
+                    frontier_submode=frontier_submode,
+                    pair_profile_details=candidate_generation_details,
+                    baseline_entry=base_entry,
+                    keep_limit=FRONTIER_PAIR_SEED_LIMIT,
+                )
+                candidate_pair_frontier_pool = _annotate_frontier_improvement_gate(
+                    candidate_pair_frontier_pool,
+                    baseline_entry=base_entry,
+                    frontier_submode=frontier_submode,
+                )
+                return {
+                    "pair_set_mode": pair_set_name,
+                    "locked_pair_positions": candidate_set,
+                    "pair_profiles": candidate_pair_profiles,
+                    "pair_generation_details": candidate_generation_details,
+                    "pair_frontier_pool": candidate_pair_frontier_pool,
+                    "pair_drop_reasons": candidate_pair_drop_reasons,
+                    "pair_frontier_diagnostics": candidate_pair_diagnostics,
+                }
+
+            primary_pair_run = _evaluate_exact1_pair_set("primary_pair_set", primary_locked_pair_positions)
+            locked_pair_positions = list(primary_pair_run["locked_pair_positions"])
+
+            alternate_locked_pair_positions, alternate_pair_details = _alternate_locked_pair_positions_for_exact1(
+                primary_locked_pairs=locked_pair_positions,
+                source_details=pair_generation_sources,
+                pair_gate_input_summary=primary_pair_run["pair_frontier_diagnostics"].get("pair_gate_input_summary", {}),
             )
-            if locked_pair_positions:
-                pair_profiles = {
-                    pair_positions: entries
-                    for pair_positions, entries in pair_profiles.items()
-                    if tuple(sorted(pair_positions)) in set(locked_pair_positions)
-                }
-                pair_generation_details["pair_preserve_pool"] = {
-                    key: value
-                    for key, value in dict(pair_generation_details.get("pair_preserve_pool", {})).items()
-                    if tuple(sorted(int(item) for item in key.split(","))) in set(locked_pair_positions)
-                }
-                pair_generation_details["pair_escape_pool"] = {
-                    key: value
-                    for key, value in dict(pair_generation_details.get("pair_escape_pool", {})).items()
-                    if tuple(sorted(int(item) for item in key.split(","))) in set(locked_pair_positions)
-                }
-                for field_name in ("pair_escape_source_values", "pair_escape_source_counts", "pair_escape_source_origins"):
-                    pair_generation_details[field_name] = {
-                        key: value
-                        for key, value in dict(pair_generation_details.get(field_name, {})).items()
-                        if tuple(sorted(int(item) for item in key.split(","))) in set(locked_pair_positions)
-                    }
-            pair_generation_sources.update(pair_generation_details)
-            pair_generation_sources["lineage_value_mining_summary"] = lineage_value_mining_summary
+            exact1_pair_runs = [primary_pair_run]
+            if alternate_locked_pair_positions and alternate_locked_pair_positions != locked_pair_positions:
+                exact1_pair_runs.append(_evaluate_exact1_pair_set("alternate_pair_set", alternate_locked_pair_positions))
+
+            selected_pair_run = min(exact1_pair_runs, key=_exact1_pair_set_selection_key)
+            pair_set_mode = str(selected_pair_run.get("pair_set_mode", "primary_pair_set"))
+            locked_pair_positions = list(selected_pair_run["locked_pair_positions"])
+            pair_profiles = dict(selected_pair_run["pair_profiles"])
+            pair_generation_details = dict(selected_pair_run["pair_generation_details"])
+            pair_generation_sources = {
+                **pair_generation_sources,
+                **pair_generation_details,
+                "lineage_value_mining_summary": lineage_value_mining_summary,
+                "primary_pair_set_details": {
+                    **pair_generation_sources,
+                    **primary_pair_run["pair_generation_details"],
+                },
+                "alternate_pair_set_details": alternate_pair_details,
+            }
+            pair_set_comparison_summary = {
+                "primary_pair_set": {
+                    "locked_pair_positions": [list(item) for item in primary_pair_run["locked_pair_positions"]],
+                    "selection_key": list(_exact1_pair_set_selection_key(primary_pair_run)),
+                    "pair_gate_kept_escape": len(primary_pair_run["pair_frontier_diagnostics"].get("pair_gate_kept_escape", [])),
+                    "gate_filtered_local_escape": int(primary_pair_run["pair_drop_reasons"].get("gate_filtered_local_escape", 0) or 0),
+                    "gate_filtered_hard_escape": int(primary_pair_run["pair_drop_reasons"].get("gate_filtered_hard_escape", 0) or 0),
+                },
+                "alternate_pair_set": {
+                    "locked_pair_positions": [list(item) for item in alternate_locked_pair_positions],
+                    "selection_key": list(_exact1_pair_set_selection_key(exact1_pair_runs[-1])) if len(exact1_pair_runs) > 1 else [],
+                    "pair_gate_kept_escape": len(exact1_pair_runs[-1]["pair_frontier_diagnostics"].get("pair_gate_kept_escape", [])) if len(exact1_pair_runs) > 1 else 0,
+                    "gate_filtered_local_escape": int(exact1_pair_runs[-1]["pair_drop_reasons"].get("gate_filtered_local_escape", 0) or 0) if len(exact1_pair_runs) > 1 else 0,
+                    "gate_filtered_hard_escape": int(exact1_pair_runs[-1]["pair_drop_reasons"].get("gate_filtered_hard_escape", 0) or 0) if len(exact1_pair_runs) > 1 else 0,
+                },
+                "winner": pair_set_mode,
+            }
+        else:
+            pair_profiles, pair_generation_details = _top_compare_aware_pair_entries(
+                base_anchor=base_anchor,
+                positions=list(range(8)),
+                position_profiles=position_profiles,
+                transform_model=transform_model,
+                anchor_mode=anchor_mode,
+                frontier_submode=frontier_submode,
+                locked_pair_positions=locked_pair_positions,
+                incoming_feedback_value_pools={},
+                lineage_value_pools={},
+                lineage_value_counts={},
+                lineage_value_origins={},
+                baseline_entry=None,
+            )
     positions = _profiled_guided_pool_positions(
         base_anchor=base_anchor,
         bridge_entries=bridge_entries,
@@ -3249,24 +3799,43 @@ def run_compare_aware_guided_pool(
     pair_drop_reasons: dict[str, int] = {}
     pair_frontier_diagnostics: dict[str, object] = {}
     if anchor_mode == FRONTIER_ANCHOR_MODE and pair_profiles:
-        pair_frontier_pool, pair_drop_reasons, pair_frontier_diagnostics = _diverse_pair_frontier_pool(
-            {
-                pair_positions: entries
-                for pair_positions, entries in pair_profiles.items()
-                if set(pair_positions).issubset(set(positions))
-            },
-            transform_model=transform_model,
-            anchor_mode=anchor_mode,
-            frontier_submode=frontier_submode,
-            pair_profile_details=pair_generation_details,
-            baseline_entry=base_entry,
-            keep_limit=FRONTIER_PAIR_SEED_LIMIT,
-        )
-        pair_frontier_pool = _annotate_frontier_improvement_gate(
-            pair_frontier_pool,
-            baseline_entry=base_entry,
-            frontier_submode=frontier_submode,
-        )
+        pair_profiles_for_positions = {
+            pair_positions: entries
+            for pair_positions, entries in pair_profiles.items()
+            if set(pair_positions).issubset(set(positions))
+        }
+        if frontier_submode == FRONTIER_EXACT1_SUBMODE and pair_set_mode in {"primary_pair_set", "alternate_pair_set"}:
+            selected_pair_frontier_pool, selected_pair_drop_reasons, selected_pair_frontier_diagnostics = _diverse_pair_frontier_pool(
+                pair_profiles_for_positions,
+                transform_model=transform_model,
+                anchor_mode=anchor_mode,
+                frontier_submode=frontier_submode,
+                pair_profile_details=pair_generation_details,
+                baseline_entry=base_entry,
+                keep_limit=FRONTIER_PAIR_SEED_LIMIT,
+            )
+            pair_frontier_pool = _annotate_frontier_improvement_gate(
+                selected_pair_frontier_pool,
+                baseline_entry=base_entry,
+                frontier_submode=frontier_submode,
+            )
+            pair_drop_reasons = selected_pair_drop_reasons
+            pair_frontier_diagnostics = selected_pair_frontier_diagnostics
+        else:
+            pair_frontier_pool, pair_drop_reasons, pair_frontier_diagnostics = _diverse_pair_frontier_pool(
+                pair_profiles_for_positions,
+                transform_model=transform_model,
+                anchor_mode=anchor_mode,
+                frontier_submode=frontier_submode,
+                pair_profile_details=pair_generation_details,
+                baseline_entry=base_entry,
+                keep_limit=FRONTIER_PAIR_SEED_LIMIT,
+            )
+            pair_frontier_pool = _annotate_frontier_improvement_gate(
+                pair_frontier_pool,
+                baseline_entry=base_entry,
+                frontier_submode=frontier_submode,
+            )
         triad_frontier_pool = _triad_frontier_pool(
             base_anchor=base_anchor,
             pair_pool=pair_frontier_pool,
@@ -3327,13 +3896,31 @@ def run_compare_aware_guided_pool(
             }
             pair_stage_stats.update(
                 {
+                    "pair_set_mode": pair_set_mode,
+                    "alternate_locked_pair_positions": [list(item) for item in alternate_locked_pair_positions],
+                    "pair_set_comparison_summary": pair_set_comparison_summary,
                     "pair_escape_mode": pair_frontier_diagnostics.get("pair_escape_mode", ""),
                     "pair_escape_candidates_kept": len(pair_frontier_diagnostics.get("pair_escape_candidates_kept", [])),
                     "pair_escape_candidates_dropped": len(pair_frontier_diagnostics.get("pair_escape_candidates_dropped", [])),
                     "pair_escape_source_statuses": pair_frontier_diagnostics.get("pair_escape_source_statuses", {}),
+                    "pair_escape_lane_counts": pair_frontier_diagnostics.get("pair_escape_lane_counts", {}),
+                    "pair_escape_status_by_lane": pair_frontier_diagnostics.get("pair_escape_status_by_lane", {}),
                     "pair_gate_kept_escape": len(pair_frontier_diagnostics.get("pair_gate_kept_escape", [])),
                     "pair_gate_failed_escape": len(pair_frontier_diagnostics.get("pair_gate_failed_escape", [])),
                     "pair_gate_input_summary": pair_frontier_diagnostics.get("pair_gate_input_summary", {}),
+                    "pair_best_local_escape": pair_frontier_diagnostics.get("pair_best_local_escape", {}),
+                    "pair_best_hard_escape": pair_frontier_diagnostics.get("pair_best_hard_escape", {}),
+                    "pair_neighbor_generation_summary": pair_generation_details.get("pair_neighbor_generation_summary", {}),
+                    "pair_mutation_radius_summary": pair_frontier_diagnostics.get(
+                        "pair_mutation_radius_summary",
+                        pair_generation_details.get("pair_mutation_radius_summary", {}),
+                    ),
+                    "pair_local_escape_candidate_count": int(
+                        pair_frontier_diagnostics.get("pair_local_escape_candidate_count", 0) or 0
+                    ),
+                    "pair_hard_escape_candidate_count": int(
+                        pair_frontier_diagnostics.get("pair_hard_escape_candidate_count", 0) or 0
+                    ),
                     "pair_profile_kept_preserve": sum(
                         len(items) for items in pair_frontier_diagnostics.get("pair_profile_kept_preserve", {}).values()
                     ),
@@ -3467,10 +4054,18 @@ def run_compare_aware_guided_pool(
         "pair_generation_mode": (
             "exact1_locked_pairs" if frontier_submode == FRONTIER_EXACT1_SUBMODE else "frontier_profile_pairs"
         ),
+        "pair_set_mode": pair_set_mode,
         "locked_pair_positions": [list(item) for item in locked_pair_positions],
+        "alternate_locked_pair_positions": [list(item) for item in alternate_locked_pair_positions],
+        "pair_set_comparison_summary": pair_set_comparison_summary,
         "pair_generation_sources": pair_generation_sources,
         "pair_escape_mode": pair_frontier_diagnostics.get("pair_escape_mode", ""),
         "pair_escape_pool_strategy": pair_generation_details.get("pair_escape_pool_strategy", ""),
+        "pair_neighbor_generation_summary": pair_generation_details.get("pair_neighbor_generation_summary", {}),
+        "pair_mutation_radius_summary": pair_frontier_diagnostics.get(
+            "pair_mutation_radius_summary",
+            pair_generation_details.get("pair_mutation_radius_summary", {}),
+        ),
         "pair_escape_source_values": pair_generation_details.get("pair_escape_source_values", {}),
         "pair_escape_source_counts": pair_generation_details.get("pair_escape_source_counts", {}),
         "pair_escape_source_origins": pair_generation_details.get("pair_escape_source_origins", {}),
@@ -3487,8 +4082,18 @@ def run_compare_aware_guided_pool(
         "pair_gate_kept_escape": pair_frontier_diagnostics.get("pair_gate_kept_escape", []),
         "pair_gate_input_summary": pair_frontier_diagnostics.get("pair_gate_input_summary", {}),
         "pair_escape_source_statuses": pair_frontier_diagnostics.get("pair_escape_source_statuses", {}),
+        "pair_escape_lane_counts": pair_frontier_diagnostics.get("pair_escape_lane_counts", {}),
+        "pair_escape_status_by_lane": pair_frontier_diagnostics.get("pair_escape_status_by_lane", {}),
         "pair_best_preserve_candidate": pair_frontier_diagnostics.get("pair_best_preserve_candidate"),
         "pair_best_escape_candidate": pair_frontier_diagnostics.get("pair_best_escape_candidate"),
+        "pair_best_local_escape": pair_frontier_diagnostics.get("pair_best_local_escape", {}),
+        "pair_best_hard_escape": pair_frontier_diagnostics.get("pair_best_hard_escape", {}),
+        "pair_local_escape_candidate_count": int(
+            pair_frontier_diagnostics.get("pair_local_escape_candidate_count", 0) or 0
+        ),
+        "pair_hard_escape_candidate_count": int(
+            pair_frontier_diagnostics.get("pair_hard_escape_candidate_count", 0) or 0
+        ),
         "pair_profile_preserve_entries": pair_frontier_diagnostics.get("pair_profile_preserve_entries", {}),
         "pair_profile_escape_entries": pair_frontier_diagnostics.get("pair_profile_escape_entries", {}),
         "pair_profile_kept_preserve": pair_frontier_diagnostics.get("pair_profile_kept_preserve", {}),
@@ -3540,6 +4145,13 @@ def run_compare_aware_guided_pool(
                     "pair_escape_signal_score": int(entry.get("pair_escape_signal_score", 1 << 30) or (1 << 30)),
                     "pair_escape_signal_reason": str(entry.get("pair_escape_signal_reason", "")),
                     "pair_escape_lane": str(entry.get("pair_escape_lane", "")),
+                    "pair_candidate_origin": str(entry.get("pair_candidate_origin", "")),
+                    "pair_mutation_radius": int(entry.get("pair_mutation_radius", 0) or 0),
+                    "pair_neighbor_mode": str(entry.get("pair_neighbor_mode", "")),
+                    "pair_value_origin_by_pos": {
+                        str(key): list(value)
+                        for key, value in dict(entry.get("pair_value_origin_by_pos", {})).items()
+                    },
                 }
                 for entry in entries[:FRONTIER_PAIR_TOP_PER_PAIR]
             ]
@@ -3588,10 +4200,15 @@ def run_compare_aware_guided_pool(
         "frontier_role": normalized_frontier_role,
         "anchor_lineage": guided_payload["anchor_lineage"],
         "pair_generation_mode": guided_payload["pair_generation_mode"],
+        "pair_set_mode": guided_payload["pair_set_mode"],
         "locked_pair_positions": guided_payload["locked_pair_positions"],
+        "alternate_locked_pair_positions": guided_payload["alternate_locked_pair_positions"],
+        "pair_set_comparison_summary": guided_payload["pair_set_comparison_summary"],
         "pair_generation_sources": pair_generation_sources,
         "pair_escape_mode": guided_payload["pair_escape_mode"],
         "pair_escape_pool_strategy": guided_payload["pair_escape_pool_strategy"],
+        "pair_neighbor_generation_summary": guided_payload["pair_neighbor_generation_summary"],
+        "pair_mutation_radius_summary": guided_payload["pair_mutation_radius_summary"],
         "pair_escape_source_values": guided_payload["pair_escape_source_values"],
         "pair_escape_source_counts": guided_payload["pair_escape_source_counts"],
         "pair_escape_source_origins": guided_payload["pair_escape_source_origins"],
@@ -3604,8 +4221,14 @@ def run_compare_aware_guided_pool(
         "pair_gate_kept_escape": guided_payload["pair_gate_kept_escape"],
         "pair_gate_input_summary": guided_payload["pair_gate_input_summary"],
         "pair_escape_source_statuses": guided_payload["pair_escape_source_statuses"],
+        "pair_escape_lane_counts": guided_payload["pair_escape_lane_counts"],
+        "pair_escape_status_by_lane": guided_payload["pair_escape_status_by_lane"],
         "pair_best_preserve_candidate": guided_payload["pair_best_preserve_candidate"],
         "pair_best_escape_candidate": guided_payload["pair_best_escape_candidate"],
+        "pair_best_local_escape": guided_payload["pair_best_local_escape"],
+        "pair_best_hard_escape": guided_payload["pair_best_hard_escape"],
+        "pair_local_escape_candidate_count": guided_payload["pair_local_escape_candidate_count"],
+        "pair_hard_escape_candidate_count": guided_payload["pair_hard_escape_candidate_count"],
         "pair_profile_preserve_entries": guided_payload["pair_profile_preserve_entries"],
         "pair_profile_escape_entries": guided_payload["pair_profile_escape_entries"],
         "pair_profile_kept_preserve": guided_payload["pair_profile_kept_preserve"],
@@ -3846,6 +4469,11 @@ def run_compare_aware_smt(
         preferred_smt_entries.extend(
             dict(entry)
             for entry in base_entry.get("pair_gate_kept_escape", [])
+            if isinstance(entry, dict)
+        )
+        preferred_smt_entries.extend(
+            dict(entry)
+            for entry in dict(base_entry.get("pair_best_local_escape", {})).values()
             if isinstance(entry, dict)
         )
     feedback_value_pools = _smt_feedback_value_pools(
@@ -4309,6 +4937,13 @@ class CompareAwareSearchStrategy(SolverStrategy):
                         "exact0_feedback_value_pools": frontier_run.get("exact0_feedback_value_pools", {}),
                         "feedback_sources": frontier_run.get("feedback_sources", {}),
                         "pair_pool_source_counts": frontier_run.get("pair_pool_source_counts", {}),
+                        "pair_set_mode": frontier_run.get("pair_set_mode", ""),
+                        "alternate_locked_pair_positions": frontier_run.get("alternate_locked_pair_positions", []),
+                        "pair_set_comparison_summary": frontier_run.get("pair_set_comparison_summary", {}),
+                        "pair_escape_lane_counts": frontier_run.get("pair_escape_lane_counts", {}),
+                        "pair_escape_status_by_lane": frontier_run.get("pair_escape_status_by_lane", {}),
+                        "pair_best_local_escape": frontier_run.get("pair_best_local_escape", {}),
+                        "pair_best_hard_escape": frontier_run.get("pair_best_hard_escape", {}),
                     }
                 )
 
@@ -4529,6 +5164,29 @@ class CompareAwareSearchStrategy(SolverStrategy):
                 "frontier_stall_stage": frontier_stall_stage,
                 "frontier_exact1_stall_reason": frontier_exact1_stall_reason,
                 "frontier_exact0_stall_reason": frontier_exact0_stall_reason,
+                "exact1_pair_set_winner": next(
+                    (
+                        str(run.get("pair_set_mode", ""))
+                        for iteration in reversed(frontier_iterations)
+                        for run in reversed(iteration.get("guided_runs", []))
+                        if str(run.get("frontier_submode", "")) == FRONTIER_EXACT1_SUBMODE
+                    ),
+                    "",
+                ),
+                "exact1_local_escape_kept_count": sum(
+                    len(run.get("pair_stage_stats", {}).get("pair_gate_kept_escape", []))
+                    if isinstance(run.get("pair_stage_stats", {}).get("pair_gate_kept_escape", []), list)
+                    else int(run.get("pair_stage_stats", {}).get("pair_gate_kept_escape", 0) or 0)
+                    for iteration in frontier_iterations
+                    for run in iteration.get("guided_runs", [])
+                    if str(run.get("frontier_submode", "")) == FRONTIER_EXACT1_SUBMODE
+                ),
+                "exact1_hard_escape_filtered_count": sum(
+                    int(run.get("pair_stage_stats", {}).get("pair_drop_reasons", {}).get("gate_filtered_hard_escape", 0) or 0)
+                    for iteration in frontier_iterations
+                    for run in iteration.get("guided_runs", [])
+                    if str(run.get("frontier_submode", "")) == FRONTIER_EXACT1_SUBMODE
+                ),
             },
         )
         if frontier_guided_runs:
@@ -4580,6 +5238,24 @@ class CompareAwareSearchStrategy(SolverStrategy):
             "frontier_exact1_stall_reason": frontier_exact1_stall_reason,
             "frontier_exact0_stall_reason": frontier_exact0_stall_reason,
             "frontier_stall_stage": frontier_stall_stage,
+            "exact1_pair_set_winner": next(
+                (
+                    str(run.get("pair_set_mode", ""))
+                    for run in reversed(frontier_guided_runs)
+                    if str(run.get("frontier_submode", "")) == FRONTIER_EXACT1_SUBMODE
+                ),
+                "",
+            ),
+            "exact1_local_escape_kept_count": sum(
+                int(run.get("pair_stage_stats", {}).get("pair_gate_kept_escape", 0) or 0)
+                for run in frontier_guided_runs
+                if str(run.get("frontier_submode", "")) == FRONTIER_EXACT1_SUBMODE
+            ),
+            "exact1_hard_escape_filtered_count": sum(
+                int(run.get("pair_stage_stats", {}).get("pair_drop_reasons", {}).get("gate_filtered_hard_escape", 0) or 0)
+                for run in frontier_guided_runs
+                if str(run.get("frontier_submode", "")) == FRONTIER_EXACT1_SUBMODE
+            ),
             "leaderboards": {
                 "global": final_top_entries[:16],
                 "by_source": _source_grouped_leaderboards(
