@@ -115,6 +115,17 @@ Do **not** include a dedicated section that dumps system/user prompt text in the
 - Do not request unrelated secrets.
 - Avoid destructive environment actions.
 
+## Codex Skill Workflow
+- Version project skills under `.codex-skills\<skill-name>\SKILL.md`.
+- Install or refresh local Codex skills with:
+  - `powershell -ExecutionPolicy Bypass -File .\tools\sync_codex_skills.ps1`
+- When adding a new skill:
+  1. Create the repo source under `.codex-skills\`.
+  2. Keep generic workflow knowledge separate from sample-specific facts.
+  3. Run the sync script so Codex can discover it from `$CODEX_HOME\skills`.
+  4. Commit the repo source, sync script/docs updates, and push the branch.
+- Do not rely on files created only under `$CODEX_HOME\skills`; Git will not track them.
+
 ## Fast Defaults
 - Default GUI analysis mode: `Auto`.
 - In `Auto`, prefer `Static Analysis` when strong local candidates already exist.
