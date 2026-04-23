@@ -1541,3 +1541,75 @@ Reverse Agent 项目进展日志（截至 2026-04-16）
   - 哪些 `local_escape` 候选最接近可放行边界；
   - 是否要针对 exact1 `local_escape` 改 gate 分段或 rerank，而不是继续重做候选生成。
 
+## 2026-04-23 - Exact1 borderline local_escape handoff implemented and regressed
+
+1) 代码变更
+- 在 `CompareAwareSearchStrategy` 的 exact1 pair gate 中新增三段状态：
+  - `keep`
+  - `borderline`
+  - `reject`
+- `local_escape` 的弱可接受候选现在会进入 `pair_frontier_pool` 的 borderline handoff，而不是继续全部落入 `gate_filtered_local_escape`。
+- 新增并贯通 artifact 字段：
+  - `pair_borderline_escape_candidates`
+  - `pair_local_escape_borderline_count`
+  - `pair_local_escape_reject_count`
+  - `pair_gate_borderline_summary`
+- pair-set 选择、guided payload、return payload、SMT feedback value pool、frontier/strata summary 都已接入 borderline 信息。
+- stall 归因更新：
+  - 如果 exact1 已产生 borderline / kept escape，但 runtime 未改善，不再归因到 `pair_pool`；
+  - 改为进入 `frontier_refine` 停滞，表示 handoff 已发生但后续没有接住。
+
+2) 自动化测试
+- `python -m pytest -q tests/test_compare_aware_search_strategy.py`
+  - `37 passed`
+- `python -m pytest -q`
+  - `109 passed`
+
+3) 真实样本回归
+- 新 run:
+  - `solve_reports\\harness_runs\\samplereverse_exact1_borderline_escape_20260423`
+- 目标：
+  - `E:\\xwechat_files\\wxid_9ky6h8wz58b912_a1e5\\msg\\file\\2026-04\\samplereverse.exe`
+- 注意：
+  - harness 在最后模型兜底阶段仍因 `gbk` 编码错误退出；
+  - compare-aware artifact 已完整生成，本轮结论可用。
+
+4) 关键结果
+- exact1 frontier guided:
+  - `pair_local_escape_candidate_count = 6`
+  - `pair_local_escape_borderline_count = 6`
+  - `pair_local_escape_reject_count = 0`
+  - `pair_hard_escape_candidate_count = 0`
+  - `pair_gate_kept_escape = 0`
+  - `pair_borderline_escape_candidates = 3`
+  - `improved_pair_frontier_pool_count = 0`
+- 三个 locked pair 都出现 borderline：
+  - `0,2 -> gate_borderline_escape`
+  - `0,1 -> gate_borderline_escape`
+  - `0,3 -> gate_borderline_escape`
+- 进入 pair frontier 的 borderline 候选：
+  - `563e7b46ddd474d0`, pair `[0,2]`, `ci_distance5=558`, `raw_distance10=558`
+  - `56427f46ddd474d0`, pair `[0,1]`, `ci_distance5=609`, `raw_distance10=609`
+  - `563e7f4addd474d0`, pair `[0,3]`, `ci_distance5=725`, `raw_distance10=757`
+- 当前 runtime best 未改善：
+  - exact2:
+    - `78d540b49c590770...` -> `runtime_ci_exact_wchars=2`, `runtime_ci_distance5=246`
+  - exact1:
+    - `5a3e7f46ddd474d0...` -> `runtime_ci_exact_wchars=1`, `runtime_ci_distance5=258`
+- summary 归因已更新：
+  - `frontier_converged_reason = distance_not_improved`
+  - `frontier_stall_stage = frontier_refine`
+  - `exact1_pair_set_winner = primary_pair_set`
+  - `exact1_local_escape_borderline_count = 6`
+  - `exact1_hard_escape_filtered_count = 0`
+
+5) 结论
+- 本轮计划完成，并把瓶颈从“local_escape 无法穿过 gate”推进为：
+  - local_escape 已经可以作为 borderline 进入 pair frontier；
+  - 但 borderline 质量太差，runtime compare 后没有改善；
+  - refine/SMT 没有从这些 borderline 中接出更优 exact1。
+- 下一轮不应继续放宽 gate；应重做 exact1 borderline 的质量筛选 / rerank：
+  - 优先约束 `ci_distance5/raw_distance10` 的最大退让；
+  - 将 `pair_mutation_radius=4` 的候选拆出单独诊断；
+  - 重点寻找距离不爆炸的 local escape，而不是让所有 weak local escape 都进入 handoff。
+

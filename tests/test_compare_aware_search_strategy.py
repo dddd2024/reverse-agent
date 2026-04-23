@@ -1303,6 +1303,70 @@ def test_diverse_pair_frontier_pool_exact1_records_escape_ranked_out(monkeypatch
     assert diagnostics["pair_escape_status_by_lane"]["0,2"]["local_escape"] == "gate_kept_escape"
 
 
+def test_diverse_pair_frontier_pool_exact1_allows_borderline_local_escape(monkeypatch) -> None:
+    monkeypatch.setattr(
+        compare_aware_search,
+        "_guided_sort_key",
+        lambda entry, transform_model, **kwargs: (
+            int(entry.get("ci_distance5", 1 << 30)),
+            int(entry.get("raw_distance10", 1 << 30)),
+            -int(entry.get("ci_exact_wchars", 0)),
+            str(entry.get("candidate_hex", "")),
+        ),
+    )
+    selected, drop_reasons, diagnostics = compare_aware_search._diverse_pair_frontier_pool(
+        {
+            (0, 1): [
+                {
+                    "candidate_hex": "5a3e7f46ddd474d041414141414141",
+                    "cand8_hex": "5a3e7f46ddd474d0",
+                    "ci_exact_wchars": 1,
+                    "ci_distance5": 258,
+                    "raw_distance10": 290,
+                    "pair_positions": [0, 1],
+                    "pair_values": [0x5A, 0x3E],
+                },
+                {
+                    "candidate_hex": "5a417f46ddd474d041414141414141",
+                    "cand8_hex": "5a417f46ddd474d0",
+                    "ci_exact_wchars": 0,
+                    "ci_distance5": 330,
+                    "raw_distance10": 310,
+                    "pair_escape_mode": "escape",
+                    "pair_wide_ascii_contiguous_8": 0,
+                    "pair_wide_zero_high_pairs_8": 0,
+                    "pair_flaglike_tail_pairs_8": 0,
+                    "pair_positions": [0, 1],
+                    "pair_values": [0x5A, 0x41],
+                },
+            ]
+        },
+        transform_model=SamplereverseTransformModel(),
+        anchor_mode=FRONTIER_ANCHOR_MODE,
+        frontier_submode=FRONTIER_EXACT1_SUBMODE,
+        baseline_entry={
+            "candidate_hex": "5a3e7f46ddd474d041414141414141",
+            "cand8_hex": "5a3e7f46ddd474d0",
+            "ci_exact_wchars": 1,
+            "ci_distance5": 258,
+            "raw_distance10": 290,
+            "pair_wide_ascii_contiguous_8": 1,
+            "pair_wide_zero_high_pairs_8": 1,
+            "pair_flaglike_tail_pairs_8": 0,
+        },
+        keep_limit=2,
+    )
+
+    assert any(entry["cand8_hex"] == "5a417f46ddd474d0" for entry in selected)
+    assert not diagnostics["pair_gate_kept_escape"]
+    assert diagnostics["pair_borderline_escape_candidates"][0]["cand8_hex"] == "5a417f46ddd474d0"
+    assert diagnostics["pair_borderline_escape_candidates"][0]["pair_escape_status"] == "borderline"
+    assert diagnostics["pair_escape_status_by_lane"]["0,1"]["local_escape"] == "gate_borderline_escape"
+    assert diagnostics["pair_escape_source_statuses"]["0,1"] == "gate_borderline_escape"
+    assert diagnostics["pair_local_escape_borderline_count"] == 1
+    assert drop_reasons == {}
+
+
 def test_diverse_pair_frontier_pool_exact1_tracks_local_and_hard_escape_per_pair(monkeypatch) -> None:
     monkeypatch.setattr(
         compare_aware_search,
@@ -1511,8 +1575,10 @@ def test_exact1_pair_escape_signal_classifies_hard_and_local_escape() -> None:
 
     assert hard_signal["lane"] == "hard_escape"
     assert hard_signal["passed"] is False
+    assert hard_signal["status"] == "reject"
     assert local_signal["lane"] == "local_escape"
     assert local_signal["passed"] is True
+    assert local_signal["status"] == "keep"
 
 
 def test_improved_frontier_candidates_only_promote_runtime_improved_lineages() -> None:
@@ -1676,6 +1742,14 @@ def test_run_compare_aware_smt_records_feedback_value_pools_from_improved_fronti
                     "pair_values": [0x5A, 0x44],
                 }
             ],
+            "pair_borderline_escape_candidates": [
+                {
+                    "cand8_hex": "5a667f46ddd474d0",
+                    "pair_positions": [0, 1],
+                    "pair_values": [0x5A, 0x66],
+                    "pair_escape_status": "borderline",
+                }
+            ],
             "pair_profile_kept_escape": [
                 {
                     "cand8_hex": "5a447f46ddd474d0",
@@ -1723,6 +1797,7 @@ def test_run_compare_aware_smt_records_feedback_value_pools_from_improved_fronti
 
     assert result["payload"]["feedback_value_pools"]["0"][0] == 0x5A
     assert 0x44 in result["payload"]["feedback_value_pools"]["1"]
+    assert 0x66 in result["payload"]["feedback_value_pools"]["1"]
     assert 0x55 in result["payload"]["feedback_value_pools"]["1"]
     assert 0x99 in result["payload"]["feedback_value_pools"]["1"]
     assert 0x78 in result["payload"]["feedback_value_pools"]["0"]
