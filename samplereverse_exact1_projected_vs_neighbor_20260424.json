@@ -1,0 +1,11 @@
+{
+  "runtime_validation_enabled": false,
+  "cases": [
+    {
+      "case_id": "samplereverse-exact1-projected-vs-neighbor",
+      "input_value": "E:\\xwechat_files\\wxid_9ky6h8wz58b912_a1e5\\msg\\file\\2026-04\\samplereverse.exe",
+      "notes": "Exact1 projected-vs-neighbor competitive regression.",
+      "expected_flag": ""
+    }
+  ]
+}

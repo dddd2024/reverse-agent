@@ -1613,3 +1613,400 @@ Reverse Agent 项目进展日志（截至 2026-04-16）
   - 将 `pair_mutation_radius=4` 的候选拆出单独诊断；
   - 重点寻找距离不爆炸的 local escape，而不是让所有 weak local escape 都进入 handoff。
 
+## 2026-04-23 - Exact1 near/wide local_escape quality band implemented and regressed
+
+1) 代码变更
+- 在 exact1 pair escape 信号中把 borderline local escape 分成：
+  - `near_local_escape`
+  - `wide_local_escape`
+- 只有 `near_local_escape` 进入主 `pair_frontier_pool` / refine / SMT handoff。
+- `wide_local_escape` 只保留诊断，不再占用主 handoff 配额。
+- 新增 exact1 single-byte guard：
+  - pair escape 组合前先评估单字节候选；
+  - 距离/结构过差的单字节值不进入 pair escape 组合。
+- 新增/贯通诊断字段：
+  - `pair_escape_quality_band`
+  - `pair_near_local_escape_candidates`
+  - `pair_wide_local_escape_candidates`
+  - `pair_single_byte_guard_summary`
+  - `pair_radius_band_counts`
+  - `pair_borderline_quality_reason`
+  - `exact1_near_local_escape_count`
+  - `exact1_wide_local_escape_count`
+  - `exact1_best_near_local_distance`
+  - `exact1_pair_quality_winner`
+- SMT value pool 改为只吸收 exact1 `near_local_escape`，不再吸收 wide-local diagnostic candidates。
+
+2) 自动化测试
+- `python -m pytest -q tests/test_compare_aware_search_strategy.py -k "borderline or local_escape or smt or pair_set or pair_entries"`
+  - `12 passed`
+- `python -m pytest -q tests/test_compare_aware_search_strategy.py`
+  - `39 passed`
+- `python -m pytest -q`
+  - `111 passed`
+
+3) 真实样本回归
+- 新 run:
+  - `solve_reports\\harness_runs\\samplereverse_exact1_near_wide_local_escape_20260423`
+- 目标：
+  - `E:\\xwechat_files\\wxid_9ky6h8wz58b912_a1e5\\msg\\file\\2026-04\\samplereverse.exe`
+- 注意：
+  - harness 在最后模型兜底阶段仍因 `gbk` 编码错误退出；
+  - compare-aware artifact 已完整生成，本轮结论可用。
+
+4) 关键结果
+- exact1 frontier guided:
+  - `pair_local_escape_candidate_count = 3`
+  - `pair_local_escape_borderline_count = 0`
+  - `pair_near_local_escape_count = 0`
+  - `pair_wide_local_escape_count = 0`
+  - `pair_gate_kept_escape = 1`
+  - `improved_pair_frontier_pool_count = 0`
+- single-byte guard 过于强势：
+  - 三个主 locked pair 的左右位置都出现类似：
+    - `input = 4`
+    - `kept = 1`
+    - `dropped = 4`
+  - 实际 escape profile 只剩 exact1 base 自身：
+    - `5a3e7f46ddd474d0`
+- 当前 runtime best 未改善：
+  - exact2:
+    - `78d540b49c590770...` -> `runtime_ci_exact_wchars=2`, `runtime_ci_distance5=246`
+  - exact1:
+    - `5a3e7f46ddd474d0...` -> `runtime_ci_exact_wchars=1`, `runtime_ci_distance5=258`
+- summary：
+  - `frontier_converged_reason = distance_not_improved`
+  - `frontier_stall_stage = frontier_refine`
+  - `exact1_near_local_escape_count = 0`
+  - `exact1_wide_local_escape_count = 0`
+  - `exact1_best_near_local_distance = null`
+
+5) 结论
+- 本轮成功阻止了上一轮 `558+` 的 wide weak borderline 进入主 handoff。
+- 但 guard 现在太硬，导致没有任何真实 near/wide local escape 进入分层，只剩 base fallback。
+- 下一轮不应继续改 gate；应把 single-byte guard 从硬过滤改成 soft rank / diagnostic-first：
+  - 保留少量 guard-rejected 但 radius 小的候选进入 `wide_local_escape` 诊断；
+  - 允许每个位置至少 1 个非 base local candidate 进入 pair 组合；
+  - 用 pair 阶段质量筛选再决定 near/wide，而不是在单字节阶段提前杀光。
+
+## 2026-04-23 - Exact1 single-byte soft guard implemented and regressed
+
+1) 代码变更
+- 将 exact1 single-byte guard 从硬过滤改成三态：
+  - `guard_passed`
+  - `guard_soft_rejected`
+  - `guard_hard_rejected`
+- 每个 exact1 escape 位置现在固定保留：
+  - base byte
+  - 全部 `guard_passed`
+  - 最多 1 个低 radius 的 `guard_soft_rejected`
+- 新增并贯通诊断字段：
+  - `pair_single_byte_guard_candidates`
+  - `pair_single_byte_guard_status_counts`
+  - `pair_guard_soft_promoted_values`
+  - `pair_guard_nonbase_starved`
+- pair 阶段仍负责最终 near/wide/keep 判定；
+  - SMT 继续只吸收 `pair_gate_kept_escape` / `near_local_escape`，不吸收 `wide_local_escape` 或纯 guard diagnostics。
+
+2) 自动化测试
+- `python -m pytest -q tests/test_compare_aware_search_strategy.py -k "soft_guard or borderline or local_escape or smt or pair_set or pair_entries"`
+  - `13 passed`
+- `python -m pytest -q tests/test_compare_aware_search_strategy.py`
+  - `40 passed`
+- `python -m pytest -q`
+  - `112 passed`
+
+3) 真实样本回归
+- 新 run:
+  - `solve_reports\\harness_runs\\samplereverse_exact1_soft_guard_20260423`
+- 目标：
+  - `E:\\xwechat_files\\wxid_9ky6h8wz58b912_a1e5\\msg\\file\\2026-04\\samplereverse.exe`
+- 注意：
+  - harness 末尾仍因 `gbk` 编码错误退出；
+  - compare-aware artifacts 已完整生成，本轮结论有效。
+
+4) 关键结果
+- soft guard 已经恢复 non-base 值进入 exact1 pair 组合：
+  - `pair_guard_soft_promoted_values` 非空：
+    - `0,1 -> {0: [87], 1: [59]}`
+    - `0,2 -> {0: [87], 2: [124]}`
+    - `0,3 -> {0: [87], 3: [67]}`
+  - `pair_guard_nonbase_starved` 全部为 `false`
+  - 三组主 pair 的单字节 guard 统计都变成：
+    - `guard_passed = 0`
+    - `guard_soft_rejected = 4`
+    - `guard_hard_rejected = 0`
+- exact1 frontier guided:
+  - `pair_local_escape_candidate_count = 6`
+  - `pair_gate_kept_escape = 1`
+  - `pair_near_local_escape_count = 0`
+  - `pair_wide_local_escape_count = 3`
+  - `improved_pair_frontier_pool_count = 0`
+- 新 non-base 组合已经进入 pair gate，但质量仍差：
+  - `5a3b7f46ddd474d0` -> `ci_distance5 = 870`
+  - `5a3e7c46ddd474d0` -> `ci_distance5 = 751`
+  - `5a3e7f43ddd474d0` -> `ci_distance5 = 708`
+  - 全部被归为 `wide_local_escape`
+- 当前 runtime best 仍未改善：
+  - exact2:
+    - `78d540b49c590770...` -> `runtime_ci_exact_wchars=2`, `runtime_ci_distance5=246`
+  - exact1:
+    - `5a3e7f46ddd474d0...` -> `runtime_ci_exact_wchars=1`, `runtime_ci_distance5=258`
+- summary：
+  - `frontier_converged_reason = distance_not_improved`
+  - `frontier_stall_stage = frontier_refine`
+  - `best_frontier_after` 仍是 `5a3e7f46ddd474d0...`
+
+5) 结论
+- 本轮成功证明：问题已经不再是 exact1 guard 把非 base 值提前杀光。
+- 新瓶颈是 soft-promoted 值的质量：
+  - 值能够进入 pair 组合；
+  - 但一离开 exact1 anchor 就迅速掉进 `wide_local_escape`，没有任何 near-local 改善。
+- 下一轮默认方向不应继续放宽 gate；
+  - 应重排 exact1 soft-promotion 排序，让被提升的单字节值更贴近 exact1 局部结构，而不是只按小 radius 兜底；
+  - 优先把 `guard_soft_rejected` 再细分成“local-compatible”与“distance-explosive”两类；
+  - 目标是先把至少 1 个 non-base 候选推进到 `near_local_escape`，再看 refine/SMT 是否能接住。
+
+## 2026-04-23 - Exact1 soft-promotion quality rerank implemented and regressed
+
+1) 代码变更
+- 将 exact1 `guard_soft_rejected` 再细分为：
+  - `local_compatible_soft`
+  - `distance_explosive_soft`
+- exact1 soft-promotion 排序不再只按 `radius`：
+  - 先比较单字节 `ci_distance5` 退让
+  - 再比较单字节 `raw_distance10` 退让
+  - 再比较单字节结构退让
+  - 再比较 `radius`
+  - 最后比较来源优先级
+- 新增并贯通诊断字段：
+  - `pair_guard_soft_quality_band`
+  - `pair_guard_soft_rank_summary`
+  - `pair_guard_soft_distance_delta`
+  - `pair_guard_soft_raw_delta`
+  - `pair_guard_soft_structure_delta`
+
+2) 自动化测试
+- `python -m pytest -q tests/test_compare_aware_search_strategy.py -k "soft_guard or borderline or local_escape or smt or pair_set or pair_entries"`
+  - `14 passed`
+- `python -m pytest -q tests/test_compare_aware_search_strategy.py`
+  - `41 passed`
+- `python -m pytest -q`
+  - `113 passed`
+
+3) 真实样本回归
+- 新 run:
+  - `solve_reports\\harness_runs\\samplereverse_exact1_soft_quality_rerank_20260423`
+- 目标：
+  - `E:\\xwechat_files\\wxid_9ky6h8wz58b912_a1e5\\msg\\file\\2026-04\\samplereverse.exe`
+- 注意：
+  - harness 末尾仍因 `gbk` 编码错误退出；
+  - compare-aware artifacts 已完整生成，本轮结论有效。
+
+4) 关键结果
+- 新增 soft-quality 诊断已完整写出，且可以确认当前 exact1 soft 值全部属于：
+  - `distance_explosive_soft`
+- promoted 值没有发生实质变化：
+  - `0,1 -> {0: [87], 1: [59]}`
+  - `0,2 -> {0: [87], 2: [124]}`
+  - `0,3 -> {0: [87], 3: [67]}`
+- 每个 promoted 值的单字节退让仍然过大，且结构统一劣化：
+  - pos0:
+    - `87 -> dist_delta 682 raw_delta 650`
+    - `93 -> dist_delta 776 raw_delta 744`
+  - pos2:
+    - `124 -> dist_delta 493 raw_delta 461`
+    - `131 -> dist_delta 542 raw_delta 536`
+  - pos3:
+    - `67 -> dist_delta 450 raw_delta 474`
+    - `74 -> dist_delta 492 raw_delta 496`
+  - 所有 soft 值的 `structure_delta` 都是：
+    - `[-1, -1, 0, -1, -1, 0]`
+  - 所有 soft 值来源也仍然只有：
+    - `escape_neighbor`
+- exact1 frontier guided 结果仍未前进：
+  - `pair_near_local_escape_count = 0`
+  - `pair_wide_local_escape_count = 3`
+  - `pair_gate_kept_escape = 1`
+  - `improved_pair_frontier_pool_count = 0`
+- 当前 runtime best 仍未改善：
+  - exact2:
+    - `78d540b49c590770...` -> `runtime_ci_exact_wchars=2`, `runtime_ci_distance5=246`
+  - exact1:
+    - `5a3e7f46ddd474d0...` -> `runtime_ci_exact_wchars=1`, `runtime_ci_distance5=258`
+- summary：
+  - `frontier_converged_reason = distance_not_improved`
+  - `frontier_stall_stage = frontier_refine`
+
+5) 结论
+- 本轮验证了：当前问题已经不再是 soft-promotion 排序顺序本身。
+- 真正的新瓶颈是 exact1 escape source 的内容：
+  - soft 值虽然能排序；
+  - 但候选全集本身全部来自 `escape_neighbor`；
+  - 且全部同时表现为“distance 爆炸 + structure 统一退化”。
+- 下一轮默认方向不应继续调 gate 或单字节排序；
+  - 应回到 exact1 escape source，优先让 `profile_near` / `incoming_near` / `lineage_near` 真正进入 soft-promotion 候选集；
+  - 若真实样本里这些来源依旧为空，再考虑把 exact1 pair 位集合从 `0,*` 过度中心化里移开。
+
+## 2026-04-24 - Exact1 source projection implemented and regressed
+
+1) 代码变更
+- 在 exact1 source pipeline 中加入“远端 raw source -> 局部 projected values”机制：
+  - `profile / incoming / lineage` 的远端 byte 不再直接丢弃；
+  - 先按相对 exact1 anchor 的符号方向投影到局部 `[-4,+4]` 邻域；
+  - projected 值分别进入 preserve / escape source 池。
+- 新增并贯通 exact1 source projection 诊断字段：
+  - `pair_escape_source_projected_values`
+  - `pair_escape_source_projected_origins`
+  - `lineage_projection_summary`
+  - `pair_escape_source_reject_reasons`
+- 修复一个真实影响排序的 bug：
+  - `origin_priority=0` 之前被 `or` 误判为 falsy，导致 `lineage_projected` 无法在 soft-promotion 排序中发挥优先级。
+
+2) 自动化测试
+- `python -m pytest -q tests/test_compare_aware_search_strategy.py -k "soft_guard or local_escape or pair_entries or lineage_value"`
+  - `11 passed`
+- `python -m pytest -q tests/test_compare_aware_search_strategy.py`
+  - `43 passed`
+- `python -m pytest -q`
+  - `115 passed`
+
+3) 真实样本回归
+- 新 run:
+  - `solve_reports\\harness_runs\\samplereverse_exact1_source_projection_20260424`
+- 目标：
+  - `E:\\xwechat_files\\wxid_9ky6h8wz58b912_a1e5\\msg\\file\\2026-04\\samplereverse.exe`
+- 注意：
+  - harness 末尾仍因 `gbk` 编码错误退出；
+  - compare-aware artifacts 已完整生成，本轮结论有效。
+
+4) 关键结果
+- projected local values 已真实生成，并进入 guided artifact：
+  - `0,1`:
+    - pos0 -> `89,88,87,86,91,92,93,94`
+    - pos1 -> `61,60,59,58,63,64,65,66`
+  - `0,2`:
+    - pos0 -> `89,88,87,86,91,92,93,94`
+    - pos2 -> `126,125,124,123,128,129,130,131`
+  - `0,3`:
+    - pos0 -> `89,88,87,86,91,92,93,94`
+    - pos3 -> `71,72,73,74,69,68,67,66`
+- projected origins 已不再是空壳：
+  - 多个 projected 值同时带有 `profile_projected` / `lineage_projected`
+  - 证明远端 source 已被真正投影进 exact1 局部候选空间
+- `pair_escape_source_reject_reasons` 进一步确认：
+  - projected values 不只是生成了；
+  - 它们确实进入了 pair pool：
+    - `0,1` -> reached `87 / 59`
+    - `0,2` -> reached `87 / 124`
+    - `0,3` -> reached `87 / 67`
+- 但 exact1 质量仍未突破：
+  - `pair_guard_soft_promoted_values` 仍是：
+    - `0,1 -> {0:[87],1:[59]}`
+    - `0,2 -> {0:[87],2:[124]}`
+    - `0,3 -> {0:[87],3:[67]}`
+  - `pair_guard_soft_quality_band` 仍全部为：
+    - `distance_explosive_soft`
+  - `pair_near_local_escape_count = 0`
+  - `pair_wide_local_escape_count = 3`
+  - `improved_pair_frontier_pool_count = 0`
+- runtime best 仍未改善：
+  - exact2:
+    - `78d540b49c590770...` -> `runtime_ci_exact_wchars=2`, `runtime_ci_distance5=246`
+  - exact1:
+    - `5a3e7f46ddd474d0...` -> `runtime_ci_exact_wchars=1`, `runtime_ci_distance5=258`
+- summary：
+  - `frontier_converged_reason = distance_not_improved`
+  - `frontier_stall_stage = frontier_refine`
+
+5) 结论
+- 本轮成功证明：exact1 的新瓶颈已经不再是 source generation。
+- 远端 lineage/profile 证据已经被转成 projected local values，并且至少有一部分真的进入了 pair pool。
+- 当前更具体的瓶颈是 projected 值的质量：
+  - source projection 成功；
+  - soft-promotion 也接住了 projected 值；
+  - 但这些值仍全部表现为 `distance_explosive_soft`，进入 pair 后仍只产出 `wide_local_escape`。
+- 下一轮默认方向不应继续打 source projection；
+  - 应主攻 exact1 projected 值到 `local_compatible_soft` 的质量筛选；
+  - 优先压缩 projected 邻域方向与半径，让进入 soft-promotion 的 projected 值不再同时携带“方向对但距离仍爆炸”的问题；
+  - 若再一轮仍只有 `wide_local_escape`，再考虑把 pair 组合规则做成“projected-only preserve lane”而不是继续扩 source。
+
+## 2026-04-24 exact1 projected-quality regression
+
+1) 代码改动
+- 在 `reverse_agent/strategies/compare_aware_search.py` 中继续收紧 exact1 projected source：
+  - 新增 `EXACT1_PROJECTED_STEP_LIMIT = 2` 与 `EXACT1_PROJECTED_KEEP_PER_DIRECTION = 1`，默认只保留 `±1/±2` 投影步长。
+  - 新增 `_exact1_projected_value_quality()`，把 projected 值分成：
+    - `projected_local_compatible`
+    - `projected_distance_explosive`
+  - exact1 projected 值现在会记录：
+    - `pair_escape_source_projected_quality_band`
+    - `pair_escape_source_projected_rank_summary`
+    - `pair_escape_source_projected_direction`
+    - `pair_escape_source_projected_step`
+    - `pair_escape_source_projected_kept_values`
+    - `pair_escape_source_projected_dropped_values`
+- 修复了两个真实影响 projected 逻辑的问题：
+  - `origin_priority=0` 之前会被 `or` 吃掉，导致 `lineage_projected` 排序优先级失效；
+  - projected 值与 preserve 邻域重合时，旧去重逻辑会把它们从 exact1 escape 池抹掉；现在 `*_projected` 来源不会再被这一步误删。
+- 进一步把 `_bounded_exact1_value_map()` 改成按来源优先级排序后再截断，确保 projected 值能先进入 single-byte 预筛选，而不是被 `escape_neighbor` 提前挤掉。
+
+2) 自动化验证
+- `python -m pytest -q tests/test_compare_aware_search_strategy.py -k "projected or soft_guard or local_escape or pair_entries or lineage_value"` -> `12 passed`
+- `python -m pytest -q tests/test_compare_aware_search_strategy.py` -> `44 passed`
+- `python -m pytest -q` -> `116 passed`
+
+3) 真实样本回归
+- 新 run:
+  - `solve_reports\\harness_runs\\samplereverse_exact1_projected_quality_20260424`
+- 目标：
+  - `E:\\xwechat_files\\wxid_9ky6h8wz58b912_a1e5\\msg\\file\\2026-04\\samplereverse.exe`
+- 注意：
+  - harness 末尾仍因已知 `gbk` 编码错误退出；
+  - compare-aware artifacts 已完整生成，本轮结论有效。
+
+4) 关键结果
+- projected source 的方向压缩与近邻预筛选已经真实执行：
+  - 所有 pair 上都能看到分方向、分步长的 projected 值；
+  - `pair_escape_source_projected_direction` / `pair_escape_source_projected_step` 已落盘。
+- 但 exact1 质量仍未突破：
+  - `projected_local_compatible_count = 0`
+  - `projected_distance_explosive_count = 24`
+  - `pair_near_local_escape_count = 0`
+  - `pair_wide_local_escape_count = 3`
+  - `improved_pair_frontier_pool_count = 0`
+- projected 值现在不再只是“生成后消失”，而是被明确诊断为质量不达标：
+  - 所有 projected 值都落入 `projected_generated_but_distance_explosive`
+  - `projected_local_compatible_but_ranked_out = []`
+  - `projected_local_compatible_reached_pair_pool = []`
+  - `pair_escape_source_projected_kept_values` 全为空
+- 当前 best wide-local 仍是：
+  - `[0,3] -> 5a3e7f43ddd474d0...`，`ci_distance5=708`, `raw_distance10=764`
+  - `[0,2] -> 5a3e7c46ddd474d0...`，`ci_distance5=751`, `raw_distance10=751`
+  - `[0,1] -> 5a3b7f46ddd474d0...`，`ci_distance5=870`, `raw_distance10=870`
+- pair-set 轮换没有成为主瓶颈：
+  - `primary_pair_set` 与 `alternate_pair_set` 的选择键完全一致；
+  - 两边都是 `projected_local_compatible_count = 0`；
+  - winner 仍只是默认 `primary_pair_set`。
+- runtime best 仍未改善：
+  - exact2:
+    - `78d540b49c590770...` -> `runtime_ci_exact_wchars=2`, `runtime_ci_distance5=246`
+  - exact1:
+    - `5a3e7f46ddd474d0...` -> `runtime_ci_exact_wchars=1`, `runtime_ci_distance5=258`
+
+5) 结论
+- 本轮成功证明：下一步已经不该继续打 projected source 的“有无”与“方向/步长扇出”。
+- projected 值现在已经：
+  - 生成了；
+  - 带着正确的 direction/step/origin 诊断进入 artifact；
+  - 并在进入 single-byte 预筛选前得到真实质量打分。
+- 当前更精确的瓶颈是：
+  - projected 值的单字节质量仍全部过差；
+  - 连一个 `projected_local_compatible` 都没有产生；
+  - 因此 exact1 根本还没进入 “projected source -> near_local_escape -> refine” 的接力链。
+- 下一轮默认方向：
+  - 不再继续调 projected source 的投影框架；
+  - 主攻 exact1 projected 值到 `local_compatible_soft` 的单字节质量压缩；
+  - 优先考虑让 projected 值不再与纯 `escape_neighbor` 同权，而是根据 exact1 baseline 的 `ci_distance5/raw_distance10/structure_delta` 做更强的 local-compatible 过滤或降权；
+  - 若下一轮仍然 `projected_local_compatible_count = 0`，再考虑改成“projected-only escape lane”或切回 pair 组合规则，而不是继续扩 source 家族。
+

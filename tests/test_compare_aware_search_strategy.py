@@ -1001,6 +1001,30 @@ def test_mine_exact1_lineage_value_sources_prefers_exact1_lineage_and_source_dif
     assert summary["positions"]["1"]["values"]
 
 
+def test_exact1_neighbor_value_maps_projects_distant_sources_into_local_candidates() -> None:
+    projection_details: dict[str, object] = {}
+    preserve, escape = compare_aware_search._exact1_neighbor_value_maps(
+        base_value=0x5A,
+        profile_values=[0x33],
+        incoming_values=[0x99],
+        lineage_values=[0x78, 0x51],
+        projection_details=projection_details,
+    )
+
+    assert 0x78 not in escape
+    assert 0x99 not in escape
+    assert 0x59 in escape
+    assert any(origin.endswith("_projected") for origin in escape[0x59])
+    assert 0x5C in escape
+    assert any(origin.endswith("_projected") for origin in escape[0x5C])
+    assert 0x78 in projection_details["raw_source_present_but_too_far"]
+    assert 0x99 in projection_details["raw_source_present_but_too_far"]
+    assert sorted(projection_details["projected_values"]) == [0x58, 0x59, 0x5B, 0x5C]
+    assert projection_details["projected_direction"]["92"] == "positive_projection"
+    assert projection_details["projected_step"]["92"] == 2
+    assert "lineage_projected" in projection_details["projected_origins"]["92"]
+
+
 def test_top_compare_aware_pair_entries_exact1_respects_locked_pairs_and_feedback_values() -> None:
     pair_profiles, generation_details = compare_aware_search._top_compare_aware_pair_entries(
         base_anchor="5a3e7f46ddd474d0",
@@ -1037,6 +1061,12 @@ def test_top_compare_aware_pair_entries_exact1_respects_locked_pairs_and_feedbac
     assert generation_details["pair_escape_pool_strategy"] == "exact1_local_neighbors"
     assert generation_details["pair_escape_source_values"]["0,1"]["0"][0] == 0x78
     assert "source_anchor_diff" in generation_details["pair_escape_source_origins"]["0,1"]["0"]
+    assert generation_details["pair_escape_source_projected_values"]["0,1"]["0"] == [0x59, 0x58, 0x5B, 0x5C]
+    assert "lineage_projected" in generation_details["pair_escape_source_projected_origins"]["0,1"]["0"]["92"]
+    assert 0x78 in generation_details["pair_escape_source_reject_reasons"]["0,1"]["0"]["raw_source_present_but_too_far"]
+    assert generation_details["lineage_projection_summary"]["0,1"]["0"]["projected_local_value_generated"]
+    assert generation_details["pair_escape_source_projected_direction"]["0,1"]["0"]["92"] == "positive_projection"
+    assert generation_details["pair_escape_source_projected_step"]["0,1"]["0"]["92"] == 2
     assert 0x33 not in generation_details["pair_escape_pool"]["0,1"]["0"]
     assert 0x18 not in generation_details["pair_escape_pool"]["0,1"]["1"]
     assert all(
@@ -1152,6 +1182,375 @@ def test_top_compare_aware_pair_entries_exact1_keeps_escape_lane_in_pair_profile
     assert kept_escape[0]["pair_value_origin_by_pos"]["1"] == ["escape_neighbor"]
     assert any(entry["pair_escape_mode"] == "escape" for entry in pair_profiles[(0, 1)])
     assert generation_details["pair_profile_drop_reasons"]["0,1"]["escape"] == "profile_kept"
+
+
+def test_top_compare_aware_pair_entries_exact1_soft_guard_promotes_one_low_radius_value(monkeypatch) -> None:
+    monkeypatch.setattr(
+        compare_aware_search,
+        "_exact1_neighbor_value_maps",
+        lambda *, base_value, profile_values, incoming_values, lineage_values: (
+            {int(base_value) & 0xFF: ["anchor"]},
+            {int(base_value) & 0xFF: ["anchor"], (int(base_value) + 2) & 0xFF: ["soft"], (int(base_value) + 3) & 0xFF: ["soft2"]},
+        ),
+    )
+
+    def fake_eval(candidate_hex: str, transform_model) -> dict[str, object]:
+        cand8 = candidate_hex[:16]
+        return {
+            "candidate_hex": candidate_hex,
+            "cand8_hex": cand8,
+            "ci_exact_wchars": 0 if cand8 != "5a3e7f46ddd474d0" else 1,
+            "ci_distance5": 500,
+            "raw_distance10": 520,
+            "pair_wide_ascii_contiguous_8": 0,
+            "pair_wide_zero_high_pairs_8": 0,
+            "pair_flaglike_tail_pairs_8": 0,
+        }
+
+    monkeypatch.setattr(compare_aware_search, "_evaluate_candidate_hex", fake_eval)
+
+    pair_profiles, generation_details = compare_aware_search._top_compare_aware_pair_entries(
+        base_anchor="5a3e7f46ddd474d0",
+        positions=[0, 1],
+        position_profiles={0: [], 1: []},
+        transform_model=SamplereverseTransformModel(),
+        anchor_mode=FRONTIER_ANCHOR_MODE,
+        frontier_submode=FRONTIER_EXACT1_SUBMODE,
+        locked_pair_positions=[(0, 1)],
+        baseline_entry={
+            "candidate_hex": "5a3e7f46ddd474d041414141414141",
+            "cand8_hex": "5a3e7f46ddd474d0",
+            "ci_exact_wchars": 1,
+            "ci_distance5": 258,
+            "raw_distance10": 290,
+            "pair_wide_ascii_contiguous_8": 1,
+            "pair_wide_zero_high_pairs_8": 1,
+            "pair_flaglike_tail_pairs_8": 0,
+        },
+        top_per_pair=4,
+    )
+
+    guard = generation_details["pair_single_byte_guard_status_counts"]["0,1"]
+    assert guard["0"]["guard_soft_rejected"] >= 1
+    assert generation_details["pair_guard_soft_promoted_values"]["0,1"]["0"] == [0x5C]
+    assert generation_details["pair_guard_nonbase_starved"]["0,1"]["0"] is False
+    assert generation_details["pair_guard_soft_quality_band"]["0,1"]["0"]["92"] == "distance_explosive_soft"
+    assert generation_details["pair_guard_soft_distance_delta"]["0,1"]["0"]["92"] == 242
+    assert generation_details["pair_guard_soft_raw_delta"]["0,1"]["0"]["92"] == 230
+    assert generation_details["pair_guard_soft_structure_delta"]["0,1"]["0"]["92"] == [-1, -1, 0, 0, 0, 0]
+    assert 0x5C in generation_details["pair_escape_pool"]["0,1"]["0"]
+    assert any(0x5C in entry["pair_values"] for entry in generation_details["pair_profile_escape_entries"]["0,1"])
+    assert any(entry["pair_escape_mode"] == "escape" for entry in pair_profiles[(0, 1)])
+
+
+def test_top_compare_aware_pair_entries_exact1_soft_guard_prefers_better_quality_over_smaller_radius(monkeypatch) -> None:
+    def fake_maps(*, base_value, profile_values, incoming_values, lineage_values):
+        base = int(base_value) & 0xFF
+        if base == 0x5A:
+            return (
+                {base: ["anchor"]},
+                {
+                    base: ["anchor"],
+                    (base + 2) & 0xFF: ["escape_neighbor"],
+                    (base + 4) & 0xFF: ["escape_neighbor"],
+                },
+            )
+        return ({base: ["anchor"]}, {base: ["anchor"]})
+
+    monkeypatch.setattr(compare_aware_search, "_exact1_neighbor_value_maps", fake_maps)
+
+    def fake_eval(candidate_hex: str, transform_model) -> dict[str, object]:
+        cand8 = candidate_hex[:16]
+        left = int(cand8[:2], 16)
+        if left == 0x5C:
+            distance = 520
+            raw = 540
+            pair_rank = (0, 0, 0)
+        elif left == 0x5E:
+            distance = 380
+            raw = 400
+            pair_rank = (1, 1, 0)
+        else:
+            distance = 500
+            raw = 520
+            pair_rank = (0, 0, 0)
+        return {
+            "candidate_hex": candidate_hex,
+            "cand8_hex": cand8,
+            "ci_exact_wchars": 0 if cand8 != "5a3e7f46ddd474d0" else 1,
+            "ci_distance5": distance,
+            "raw_distance10": raw,
+            "pair_wide_ascii_contiguous_8": pair_rank[0],
+            "pair_wide_zero_high_pairs_8": pair_rank[1],
+            "pair_flaglike_tail_pairs_8": pair_rank[2],
+        }
+
+    monkeypatch.setattr(compare_aware_search, "_evaluate_candidate_hex", fake_eval)
+
+    pair_profiles, generation_details = compare_aware_search._top_compare_aware_pair_entries(
+        base_anchor="5a3e7f46ddd474d0",
+        positions=[0, 1],
+        position_profiles={0: [], 1: []},
+        transform_model=SamplereverseTransformModel(),
+        anchor_mode=FRONTIER_ANCHOR_MODE,
+        frontier_submode=FRONTIER_EXACT1_SUBMODE,
+        locked_pair_positions=[(0, 1)],
+        baseline_entry={
+            "candidate_hex": "5a3e7f46ddd474d041414141414141",
+            "cand8_hex": "5a3e7f46ddd474d0",
+            "ci_exact_wchars": 1,
+            "ci_distance5": 258,
+            "raw_distance10": 290,
+            "pair_wide_ascii_contiguous_8": 1,
+            "pair_wide_zero_high_pairs_8": 1,
+            "pair_flaglike_tail_pairs_8": 0,
+        },
+        top_per_pair=4,
+    )
+
+    assert generation_details["pair_guard_soft_promoted_values"]["0,1"]["0"] == [0x5E]
+    assert generation_details["pair_guard_soft_quality_band"]["0,1"]["0"]["94"] == "local_compatible_soft"
+    assert generation_details["pair_guard_soft_quality_band"]["0,1"]["0"]["92"] == "distance_explosive_soft"
+    ranked = generation_details["pair_guard_soft_rank_summary"]["0,1"]["0"]
+    assert ranked[0]["value"] == 0x5E
+    assert ranked[0]["quality_band"] == "local_compatible_soft"
+    assert any(entry["pair_values"][0] == 0x5E for entry in generation_details["pair_profile_escape_entries"]["0,1"])
+    assert any(entry["pair_values"][0] == 0x5E for entry in pair_profiles[(0, 1)])
+
+
+def test_top_compare_aware_pair_entries_exact1_soft_guard_prefers_projected_origin_over_escape_neighbor(monkeypatch) -> None:
+    monkeypatch.setattr(
+        compare_aware_search,
+        "_exact1_neighbor_value_maps",
+        lambda *, base_value, profile_values, incoming_values, lineage_values: (
+            {int(base_value) & 0xFF: ["anchor"]},
+            (
+                {
+                    int(base_value) & 0xFF: ["anchor"],
+                    (int(base_value) - 3) & 0xFF: ["escape_neighbor"],
+                    (int(base_value) + 3) & 0xFF: ["lineage_projected"],
+                }
+                if (int(base_value) & 0xFF) == 0x5A
+                else {int(base_value) & 0xFF: ["anchor"]}
+            ),
+        ),
+    )
+
+    def fake_eval(candidate_hex: str, transform_model) -> dict[str, object]:
+        cand8 = candidate_hex[:16]
+        left = int(cand8[:2], 16)
+        if left in {0x57, 0x5D}:
+            distance = 430
+            raw = 450
+            pair_rank = (0, 1, 0)
+        else:
+            distance = 500
+            raw = 520
+            pair_rank = (0, 0, 0)
+        return {
+            "candidate_hex": candidate_hex,
+            "cand8_hex": cand8,
+            "ci_exact_wchars": 0 if cand8 != "5a3e7f46ddd474d0" else 1,
+            "ci_distance5": distance,
+            "raw_distance10": raw,
+            "pair_wide_ascii_contiguous_8": pair_rank[0],
+            "pair_wide_zero_high_pairs_8": pair_rank[1],
+            "pair_flaglike_tail_pairs_8": pair_rank[2],
+        }
+
+    monkeypatch.setattr(compare_aware_search, "_evaluate_candidate_hex", fake_eval)
+
+    _, generation_details = compare_aware_search._top_compare_aware_pair_entries(
+        base_anchor="5a3e7f46ddd474d0",
+        positions=[0, 1],
+        position_profiles={0: [], 1: []},
+        transform_model=SamplereverseTransformModel(),
+        anchor_mode=FRONTIER_ANCHOR_MODE,
+        frontier_submode=FRONTIER_EXACT1_SUBMODE,
+        locked_pair_positions=[(0, 1)],
+        baseline_entry={
+            "candidate_hex": "5a3e7f46ddd474d041414141414141",
+            "cand8_hex": "5a3e7f46ddd474d0",
+            "ci_exact_wchars": 1,
+            "ci_distance5": 258,
+            "raw_distance10": 290,
+            "pair_wide_ascii_contiguous_8": 1,
+            "pair_wide_zero_high_pairs_8": 1,
+            "pair_flaglike_tail_pairs_8": 0,
+        },
+        top_per_pair=4,
+    )
+
+    assert generation_details["pair_guard_soft_promoted_values"]["0,1"]["0"] == [0x5D]
+    ranked = generation_details["pair_guard_soft_rank_summary"]["0,1"]["0"]
+    assert ranked[0]["value"] == 0x5D
+    assert ranked[0]["origins"] == ["lineage_projected"]
+
+
+def test_top_compare_aware_pair_entries_exact1_projected_family_competition_prefers_best_projected_value(monkeypatch) -> None:
+    def fake_maps(*, base_value, profile_values, incoming_values, lineage_values, projection_details=None):
+        if projection_details is not None:
+            projection_details.update(
+                {
+                    "raw_source_present_but_too_far": [0x20, 0xE0],
+                    "projected_values": [0x59, 0x58, 0x5B, 0x5C],
+                    "projected_origins": {
+                        "89": ["lineage_projected"],
+                        "88": ["lineage_projected"],
+                        "91": ["lineage_projected"],
+                        "92": ["lineage_projected"],
+                    },
+                    "projected_direction": {
+                        "89": "negative_projection",
+                        "88": "negative_projection",
+                        "91": "positive_projection",
+                        "92": "positive_projection",
+                    },
+                    "projected_step": {"89": 1, "88": 2, "91": 1, "92": 2},
+                }
+            )
+        return (
+            {int(base_value) & 0xFF: ["anchor"]},
+            {
+                int(base_value) & 0xFF: ["anchor"],
+                0x59: ["lineage_projected"],
+                0x58: ["lineage_projected"],
+                0x5B: ["lineage_projected"],
+                0x5C: ["lineage_projected"],
+            },
+        )
+
+    monkeypatch.setattr(compare_aware_search, "_exact1_neighbor_value_maps_with_optional_details", fake_maps)
+
+    def fake_eval(candidate_hex: str, transform_model) -> dict[str, object]:
+        cand8 = candidate_hex[:16]
+        left = int(cand8[:2], 16)
+        mapping = {
+            0x59: (330, 340, (1, 1, 0)),
+            0x58: (390, 410, (0, 1, 0)),
+            0x5B: (320, 330, (1, 1, 0)),
+            0x5C: (420, 430, (0, 0, 0)),
+        }
+        distance, raw, pair_rank = mapping.get(left, (500, 520, (0, 0, 0)))
+        return {
+            "candidate_hex": candidate_hex,
+            "cand8_hex": cand8,
+            "ci_exact_wchars": 0 if cand8 != "5a3e7f46ddd474d0" else 1,
+            "ci_distance5": distance,
+            "raw_distance10": raw,
+            "pair_wide_ascii_contiguous_8": pair_rank[0],
+            "pair_wide_zero_high_pairs_8": pair_rank[1],
+            "pair_flaglike_tail_pairs_8": pair_rank[2],
+        }
+
+    monkeypatch.setattr(compare_aware_search, "_evaluate_candidate_hex", fake_eval)
+
+    _, generation_details = compare_aware_search._top_compare_aware_pair_entries(
+        base_anchor="5a3e7f46ddd474d0",
+        positions=[0, 1],
+        position_profiles={0: [], 1: []},
+        transform_model=SamplereverseTransformModel(),
+        anchor_mode=FRONTIER_ANCHOR_MODE,
+        frontier_submode=FRONTIER_EXACT1_SUBMODE,
+        locked_pair_positions=[(0, 1)],
+        baseline_entry={
+            "candidate_hex": "5a3e7f46ddd474d041414141414141",
+            "cand8_hex": "5a3e7f46ddd474d0",
+            "ci_exact_wchars": 1,
+            "ci_distance5": 258,
+            "raw_distance10": 290,
+            "pair_wide_ascii_contiguous_8": 1,
+            "pair_wide_zero_high_pairs_8": 1,
+            "pair_flaglike_tail_pairs_8": 0,
+        },
+        top_per_pair=4,
+    )
+
+    assert generation_details["pair_escape_source_projected_kept_values"]["0,1"]["0"] == [0x5B]
+    assert generation_details["pair_escape_source_projected_dropped_values"]["0,1"]["0"] == [0x59, 0x58, 0x5C]
+    assert generation_details["pair_escape_source_projected_quality_band"]["0,1"]["0"]["89"] == "projected_local_compatible"
+    assert generation_details["pair_escape_source_projected_quality_band"]["0,1"]["0"]["92"] == "projected_distance_explosive"
+    assert generation_details["pair_projected_competitive_status"]["0,1"]["0"] == "projected_beats_neighbor"
+    assert generation_details["pair_projected_competitive_winner"]["0,1"]["0"]["value"] == 0x5B
+    assert generation_details["pair_guard_soft_promoted_values"]["0,1"]["0"] == [0x5B]
+
+
+def test_top_compare_aware_pair_entries_exact1_projected_family_competition_reports_raw_loss(monkeypatch) -> None:
+    def fake_maps(*, base_value, profile_values, incoming_values, lineage_values, projection_details=None):
+        if projection_details is not None:
+            projection_details.update(
+                {
+                    "raw_source_present_but_too_far": [0x20],
+                    "projected_values": [0x5D],
+                    "projected_origins": {"93": ["lineage_projected"]},
+                    "projected_direction": {"93": "positive_projection"},
+                    "projected_step": {"93": 1},
+                }
+            )
+        base = int(base_value) & 0xFF
+        return (
+            {base: ["anchor"]},
+            {
+                base: ["anchor"],
+                0x5D: ["lineage_projected"],
+                0x57: ["escape_neighbor"],
+            },
+        )
+
+    monkeypatch.setattr(compare_aware_search, "_exact1_neighbor_value_maps_with_optional_details", fake_maps)
+
+    def fake_eval(candidate_hex: str, transform_model) -> dict[str, object]:
+        cand8 = candidate_hex[:16]
+        left = int(cand8[:2], 16)
+        if left == 0x5D:
+            distance = 420
+            raw = 470
+            pair_rank = (1, 1, 0)
+        elif left == 0x57:
+            distance = 420
+            raw = 430
+            pair_rank = (1, 1, 0)
+        else:
+            distance = 500
+            raw = 520
+            pair_rank = (0, 0, 0)
+        return {
+            "candidate_hex": candidate_hex,
+            "cand8_hex": cand8,
+            "ci_exact_wchars": 0 if cand8 != "5a3e7f46ddd474d0" else 1,
+            "ci_distance5": distance,
+            "raw_distance10": raw,
+            "pair_wide_ascii_contiguous_8": pair_rank[0],
+            "pair_wide_zero_high_pairs_8": pair_rank[1],
+            "pair_flaglike_tail_pairs_8": pair_rank[2],
+        }
+
+    monkeypatch.setattr(compare_aware_search, "_evaluate_candidate_hex", fake_eval)
+
+    _, generation_details = compare_aware_search._top_compare_aware_pair_entries(
+        base_anchor="5a3e7f46ddd474d0",
+        positions=[0, 1],
+        position_profiles={0: [], 1: []},
+        transform_model=SamplereverseTransformModel(),
+        anchor_mode=FRONTIER_ANCHOR_MODE,
+        frontier_submode=FRONTIER_EXACT1_SUBMODE,
+        locked_pair_positions=[(0, 1)],
+        baseline_entry={
+            "candidate_hex": "5a3e7f46ddd474d041414141414141",
+            "cand8_hex": "5a3e7f46ddd474d0",
+            "ci_exact_wchars": 1,
+            "ci_distance5": 258,
+            "raw_distance10": 290,
+            "pair_wide_ascii_contiguous_8": 1,
+            "pair_wide_zero_high_pairs_8": 1,
+            "pair_flaglike_tail_pairs_8": 0,
+        },
+        top_per_pair=4,
+    )
+
+    assert generation_details["pair_projected_competitive_status"]["0,1"]["0"] == "projected_loses_on_raw"
+    assert generation_details["pair_projected_blocked_by_neighbor"]["0,1"]["0"]["value"] == 0x57
+    assert generation_details["pair_guard_soft_promoted_values"]["0,1"]["0"] == [0x57]
 
 
 def test_diverse_pair_frontier_pool_exact1_drops_exact_regression_without_distance_escape(monkeypatch) -> None:
@@ -1361,10 +1760,104 @@ def test_diverse_pair_frontier_pool_exact1_allows_borderline_local_escape(monkey
     assert not diagnostics["pair_gate_kept_escape"]
     assert diagnostics["pair_borderline_escape_candidates"][0]["cand8_hex"] == "5a417f46ddd474d0"
     assert diagnostics["pair_borderline_escape_candidates"][0]["pair_escape_status"] == "borderline"
+    assert diagnostics["pair_borderline_escape_candidates"][0]["pair_escape_quality_band"] == "near_local_escape"
+    assert diagnostics["pair_near_local_escape_candidates"][0]["cand8_hex"] == "5a417f46ddd474d0"
+    assert diagnostics["pair_near_local_escape_count"] == 1
+    assert diagnostics["pair_wide_local_escape_count"] == 0
     assert diagnostics["pair_escape_status_by_lane"]["0,1"]["local_escape"] == "gate_borderline_escape"
     assert diagnostics["pair_escape_source_statuses"]["0,1"] == "gate_borderline_escape"
     assert diagnostics["pair_local_escape_borderline_count"] == 1
     assert drop_reasons == {}
+
+
+def test_diverse_pair_frontier_pool_exact1_keeps_wide_local_escape_diagnostic_only(monkeypatch) -> None:
+    monkeypatch.setattr(
+        compare_aware_search,
+        "_guided_sort_key",
+        lambda entry, transform_model, **kwargs: (
+            int(entry.get("ci_distance5", 1 << 30)),
+            int(entry.get("raw_distance10", 1 << 30)),
+            -int(entry.get("ci_exact_wchars", 0)),
+            str(entry.get("candidate_hex", "")),
+        ),
+    )
+    selected, drop_reasons, diagnostics = compare_aware_search._diverse_pair_frontier_pool(
+        {
+            (0, 2): [
+                {
+                    "candidate_hex": "5a3e7f46ddd474d041414141414141",
+                    "cand8_hex": "5a3e7f46ddd474d0",
+                    "ci_exact_wchars": 1,
+                    "ci_distance5": 258,
+                    "raw_distance10": 290,
+                    "pair_positions": [0, 2],
+                    "pair_values": [0x5A, 0x7F],
+                },
+                {
+                    "candidate_hex": "563e7b46ddd474d041414141414141",
+                    "cand8_hex": "563e7b46ddd474d0",
+                    "ci_exact_wchars": 0,
+                    "ci_distance5": 558,
+                    "raw_distance10": 558,
+                    "pair_escape_mode": "escape",
+                    "pair_wide_ascii_contiguous_8": 0,
+                    "pair_wide_zero_high_pairs_8": 0,
+                    "pair_flaglike_tail_pairs_8": 0,
+                    "pair_positions": [0, 2],
+                    "pair_values": [0x56, 0x7B],
+                    "pair_mutation_radius": 4,
+                },
+            ]
+        },
+        transform_model=SamplereverseTransformModel(),
+        anchor_mode=FRONTIER_ANCHOR_MODE,
+        frontier_submode=FRONTIER_EXACT1_SUBMODE,
+        baseline_entry={
+            "candidate_hex": "5a3e7f46ddd474d041414141414141",
+            "cand8_hex": "5a3e7f46ddd474d0",
+            "ci_exact_wchars": 1,
+            "ci_distance5": 258,
+            "raw_distance10": 290,
+            "pair_wide_ascii_contiguous_8": 1,
+            "pair_wide_zero_high_pairs_8": 1,
+            "pair_flaglike_tail_pairs_8": 0,
+        },
+        keep_limit=2,
+    )
+
+    assert all(entry["cand8_hex"] != "563e7b46ddd474d0" for entry in selected)
+    assert diagnostics["pair_wide_local_escape_candidates"][0]["cand8_hex"] == "563e7b46ddd474d0"
+    assert diagnostics["pair_wide_local_escape_candidates"][0]["pair_escape_quality_band"] == "wide_local_escape"
+    assert not diagnostics["pair_near_local_escape_candidates"]
+    assert diagnostics["pair_escape_source_statuses"]["0,2"] == "gate_filtered_wide_local_escape"
+    assert diagnostics["pair_wide_local_escape_count"] == 1
+    assert drop_reasons["gate_filtered_wide_local_escape"] == 1
+
+
+def test_exact1_pair_set_selection_prefers_near_local_over_wide_borderline() -> None:
+    near_result = {
+        "pair_frontier_pool": [],
+        "pair_drop_reasons": {},
+        "pair_frontier_diagnostics": {
+            "pair_gate_kept_escape": [],
+            "pair_near_local_escape_candidates": [{"ci_distance5": 330}],
+            "pair_wide_local_escape_count": 0,
+            "pair_best_local_escape": {"0,1": {"pair_escape_signal_score": 7}},
+        },
+    }
+    wide_result = {
+        "pair_frontier_pool": [],
+        "pair_drop_reasons": {},
+        "pair_frontier_diagnostics": {
+            "pair_gate_kept_escape": [],
+            "pair_near_local_escape_candidates": [],
+            "pair_borderline_escape_candidates": [{"ci_distance5": 558}],
+            "pair_wide_local_escape_count": 1,
+            "pair_best_local_escape": {"0,2": {"pair_escape_signal_score": 7}},
+        },
+    }
+
+    assert compare_aware_search._exact1_pair_set_selection_key(near_result) < compare_aware_search._exact1_pair_set_selection_key(wide_result)
 
 
 def test_diverse_pair_frontier_pool_exact1_tracks_local_and_hard_escape_per_pair(monkeypatch) -> None:
@@ -1742,12 +2235,22 @@ def test_run_compare_aware_smt_records_feedback_value_pools_from_improved_fronti
                     "pair_values": [0x5A, 0x44],
                 }
             ],
-            "pair_borderline_escape_candidates": [
+            "pair_near_local_escape_candidates": [
                 {
                     "cand8_hex": "5a667f46ddd474d0",
                     "pair_positions": [0, 1],
                     "pair_values": [0x5A, 0x66],
                     "pair_escape_status": "borderline",
+                    "pair_escape_quality_band": "near_local_escape",
+                }
+            ],
+            "pair_wide_local_escape_candidates": [
+                {
+                    "cand8_hex": "5a777f46ddd474d0",
+                    "pair_positions": [0, 1],
+                    "pair_values": [0x5A, 0x77],
+                    "pair_escape_status": "borderline",
+                    "pair_escape_quality_band": "wide_local_escape",
                 }
             ],
             "pair_profile_kept_escape": [
@@ -1798,6 +2301,7 @@ def test_run_compare_aware_smt_records_feedback_value_pools_from_improved_fronti
     assert result["payload"]["feedback_value_pools"]["0"][0] == 0x5A
     assert 0x44 in result["payload"]["feedback_value_pools"]["1"]
     assert 0x66 in result["payload"]["feedback_value_pools"]["1"]
+    assert 0x77 not in result["payload"]["feedback_value_pools"]["1"]
     assert 0x55 in result["payload"]["feedback_value_pools"]["1"]
     assert 0x99 in result["payload"]["feedback_value_pools"]["1"]
     assert 0x78 in result["payload"]["feedback_value_pools"]["0"]

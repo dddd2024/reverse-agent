@@ -70,6 +70,16 @@ EXACT1_PAIR_PROFILE_PRESERVE_TOP = 4
 EXACT1_PAIR_PROFILE_ESCAPE_TOP = 2
 EXACT1_PAIR_ESCAPE_KEEP_SCORE_MAX = 5
 EXACT1_PAIR_ESCAPE_BORDERLINE_SCORE_MAX = 7
+EXACT1_PAIR_NEAR_LOCAL_RADIUS = 2
+EXACT1_PAIR_NEAR_DISTANCE_SLACK = 128
+EXACT1_PAIR_NEAR_RAW_SLACK = 128
+EXACT1_PAIR_SINGLE_BYTE_GUARD_SLACK = 96
+EXACT1_PAIR_SINGLE_BYTE_SOFT_RADIUS = 4
+EXACT1_PAIR_SINGLE_BYTE_SOFT_PROMOTE_LIMIT = 1
+EXACT1_PROJECTED_STEP_LIMIT = 2
+EXACT1_PROJECTED_KEEP_PER_DIRECTION = 1
+EXACT1_PROJECTED_DISTANCE_SLACK = 192
+EXACT1_PROJECTED_RAW_SLACK = 192
 EXACT1_PAIR_TOP_LOCAL_ESCAPE_PER_PAIR = 1
 EXACT1_PAIR_HARD_ESCAPE_DIAG_SAMPLES = 1
 EXACT1_LINEAGE_SOURCE_LIMIT = 4
@@ -303,6 +313,71 @@ def _pair_structure_rank(entry: dict[str, object], transform_model: Samplerevers
         int(metrics.get("wide_ascii_contiguous_16", 0) or 0),
         int(metrics.get("wide_zero_high_pairs_16", 0) or 0),
         int(metrics.get("flaglike_tail_pairs_16", 0) or 0),
+    )
+
+
+def _exact1_single_byte_origin_priority(origins: Sequence[str]) -> int:
+    labels = [str(item).strip() for item in origins if str(item).strip()]
+    if any(label.startswith("lineage_") for label in labels):
+        return 0
+    if any(label.startswith("incoming_") for label in labels):
+        return 1
+    if any(label.startswith("profile_") for label in labels):
+        return 2
+    if any(label.startswith("preserve_") or label in {"anchor", "single_byte_guard_base"} for label in labels):
+        return 3
+    if any("escape_neighbor" in label for label in labels):
+        return 4
+    return 5
+
+
+def _exact1_single_byte_soft_quality(
+    *,
+    radius: int,
+    distance_delta: int,
+    raw_delta: int,
+    structure_rank: Sequence[int],
+    baseline_rank: Sequence[int],
+    origins: Sequence[str],
+) -> dict[str, object]:
+    structure_delta = tuple(int(a) - int(b) for a, b in zip(structure_rank, baseline_rank))
+    structure_penalty = sum(max(0, -int(value)) for value in structure_delta[:3])
+    structure_gain = sum(max(0, int(value)) for value in structure_delta[:3])
+    origin_priority = _exact1_single_byte_origin_priority(origins)
+    local_compatible = (
+        distance_delta <= max(EXACT1_PAIR_SINGLE_BYTE_GUARD_SLACK * 2, EXACT1_PAIR_DISTANCE_ESCAPE * 6)
+        and raw_delta <= max(EXACT1_PAIR_SINGLE_BYTE_GUARD_SLACK * 2, EXACT1_PAIR_DISTANCE_ESCAPE * 6)
+        and (structure_penalty == 0 or structure_gain > 0 or origin_priority <= 2)
+    )
+    quality_band = "local_compatible_soft" if local_compatible else "distance_explosive_soft"
+    sort_key = (
+        0 if local_compatible else 1,
+        int(distance_delta),
+        int(raw_delta),
+        int(structure_penalty),
+        int(radius),
+        int(origin_priority),
+        -int(structure_gain),
+    )
+    return {
+        "quality_band": quality_band,
+        "structure_delta": structure_delta,
+        "structure_penalty": structure_penalty,
+        "structure_gain": structure_gain,
+        "origin_priority": origin_priority,
+        "sort_key": sort_key,
+    }
+
+
+def _exact1_soft_family_competition_key(candidate: dict[str, object]) -> tuple[int, int, int, int, int, int, int]:
+    return (
+        int(candidate.get("ci_distance_delta", 1 << 30) or (1 << 30)),
+        int(candidate.get("raw_distance_delta", 1 << 30) or (1 << 30)),
+        int(candidate.get("structure_penalty", 1 << 30) or (1 << 30)),
+        int(candidate.get("projection_step", candidate.get("radius", 1 << 30)) or (1 << 30)),
+        int(candidate.get("origin_priority", 1 << 30) or (1 << 30)),
+        -int(candidate.get("structure_gain", 0) or 0),
+        int(candidate.get("value", 0) or 0),
     )
 
 
@@ -706,10 +781,12 @@ def _exact1_pair_escape_signal(
     locality_score = 0
     local_step_count = 0
     large_step_count = 0
+    max_mutation_radius = int(candidate.get("pair_mutation_radius", 0) or 0)
     pair_positions = [int(item) for item in candidate.get("pair_positions", []) if isinstance(item, int) or str(item).isdigit()]
     for position in pair_positions:
         if 0 <= position < len(candidate_bytes) and 0 <= position < len(baseline_bytes):
             delta = abs(candidate_bytes[position] - baseline_bytes[position])
+            max_mutation_radius = max(max_mutation_radius, delta)
             if delta <= 4:
                 locality_score += 1
                 local_step_count += 1
@@ -769,14 +846,31 @@ def _exact1_pair_escape_signal(
         reason = "local_escape_but_signal_weak" if locality_score > 0 else "hard_escape_signal_weak"
     lane = "hard_escape" if hard_escape else "local_escape"
     status = "reject"
+    quality_band = "hard_escape" if lane == "hard_escape" else "rejected_local_escape"
+    quality_reason = reason
     if lane == "local_escape":
         if score <= EXACT1_PAIR_ESCAPE_KEEP_SCORE_MAX:
             status = "keep"
+            quality_band = "kept_local_escape"
         elif score <= EXACT1_PAIR_ESCAPE_BORDERLINE_SCORE_MAX and locality_score > 0:
             status = "borderline"
+            if (
+                max_mutation_radius <= EXACT1_PAIR_NEAR_LOCAL_RADIUS
+                or (
+                    distance_delta <= EXACT1_PAIR_NEAR_DISTANCE_SLACK
+                    and raw_delta <= EXACT1_PAIR_NEAR_RAW_SLACK
+                )
+            ):
+                quality_band = "near_local_escape"
+                quality_reason = "near_radius_or_distance_slack"
+            else:
+                quality_band = "wide_local_escape"
+                quality_reason = "distance_or_radius_too_wide"
     return {
         "passed": status == "keep",
         "status": status,
+        "quality_band": quality_band,
+        "quality_reason": quality_reason,
         "score": score,
         "reason": reason,
         "lane": lane,
@@ -787,6 +881,7 @@ def _exact1_pair_escape_signal(
         "local_step_count": local_step_count,
         "large_step_count": large_step_count,
         "local_move_score": local_move_score,
+        "max_mutation_radius": max_mutation_radius,
     }
 
 
@@ -876,16 +971,86 @@ def _append_exact1_value_origin(
         bucket.append(origin)
 
 
+def _exact1_projected_local_values(
+    *,
+    base_value: int,
+    raw_value: int,
+    radius: int = EXACT1_PROJECTED_STEP_LIMIT,
+) -> list[int]:
+    base = int(base_value) & 0xFF
+    value = int(raw_value) & 0xFF
+    signed_delta = value - base
+    if signed_delta == 0:
+        return []
+    direction = 1 if signed_delta > 0 else -1
+    projected: list[int] = []
+    seen: set[int] = set()
+    for step in range(1, max(1, radius) + 1):
+        candidate = (base + direction * step) & 0xFF
+        if candidate == base or candidate in seen:
+            continue
+        seen.add(candidate)
+        projected.append(candidate)
+    return projected
+
+
+def _exact1_projected_value_quality(
+    *,
+    distance_delta: int,
+    raw_delta: int,
+    structure_rank: Sequence[int],
+    baseline_rank: Sequence[int],
+    step: int,
+    origins: Sequence[str],
+) -> dict[str, object]:
+    structure_delta = tuple(int(a) - int(b) for a, b in zip(structure_rank, baseline_rank))
+    structure_penalty = sum(max(0, -int(value)) for value in structure_delta[:3])
+    structure_gain = sum(max(0, int(value)) for value in structure_delta[:3])
+    origin_priority = _exact1_single_byte_origin_priority(origins)
+    local_compatible = (
+        distance_delta <= EXACT1_PROJECTED_DISTANCE_SLACK
+        and raw_delta <= EXACT1_PROJECTED_RAW_SLACK
+        and structure_penalty <= 1
+    )
+    quality_band = "projected_local_compatible" if local_compatible else "projected_distance_explosive"
+    sort_key = (
+        0 if local_compatible else 1,
+        int(distance_delta),
+        int(raw_delta),
+        int(structure_penalty),
+        int(step),
+        int(origin_priority),
+        -int(structure_gain),
+    )
+    return {
+        "quality_band": quality_band,
+        "structure_delta": structure_delta,
+        "structure_penalty": structure_penalty,
+        "structure_gain": structure_gain,
+        "origin_priority": origin_priority,
+        "sort_key": sort_key,
+    }
+
+
 def _exact1_neighbor_value_maps(
     *,
     base_value: int,
     profile_values: Sequence[int],
     incoming_values: Sequence[int],
     lineage_values: Sequence[int],
+    projection_details: dict[str, object] | None = None,
 ) -> tuple[dict[int, list[str]], dict[int, list[str]]]:
     base = int(base_value) & 0xFF
     preserve_sources: dict[int, list[str]] = {}
     escape_sources: dict[int, list[str]] = {}
+    if projection_details is None:
+        projection_details = {}
+    projection_details.setdefault("raw_source_present_but_too_far", [])
+    projection_details.setdefault("projected_local_value_generated", [])
+    projection_details.setdefault("projected_values", [])
+    projection_details.setdefault("projected_origins", {})
+    projection_details.setdefault("projected_direction", {})
+    projection_details.setdefault("projected_step", {})
 
     _append_exact1_value_origin(preserve_sources, value=base, origin="anchor")
     for value in _small_perturbation_values(base, radius=EXACT1_PRESERVE_NEIGHBOR_RADIUS):
@@ -904,6 +1069,7 @@ def _exact1_neighbor_value_maps(
         ("incoming", incoming_values),
         ("lineage", lineage_values),
     ):
+        supported_directions: set[str] = set()
         for raw_value in values:
             value = int(raw_value) & 0xFF
             delta = abs(value - base)
@@ -914,11 +1080,74 @@ def _exact1_neighbor_value_maps(
                 _append_exact1_value_origin(preserve_sources, value=value, origin=f"{origin_prefix}_local")
             elif delta <= EXACT1_LOCAL_SOURCE_RADIUS:
                 _append_exact1_value_origin(escape_sources, value=value, origin=f"{origin_prefix}_near")
+            else:
+                supported_directions.add("positive_projection" if value > base else "negative_projection")
+                raw_too_far = projection_details.setdefault("raw_source_present_but_too_far", [])
+                if value not in raw_too_far:
+                    raw_too_far.append(value)
+        for direction_label in sorted(supported_directions):
+            direction_raw = (base + EXACT1_LOCAL_SOURCE_RADIUS + 1) if direction_label == "positive_projection" else (base - EXACT1_LOCAL_SOURCE_RADIUS - 1)
+            projected_values = _exact1_projected_local_values(
+                base_value=base,
+                raw_value=direction_raw,
+                radius=EXACT1_PROJECTED_STEP_LIMIT,
+            )
+            for step, projected_value in enumerate(projected_values, start=1):
+                if step > EXACT1_PROJECTED_STEP_LIMIT:
+                    break
+                projected_origin = f"{origin_prefix}_projected"
+                projected_direction = projection_details.setdefault("projected_direction", {})
+                projected_direction[str(projected_value)] = direction_label
+                projected_step = projection_details.setdefault("projected_step", {})
+                projected_step[str(projected_value)] = int(step)
+                projected_generated = projection_details.setdefault("projected_local_value_generated", [])
+                if projected_value not in projected_generated:
+                    projected_generated.append(projected_value)
+                projected_values_bucket = projection_details.setdefault("projected_values", [])
+                if projected_value not in projected_values_bucket:
+                    projected_values_bucket.append(projected_value)
+                projected_origins = projection_details.setdefault("projected_origins", {})
+                origin_bucket = projected_origins.setdefault(str(projected_value), [])
+                if projected_origin not in origin_bucket:
+                    origin_bucket.append(projected_origin)
+                _append_exact1_value_origin(
+                    escape_sources,
+                    value=projected_value,
+                    origin=projected_origin,
+                )
 
     for value in list(preserve_sources):
+        escape_origins = list(escape_sources.get(value, []))
+        if any(str(origin).endswith("_projected") for origin in escape_origins):
+            continue
         escape_sources.pop(value, None)
 
     return preserve_sources, escape_sources
+
+
+def _exact1_neighbor_value_maps_with_optional_details(
+    *,
+    base_value: int,
+    profile_values: Sequence[int],
+    incoming_values: Sequence[int],
+    lineage_values: Sequence[int],
+    projection_details: dict[str, object],
+) -> tuple[dict[int, list[str]], dict[int, list[str]]]:
+    try:
+        return _exact1_neighbor_value_maps(
+            base_value=base_value,
+            profile_values=profile_values,
+            incoming_values=incoming_values,
+            lineage_values=lineage_values,
+            projection_details=projection_details,
+        )
+    except TypeError:
+        return _exact1_neighbor_value_maps(
+            base_value=base_value,
+            profile_values=profile_values,
+            incoming_values=incoming_values,
+            lineage_values=lineage_values,
+        )
 
 
 def _bounded_exact1_value_map(
@@ -926,8 +1155,25 @@ def _bounded_exact1_value_map(
     *,
     limit: int,
 ) -> dict[int, list[str]]:
+    def _origin_priority(origins: Sequence[str]) -> tuple[int, int, int]:
+        normalized = [str(origin) for origin in origins]
+        if any(origin.endswith("_projected") for origin in normalized):
+            return (0, 0 if any(origin.startswith("lineage_") for origin in normalized) else 1, len(normalized))
+        if any(origin.endswith("_near") for origin in normalized):
+            return (1, 0 if any(origin.startswith("lineage_") for origin in normalized) else 1, len(normalized))
+        if any(origin.startswith("escape_neighbor") for origin in normalized):
+            return (2, 0, len(normalized))
+        return (3, 0, len(normalized))
+
     bounded: dict[int, list[str]] = {}
-    for value, origins in value_origins.items():
+    ordered_items = sorted(
+        value_origins.items(),
+        key=lambda item: (
+            _origin_priority(item[1]),
+            int(item[0]) & 0xFF,
+        ),
+    )
+    for value, origins in ordered_items:
         bounded[int(value) & 0xFF] = list(origins)
         if len(bounded) >= limit:
             break
@@ -1013,6 +1259,8 @@ def _compact_pair_candidate(entry: dict[str, object]) -> dict[str, object]:
         "pair_escape_signal_reason": str(entry.get("pair_escape_signal_reason", "")),
         "pair_escape_lane": str(entry.get("pair_escape_lane", "")),
         "pair_escape_status": str(entry.get("pair_escape_status", "")),
+        "pair_escape_quality_band": str(entry.get("pair_escape_quality_band", "")),
+        "pair_borderline_quality_reason": str(entry.get("pair_borderline_quality_reason", "")),
         "pair_candidate_origin": str(entry.get("pair_candidate_origin", "")),
         "pair_mutation_radius": int(entry.get("pair_mutation_radius", 0) or 0),
         "pair_neighbor_mode": str(entry.get("pair_neighbor_mode", "")),
@@ -1071,25 +1319,40 @@ def _alternate_locked_pair_positions_for_exact1(
     }
 
 
-def _exact1_pair_set_selection_key(result: dict[str, object]) -> tuple[int, int, int, int, int, int]:
+def _exact1_pair_set_selection_key(result: dict[str, object]) -> tuple[int, int, int, int, int, int, int, int]:
     diagnostics = dict(result.get("pair_frontier_diagnostics", {}))
-    pair_drop_reasons = dict(result.get("pair_drop_reasons", {}))
-    best_local_by_pair = diagnostics.get("pair_best_local_escape", {})
-    best_local_score = min(
-        (
-            int(entry.get("pair_escape_signal_score", 1 << 30) or (1 << 30))
-            for entry in best_local_by_pair.values()
-            if isinstance(entry, dict)
-        ),
+    generation_details = dict(result.get("pair_generation_details", {}))
+    pair_stage_stats = dict(result.get("pair_stage_stats", {}))
+    near_local_candidates = [entry for entry in diagnostics.get("pair_near_local_escape_candidates", []) if isinstance(entry, dict)]
+    wide_local_candidates = [entry for entry in diagnostics.get("pair_wide_local_escape_candidates", []) if isinstance(entry, dict)]
+    projected_beats_neighbor_count = sum(
+        1
+        for pair_map in generation_details.get("pair_projected_competitive_status", {}).values()
+        if isinstance(pair_map, dict)
+        for status in pair_map.values()
+        if str(status) == "projected_beats_neighbor"
+    )
+    best_near_distance = min(
+        (int(entry.get("ci_distance5", 1 << 30) or (1 << 30)) for entry in near_local_candidates),
+        default=1 << 30,
+    )
+    best_wide_distance = min(
+        (int(entry.get("ci_distance5", 1 << 30) or (1 << 30)) for entry in wide_local_candidates),
+        default=1 << 30,
+    )
+    best_wide_raw = min(
+        (int(entry.get("raw_distance10", 1 << 30) or (1 << 30)) for entry in wide_local_candidates),
         default=1 << 30,
     )
     return (
+        -projected_beats_neighbor_count,
+        -len(near_local_candidates),
+        best_near_distance,
+        best_wide_distance,
+        best_wide_raw,
+        int(diagnostics.get("pair_wide_local_escape_count", 0) or 0),
+        -int(pair_stage_stats.get("projected_local_compatible_count", 0) or 0),
         -len(diagnostics.get("pair_gate_kept_escape", [])),
-        -len(diagnostics.get("pair_borderline_escape_candidates", [])),
-        -sum(1 for entry in result.get("pair_frontier_pool", []) if bool(entry.get("improvement_gate_passed"))),
-        int(pair_drop_reasons.get("gate_filtered_local_escape", 0) or 0),
-        int(pair_drop_reasons.get("gate_filtered_hard_escape", 0) or 0),
-        best_local_score,
     )
 
 
@@ -2549,6 +2812,31 @@ def _top_compare_aware_pair_entries(
         "pair_escape_source_values": {},
         "pair_escape_source_counts": {},
         "pair_escape_source_origins": {},
+        "pair_escape_source_projected_values": {},
+        "pair_escape_source_projected_origins": {},
+        "pair_escape_source_projected_quality_band": {},
+        "pair_escape_source_projected_rank_summary": {},
+        "pair_escape_source_projected_direction": {},
+        "pair_escape_source_projected_step": {},
+        "pair_escape_source_projected_kept_values": {},
+        "pair_escape_source_projected_dropped_values": {},
+        "lineage_projection_summary": {},
+        "pair_escape_source_reject_reasons": {},
+        "pair_single_byte_guard_summary": {},
+        "pair_single_byte_guard_candidates": {},
+        "pair_single_byte_guard_status_counts": {},
+        "pair_guard_soft_promoted_values": {},
+        "pair_guard_nonbase_starved": {},
+        "pair_guard_soft_quality_band": {},
+        "pair_guard_soft_rank_summary": {},
+        "pair_guard_soft_distance_delta": {},
+        "pair_guard_soft_raw_delta": {},
+        "pair_guard_soft_structure_delta": {},
+        "pair_projected_vs_neighbor_summary": {},
+        "pair_projected_competitive_status": {},
+        "pair_projected_competitive_winner": {},
+        "pair_projected_blocked_by_neighbor": {},
+        "pair_projected_best_delta_gap": {},
     }
     allowed_pairs = {tuple(sorted((int(left), int(right)))) for left, right in (locked_pair_positions or [])}
     for left, right in itertools.combinations(positions, 2):
@@ -2572,17 +2860,21 @@ def _top_compare_aware_pair_entries(
         escape_left_origins: dict[int, list[str]] = {}
         escape_right_origins: dict[int, list[str]] = {}
         if frontier_submode == FRONTIER_EXACT1_SUBMODE:
-            preserve_left_origins, escape_left_origins = _exact1_neighbor_value_maps(
+            left_projection_details: dict[str, object] = {}
+            right_projection_details: dict[str, object] = {}
+            preserve_left_origins, escape_left_origins = _exact1_neighbor_value_maps_with_optional_details(
                 base_value=base_bytes[left],
                 profile_values=left_values,
                 incoming_values=[int(value) & 0xFF for value in incoming.get(int(left), [])],
                 lineage_values=[int(value) & 0xFF for value in lineage_sources.get(int(left), [])],
+                projection_details=left_projection_details,
             )
-            preserve_right_origins, escape_right_origins = _exact1_neighbor_value_maps(
+            preserve_right_origins, escape_right_origins = _exact1_neighbor_value_maps_with_optional_details(
                 base_value=base_bytes[right],
                 profile_values=right_values,
                 incoming_values=[int(value) & 0xFF for value in incoming.get(int(right), [])],
                 lineage_values=[int(value) & 0xFF for value in lineage_sources.get(int(right), [])],
+                projection_details=right_projection_details,
             )
             preserve_left_origins = _bounded_exact1_value_map(
                 preserve_left_origins,
@@ -2639,6 +2931,450 @@ def _top_compare_aware_pair_entries(
                 str(left): list(dict.fromkeys(str(item) for item in lineage_origins.get(int(left), []))),
                 str(right): list(dict.fromkeys(str(item) for item in lineage_origins.get(int(right), []))),
             }
+            left_projected_values = [int(value) & 0xFF for value in left_projection_details.get("projected_values", [])]
+            right_projected_values = [int(value) & 0xFF for value in right_projection_details.get("projected_values", [])]
+            pair_generation_details["pair_escape_source_projected_values"][pair_key] = {
+                str(left): left_projected_values,
+                str(right): right_projected_values,
+            }
+            pair_generation_details["pair_escape_source_projected_origins"][pair_key] = {
+                str(left): {
+                    str(key): list(value)
+                    for key, value in dict(left_projection_details.get("projected_origins", {})).items()
+                },
+                str(right): {
+                    str(key): list(value)
+                    for key, value in dict(right_projection_details.get("projected_origins", {})).items()
+                },
+            }
+            pair_generation_details["lineage_projection_summary"][pair_key] = {
+                str(left): {
+                    "raw_source_present_but_too_far": [
+                        int(value) & 0xFF for value in left_projection_details.get("raw_source_present_but_too_far", [])
+                    ],
+                    "projected_local_value_generated": left_projected_values,
+                },
+                str(right): {
+                    "raw_source_present_but_too_far": [
+                        int(value) & 0xFF for value in right_projection_details.get("raw_source_present_but_too_far", [])
+                    ],
+                    "projected_local_value_generated": right_projected_values,
+                },
+            }
+            guard_summary: dict[str, dict[str, int]] = {}
+            guard_candidates_by_pos: dict[str, list[dict[str, object]]] = {}
+            guard_status_counts_by_pos: dict[str, dict[str, int]] = {}
+            guard_soft_promoted_values: dict[str, list[int]] = {}
+            guard_nonbase_starved: dict[str, bool] = {}
+            guard_soft_quality_band: dict[str, dict[str, str]] = {}
+            guard_soft_rank_summary: dict[str, list[dict[str, object]]] = {}
+            guard_soft_distance_delta: dict[str, dict[str, int]] = {}
+            guard_soft_raw_delta: dict[str, dict[str, int]] = {}
+            guard_soft_structure_delta: dict[str, dict[str, list[int]]] = {}
+            projected_quality_band: dict[str, dict[str, str]] = {}
+            projected_rank_summary: dict[str, list[dict[str, object]]] = {}
+            projected_direction_summary: dict[str, dict[str, str]] = {}
+            projected_step_summary: dict[str, dict[str, int]] = {}
+            projected_kept_values: dict[str, list[int]] = {}
+            projected_dropped_values: dict[str, list[int]] = {}
+            source_reject_reasons: dict[str, dict[str, list[int]]] = {}
+            projected_vs_neighbor_summary: dict[str, dict[str, object]] = {}
+            projected_competitive_status: dict[str, str] = {}
+            projected_competitive_winner: dict[str, dict[str, object]] = {}
+            projected_blocked_by_neighbor: dict[str, dict[str, object]] = {}
+            projected_best_delta_gap: dict[str, dict[str, int]] = {}
+            if baseline_entry:
+                for position, values, origin_map in (
+                    (int(left), escape_left_values, escape_left_origins),
+                    (int(right), escape_right_values, escape_right_origins),
+                ):
+                    projection_details = left_projection_details if position == int(left) else right_projection_details
+                    projected_value_set = {
+                        int(value) & 0xFF for value in projection_details.get("projected_values", [])
+                    }
+                    projected_candidates: list[dict[str, object]] = []
+                    for value in values:
+                        normalized_value = int(value) & 0xFF
+                        origins = list(dict.fromkeys(origin_map.get(normalized_value, [])))
+                        if normalized_value not in projected_value_set or not any(origin.endswith("_projected") for origin in origins):
+                            continue
+                        work = bytearray(base_bytes)
+                        work[position] = normalized_value
+                        single_entry = _entry_for(bytes(work).hex() + DEFAULT_FIXED_SUFFIX_HEX)
+                        single_rank = _pair_structure_rank(single_entry, transform_model)
+                        baseline_rank = _pair_structure_rank(baseline_entry, transform_model)
+                        single_distance_delta = int(single_entry.get("ci_distance5", 1 << 30) or (1 << 30)) - int(
+                            baseline_entry.get("ci_distance5", 1 << 30) or (1 << 30)
+                        )
+                        single_raw_delta = int(single_entry.get("raw_distance10", 1 << 30) or (1 << 30)) - int(
+                            baseline_entry.get("raw_distance10", 1 << 30) or (1 << 30)
+                        )
+                        direction = str(projection_details.get("projected_direction", {}).get(str(normalized_value), ""))
+                        step = int(projection_details.get("projected_step", {}).get(str(normalized_value), 0) or 0)
+                        quality = _exact1_projected_value_quality(
+                            distance_delta=single_distance_delta,
+                            raw_delta=single_raw_delta,
+                            structure_rank=single_rank,
+                            baseline_rank=baseline_rank,
+                            step=step,
+                            origins=origins,
+                        )
+                        projected_candidates.append(
+                            {
+                                "value": normalized_value,
+                                "ci_distance_delta": single_distance_delta,
+                                "raw_distance_delta": single_raw_delta,
+                                "structure_delta": list(quality.get("structure_delta", ())),
+                                "structure_penalty": int(quality.get("structure_penalty", 0) or 0),
+                                "structure_gain": int(quality.get("structure_gain", 0) or 0),
+                                "origin_priority": int(quality.get("origin_priority", 0) or 0),
+                                "quality_band": str(quality.get("quality_band", "")),
+                                "projection_direction": direction,
+                                "projection_step": step,
+                                "origins": origins,
+                            }
+                        )
+                    projected_quality_band[str(position)] = {
+                        str(int(item.get("value", 0) or 0)): str(item.get("quality_band", ""))
+                        for item in projected_candidates
+                    }
+                    projected_direction_summary[str(position)] = {
+                        str(int(item.get("value", 0) or 0)): str(item.get("projection_direction", ""))
+                        for item in projected_candidates
+                    }
+                    projected_step_summary[str(position)] = {
+                        str(int(item.get("value", 0) or 0)): int(item.get("projection_step", 0) or 0)
+                        for item in projected_candidates
+                    }
+                    projected_candidates.sort(
+                        key=lambda item: (
+                            0 if str(item.get("quality_band", "")) == "projected_local_compatible" else 1,
+                            int(item.get("ci_distance_delta", 1 << 30) or (1 << 30)),
+                            int(item.get("raw_distance_delta", 1 << 30) or (1 << 30)),
+                            int(item.get("structure_penalty", 1 << 30) or (1 << 30)),
+                            int(item.get("projection_step", 1 << 30) or (1 << 30)),
+                            int(item.get("origin_priority", 1 << 30) or (1 << 30)),
+                            -int(item.get("structure_gain", 0) or 0),
+                            int(item.get("value", 0) or 0),
+                        )
+                    )
+                    projected_rank_summary[str(position)] = [
+                        {
+                            "value": int(item.get("value", 0) or 0),
+                            "quality_band": str(item.get("quality_band", "")),
+                            "ci_distance_delta": int(item.get("ci_distance_delta", 1 << 30) or (1 << 30)),
+                            "raw_distance_delta": int(item.get("raw_distance_delta", 1 << 30) or (1 << 30)),
+                            "structure_delta": list(item.get("structure_delta", [])),
+                            "projection_direction": str(item.get("projection_direction", "")),
+                            "projection_step": int(item.get("projection_step", 0) or 0),
+                            "origins": list(item.get("origins", [])),
+                        }
+                        for item in projected_candidates
+                    ]
+                    best_projected = projected_candidates[0] if projected_candidates else None
+                    projected_kept_values[str(position)] = []
+                    projected_dropped_values[str(position)] = [
+                        int(item.get("value", 0) or 0)
+                        for item in projected_candidates
+                    ]
+                    filtered_values = [
+                        int(value) & 0xFF
+                        for value in values
+                        if (int(value) & 0xFF) not in projected_value_set
+                    ]
+                    guard_candidates: list[dict[str, object]] = []
+                    guard_status_counts = {
+                        "guard_passed": 0,
+                        "guard_soft_rejected": 0,
+                        "guard_hard_rejected": 0,
+                    }
+                    passed_values: list[int] = []
+                    soft_candidates: list[dict[str, object]] = []
+                    hard_dropped_count = 0
+                    for value in filtered_values:
+                        work = bytearray(base_bytes)
+                        work[position] = int(value) & 0xFF
+                        single_entry = _entry_for(bytes(work).hex() + DEFAULT_FIXED_SUFFIX_HEX)
+                        radius = abs((int(value) & 0xFF) - base_bytes[position])
+                        single_distance_delta = int(single_entry.get("ci_distance5", 1 << 30) or (1 << 30)) - int(
+                            baseline_entry.get("ci_distance5", 1 << 30) or (1 << 30)
+                        )
+                        single_raw_delta = int(single_entry.get("raw_distance10", 1 << 30) or (1 << 30)) - int(
+                            baseline_entry.get("raw_distance10", 1 << 30) or (1 << 30)
+                        )
+                        single_rank = _pair_structure_rank(single_entry, transform_model)
+                        baseline_rank = _pair_structure_rank(baseline_entry, transform_model)
+                        origins = list(dict.fromkeys(origin_map.get(int(value) & 0xFF, [])))
+                        if (
+                            value == base_bytes[position]
+                            or single_distance_delta <= EXACT1_PAIR_SINGLE_BYTE_GUARD_SLACK
+                            or single_raw_delta <= EXACT1_PAIR_SINGLE_BYTE_GUARD_SLACK
+                            or single_rank > baseline_rank
+                        ):
+                            status = "guard_passed"
+                            passed_values.append(int(value) & 0xFF)
+                        elif radius <= EXACT1_PAIR_SINGLE_BYTE_SOFT_RADIUS:
+                            status = "guard_soft_rejected"
+                            soft_quality = _exact1_single_byte_soft_quality(
+                                radius=radius,
+                                distance_delta=single_distance_delta,
+                                raw_delta=single_raw_delta,
+                                structure_rank=single_rank,
+                                baseline_rank=baseline_rank,
+                                origins=origins,
+                            )
+                            soft_candidates.append(
+                                {
+                                    "value": int(value) & 0xFF,
+                                    "radius": radius,
+                                    "ci_distance_delta": single_distance_delta,
+                                    "raw_distance_delta": single_raw_delta,
+                                    "pair_structure_rank": list(single_rank),
+                                    "quality_band": str(soft_quality.get("quality_band", "")),
+                                    "structure_delta": list(soft_quality.get("structure_delta", ())),
+                                    "structure_penalty": int(soft_quality.get("structure_penalty", 0) or 0),
+                                    "structure_gain": int(soft_quality.get("structure_gain", 0) or 0),
+                                    "origin_priority": int(soft_quality.get("origin_priority", 0) or 0),
+                                    "sort_key": list(soft_quality.get("sort_key", ())),
+                                    "origins": origins,
+                                    "family": "escape_neighbor_soft_family",
+                                }
+                            )
+                        else:
+                            status = "guard_hard_rejected"
+                            hard_dropped_count += 1
+                        guard_status_counts[status] = guard_status_counts.get(status, 0) + 1
+                        guard_candidates.append(
+                            {
+                                "value": int(value) & 0xFF,
+                                "status": status,
+                                "radius": radius,
+                                "ci_distance_delta": single_distance_delta,
+                                "raw_distance_delta": single_raw_delta,
+                                "pair_structure_rank": list(single_rank),
+                                "origins": origins,
+                            }
+                        )
+                    soft_candidates.sort(
+                        key=lambda item: (
+                            int(item.get("ci_distance_delta", 1 << 30) or (1 << 30)),
+                            int(item.get("raw_distance_delta", 1 << 30) or (1 << 30)),
+                            sum(max(0, -int(value)) for value in item.get("structure_delta", [])[:3]),
+                            int(item.get("radius", 1 << 30) or (1 << 30)),
+                            (
+                                1 << 30
+                                if item.get("origin_priority", None) is None
+                                else int(item.get("origin_priority", 1 << 30))
+                            ),
+                            -int(item.get("structure_gain", 0) or 0),
+                            int(item.get("value", 0) or 0),
+                        )
+                    )
+                    best_neighbor = soft_candidates[0] if soft_candidates else None
+                    competitive_candidates: list[dict[str, object]] = []
+                    projected_summary_item: dict[str, object] | None = None
+                    if best_projected is not None:
+                        projected_summary_item = {
+                            "family": "projected_soft_family",
+                            "value": int(best_projected.get("value", 0) or 0),
+                            "quality_band": str(best_projected.get("quality_band", "")),
+                            "ci_distance_delta": int(best_projected.get("ci_distance_delta", 1 << 30) or (1 << 30)),
+                            "raw_distance_delta": int(best_projected.get("raw_distance_delta", 1 << 30) or (1 << 30)),
+                            "structure_delta": list(best_projected.get("structure_delta", [])),
+                            "structure_penalty": int(best_projected.get("structure_penalty", 0) or 0),
+                            "structure_gain": int(best_projected.get("structure_gain", 0) or 0),
+                            "projection_step": int(best_projected.get("projection_step", 0) or 0),
+                            "origin_priority": int(best_projected.get("origin_priority", 0) or 0),
+                            "origins": list(best_projected.get("origins", [])),
+                        }
+                        competitive_candidates.append(projected_summary_item)
+                    neighbor_summary_item: dict[str, object] | None = None
+                    if best_neighbor is not None:
+                        neighbor_summary_item = {
+                            "family": "escape_neighbor_soft_family",
+                            "value": int(best_neighbor.get("value", 0) or 0),
+                            "quality_band": str(best_neighbor.get("quality_band", "")),
+                            "ci_distance_delta": int(best_neighbor.get("ci_distance_delta", 1 << 30) or (1 << 30)),
+                            "raw_distance_delta": int(best_neighbor.get("raw_distance_delta", 1 << 30) or (1 << 30)),
+                            "structure_delta": list(best_neighbor.get("structure_delta", [])),
+                            "structure_penalty": int(best_neighbor.get("structure_penalty", 0) or 0),
+                            "structure_gain": int(best_neighbor.get("structure_gain", 0) or 0),
+                            "radius": int(best_neighbor.get("radius", 0) or 0),
+                            "origin_priority": int(best_neighbor.get("origin_priority", 0) or 0),
+                            "origins": list(best_neighbor.get("origins", [])),
+                        }
+                        competitive_candidates.append(neighbor_summary_item)
+                    competitive_candidates.sort(key=_exact1_soft_family_competition_key)
+                    winner_item = competitive_candidates[0] if competitive_candidates else None
+                    loser_item = competitive_candidates[1] if len(competitive_candidates) > 1 else None
+                    competitive_status = "projected_family_empty"
+                    delta_gap = {"ci_distance_delta_gap": 0, "raw_distance_delta_gap": 0, "structure_penalty_gap": 0}
+                    if projected_summary_item is not None and neighbor_summary_item is None:
+                        competitive_status = "projected_beats_neighbor"
+                    elif projected_summary_item is not None and neighbor_summary_item is not None:
+                        delta_gap = {
+                            "ci_distance_delta_gap": int(projected_summary_item.get("ci_distance_delta", 0) or 0)
+                            - int(neighbor_summary_item.get("ci_distance_delta", 0) or 0),
+                            "raw_distance_delta_gap": int(projected_summary_item.get("raw_distance_delta", 0) or 0)
+                            - int(neighbor_summary_item.get("raw_distance_delta", 0) or 0),
+                            "structure_penalty_gap": int(projected_summary_item.get("structure_penalty", 0) or 0)
+                            - int(neighbor_summary_item.get("structure_penalty", 0) or 0),
+                        }
+                        if winner_item is projected_summary_item:
+                            competitive_status = "projected_beats_neighbor"
+                        elif int(delta_gap["ci_distance_delta_gap"]) > 0:
+                            competitive_status = "projected_loses_on_distance"
+                        elif int(delta_gap["raw_distance_delta_gap"]) > 0:
+                            competitive_status = "projected_loses_on_raw"
+                        elif int(delta_gap["structure_penalty_gap"]) > 0:
+                            competitive_status = "projected_loses_on_structure"
+                        else:
+                            competitive_status = "projected_runner_up_kept_for_diagnostic"
+                    elif neighbor_summary_item is not None:
+                        competitive_status = "projected_family_empty"
+                    soft_promoted = []
+                    if winner_item is not None:
+                        promoted_value = int(winner_item.get("value", 0) or 0) & 0xFF
+                        if promoted_value != base_bytes[position]:
+                            soft_promoted = [promoted_value]
+                    if projected_summary_item is not None:
+                        if winner_item is projected_summary_item:
+                            projected_kept_values[str(position)] = [int(projected_summary_item.get("value", 0) or 0)]
+                            projected_dropped_values[str(position)] = [
+                                int(item.get("value", 0) or 0)
+                                for item in projected_candidates
+                                if int(item.get("value", 0) or 0) not in projected_kept_values[str(position)]
+                            ]
+                        projected_competitive_status[str(position)] = competitive_status
+                        projected_competitive_winner[str(position)] = dict(winner_item or projected_summary_item)
+                        if loser_item is not None and winner_item is not projected_summary_item:
+                            projected_blocked_by_neighbor[str(position)] = dict(loser_item if loser_item is neighbor_summary_item else neighbor_summary_item or {})
+                        elif competitive_status != "projected_beats_neighbor" and neighbor_summary_item is not None:
+                            projected_blocked_by_neighbor[str(position)] = dict(neighbor_summary_item)
+                        projected_best_delta_gap[str(position)] = dict(delta_gap)
+                        projected_vs_neighbor_summary[str(position)] = {
+                            "projected": dict(projected_summary_item),
+                            "neighbor": dict(neighbor_summary_item) if neighbor_summary_item is not None else {},
+                            "winner_family": str((winner_item or {}).get("family", "")),
+                            "winner_value": int((winner_item or {}).get("value", 0) or 0),
+                            "status": competitive_status,
+                        }
+                    kept_values = list(dict.fromkeys([*passed_values, *soft_promoted]))
+                    if base_bytes[position] not in kept_values:
+                        kept_values.insert(0, base_bytes[position])
+                        origin_map.setdefault(base_bytes[position], []).append("single_byte_guard_base")
+                    guard_summary[str(position)] = {
+                        "input": len(values),
+                        "kept": len(kept_values),
+                        "passed": len(passed_values),
+                        "soft_promoted": len(soft_promoted),
+                        "hard_dropped": hard_dropped_count,
+                        "dropped": hard_dropped_count + max(0, len(soft_candidates) - len(soft_promoted)),
+                    }
+                    guard_candidates_by_pos[str(position)] = guard_candidates
+                    guard_status_counts_by_pos[str(position)] = guard_status_counts
+                    guard_soft_promoted_values[str(position)] = soft_promoted
+                    guard_soft_quality_band[str(position)] = {
+                        str(int(item.get("value", 0) or 0)): str(item.get("quality_band", ""))
+                        for item in soft_candidates
+                    }
+                    guard_soft_rank_summary[str(position)] = [
+                        {
+                            "value": int(item.get("value", 0) or 0),
+                            "quality_band": str(item.get("quality_band", "")),
+                            "ci_distance_delta": int(item.get("ci_distance_delta", 1 << 30) or (1 << 30)),
+                            "raw_distance_delta": int(item.get("raw_distance_delta", 1 << 30) or (1 << 30)),
+                            "structure_delta": list(item.get("structure_delta", [])),
+                            "radius": int(item.get("radius", 0) or 0),
+                            "origin_priority": int(item.get("origin_priority", 0) or 0),
+                            "origins": list(item.get("origins", [])),
+                        }
+                        for item in soft_candidates
+                    ]
+                    guard_soft_distance_delta[str(position)] = {
+                        str(int(item.get("value", 0) or 0)): int(item.get("ci_distance_delta", 1 << 30) or (1 << 30))
+                        for item in soft_candidates
+                    }
+                    guard_soft_raw_delta[str(position)] = {
+                        str(int(item.get("value", 0) or 0)): int(item.get("raw_distance_delta", 1 << 30) or (1 << 30))
+                        for item in soft_candidates
+                    }
+                    guard_soft_structure_delta[str(position)] = {
+                        str(int(item.get("value", 0) or 0)): list(item.get("structure_delta", []))
+                        for item in soft_candidates
+                    }
+                    guard_nonbase_starved[str(position)] = not any(value != base_bytes[position] for value in kept_values)
+                    reached_pair_pool = [
+                        int(value) & 0xFF
+                        for value in kept_values
+                        if (int(value) & 0xFF) in projected_value_set
+                    ]
+                    ranked_out = sorted(projected_value_set.difference(set(reached_pair_pool)))
+                    projected_generated_but_distance_explosive = [
+                        int(item.get("value", 0) or 0)
+                        for item in projected_candidates
+                        if str(item.get("quality_band", "")) == "projected_distance_explosive"
+                    ]
+                    projected_local_compatible_values = [
+                        int(item.get("value", 0) or 0)
+                        for item in projected_candidates
+                        if str(item.get("quality_band", "")) == "projected_local_compatible"
+                    ]
+                    source_reject_reasons[str(position)] = {
+                        "raw_source_present_but_too_far": [
+                            int(value) & 0xFF
+                            for value in projection_details.get("raw_source_present_but_too_far", [])
+                        ],
+                        "projected_local_value_generated": sorted(projected_value_set),
+                        "projected_generated_but_distance_explosive": projected_generated_but_distance_explosive,
+                        "projected_local_compatible_but_ranked_out": [
+                            value for value in projected_local_compatible_values if value in ranked_out
+                        ],
+                        "projected_local_compatible_reached_pair_pool": [
+                            value for value in projected_local_compatible_values if value in reached_pair_pool
+                        ],
+                        "projected_value_ranked_out": ranked_out,
+                        "projected_value_reached_pair_pool": reached_pair_pool,
+                    }
+                    if position == int(left):
+                        escape_left_values = list(dict.fromkeys(kept_values))
+                    else:
+                        escape_right_values = list(dict.fromkeys(kept_values))
+            pair_generation_details["pair_single_byte_guard_summary"][pair_key] = guard_summary
+            pair_generation_details["pair_single_byte_guard_candidates"][pair_key] = guard_candidates_by_pos
+            pair_generation_details["pair_single_byte_guard_status_counts"][pair_key] = guard_status_counts_by_pos
+            pair_generation_details["pair_guard_soft_promoted_values"][pair_key] = guard_soft_promoted_values
+            pair_generation_details["pair_guard_nonbase_starved"][pair_key] = guard_nonbase_starved
+            pair_generation_details["pair_guard_soft_quality_band"][pair_key] = guard_soft_quality_band
+            pair_generation_details["pair_guard_soft_rank_summary"][pair_key] = guard_soft_rank_summary
+            pair_generation_details["pair_guard_soft_distance_delta"][pair_key] = guard_soft_distance_delta
+            pair_generation_details["pair_guard_soft_raw_delta"][pair_key] = guard_soft_raw_delta
+            pair_generation_details["pair_guard_soft_structure_delta"][pair_key] = guard_soft_structure_delta
+            pair_generation_details["pair_projected_vs_neighbor_summary"][pair_key] = projected_vs_neighbor_summary
+            pair_generation_details["pair_projected_competitive_status"][pair_key] = projected_competitive_status
+            pair_generation_details["pair_projected_competitive_winner"][pair_key] = projected_competitive_winner
+            pair_generation_details["pair_projected_blocked_by_neighbor"][pair_key] = projected_blocked_by_neighbor
+            pair_generation_details["pair_projected_best_delta_gap"][pair_key] = projected_best_delta_gap
+            pair_generation_details["pair_escape_source_projected_quality_band"][pair_key] = projected_quality_band
+            pair_generation_details["pair_escape_source_projected_rank_summary"][pair_key] = projected_rank_summary
+            pair_generation_details["pair_escape_source_projected_direction"][pair_key] = projected_direction_summary
+            pair_generation_details["pair_escape_source_projected_step"][pair_key] = projected_step_summary
+            pair_generation_details["pair_escape_source_projected_kept_values"][pair_key] = projected_kept_values
+            pair_generation_details["pair_escape_source_projected_dropped_values"][pair_key] = projected_dropped_values
+            pair_generation_details["pair_escape_source_reject_reasons"][pair_key] = source_reject_reasons
+            pair_generation_details["pair_escape_pool"][pair_key] = {
+                str(left): escape_left_values[:EXACT1_PAIR_ESCAPE_VALUE_LIMIT],
+                str(right): escape_right_values[:EXACT1_PAIR_ESCAPE_VALUE_LIMIT],
+            }
+            pair_generation_details["pair_neighbor_generation_summary"][pair_key]["escape_generated"] = (
+                len(escape_left_values) * len(escape_right_values)
+            )
+            pair_generation_details["pair_mutation_radius_summary"][pair_key]["escape_left"] = [
+                abs(value - base_bytes[left]) for value in escape_left_values
+            ]
+            pair_generation_details["pair_mutation_radius_summary"][pair_key]["escape_right"] = [
+                abs(value - base_bytes[right]) for value in escape_right_values
+            ]
 
         def _pair_entries_for_values(
             left_candidates: Sequence[int],
@@ -2836,6 +3572,8 @@ def _diverse_pair_frontier_pool(
             "pair_gate_failed_escape": [],
             "pair_gate_kept_escape": [],
             "pair_borderline_escape_candidates": [],
+            "pair_near_local_escape_candidates": [],
+            "pair_wide_local_escape_candidates": [],
             "pair_best_preserve_candidate": None,
             "pair_best_escape_candidate": None,
             "pair_best_local_escape": {},
@@ -2843,12 +3581,16 @@ def _diverse_pair_frontier_pool(
             "pair_local_escape_candidate_count": 0,
             "pair_hard_escape_candidate_count": 0,
             "pair_local_escape_borderline_count": 0,
+            "pair_near_local_escape_count": 0,
+            "pair_wide_local_escape_count": 0,
             "pair_local_escape_reject_count": 0,
             "pair_escape_source_statuses": {},
             "pair_escape_status_by_lane": {},
             "pair_escape_lane_counts": {},
+            "pair_radius_band_counts": {},
             "pair_gate_input_summary": {},
             "pair_gate_borderline_summary": {},
+            "pair_single_byte_guard_summary": dict((pair_profile_details or {}).get("pair_single_byte_guard_summary", {})),
             "pair_profile_preserve_entries": dict((pair_profile_details or {}).get("pair_profile_preserve_entries", {})),
             "pair_profile_escape_entries": dict((pair_profile_details or {}).get("pair_profile_escape_entries", {})),
             "pair_profile_kept_preserve": dict((pair_profile_details or {}).get("pair_profile_kept_preserve", {})),
@@ -2870,7 +3612,8 @@ def _diverse_pair_frontier_pool(
             pair_status_by_lane = {"local_escape": "profile_source_empty", "hard_escape": "profile_source_empty"}
             preserve_candidates: list[dict[str, object]] = []
             local_kept_candidates: list[dict[str, object]] = []
-            local_borderline_candidates: list[dict[str, object]] = []
+            local_near_borderline_candidates: list[dict[str, object]] = []
+            local_wide_borderline_candidates: list[dict[str, object]] = []
             local_filtered_candidates: list[dict[str, object]] = []
             hard_filtered_candidates: list[dict[str, object]] = []
 
@@ -2894,10 +3637,18 @@ def _diverse_pair_frontier_pool(
                 candidate["pair_escape_signal_reason"] = str(signal.get("reason", ""))
                 candidate["pair_escape_lane"] = str(signal.get("lane", ""))
                 candidate["pair_escape_status"] = str(signal.get("status", "reject"))
+                candidate["pair_escape_quality_band"] = str(signal.get("quality_band", ""))
+                candidate["pair_borderline_quality_reason"] = str(signal.get("quality_reason", ""))
                 compact = _compact_pair_candidate(candidate)
                 diagnostics["pair_gate_input_summary"].setdefault(pair_key, []).append(compact)
                 lane = str(signal.get("lane", ""))
                 pair_lane_counts[lane] = pair_lane_counts.get(lane, 0) + 1
+                quality_band = str(signal.get("quality_band", ""))
+                if quality_band:
+                    diagnostics["pair_radius_band_counts"].setdefault(pair_key, {})
+                    diagnostics["pair_radius_band_counts"][pair_key][quality_band] = (
+                        diagnostics["pair_radius_band_counts"][pair_key].get(quality_band, 0) + 1
+                    )
                 if lane == "local_escape":
                     diagnostics["pair_local_escape_candidate_count"] = int(
                         diagnostics.get("pair_local_escape_candidate_count", 0)
@@ -2915,10 +3666,20 @@ def _diverse_pair_frontier_pool(
                     if status == "keep":
                         local_kept_candidates.append(candidate)
                     elif status == "borderline":
-                        local_borderline_candidates.append(candidate)
                         diagnostics["pair_local_escape_borderline_count"] = int(
                             diagnostics.get("pair_local_escape_borderline_count", 0)
                         ) + 1
+                        if quality_band == "near_local_escape":
+                            local_near_borderline_candidates.append(candidate)
+                            diagnostics["pair_near_local_escape_count"] = int(
+                                diagnostics.get("pair_near_local_escape_count", 0)
+                            ) + 1
+                        else:
+                            candidate["pair_drop_reason"] = "wide_local_escape_diagnostic"
+                            local_wide_borderline_candidates.append(candidate)
+                            diagnostics["pair_wide_local_escape_count"] = int(
+                                diagnostics.get("pair_wide_local_escape_count", 0)
+                            ) + 1
                     else:
                         candidate["pair_drop_reason"] = "gate_filtered_local_escape"
                         local_filtered_candidates.append(candidate)
@@ -2952,7 +3713,7 @@ def _diverse_pair_frontier_pool(
                     ),
                 )
             )
-            local_borderline_candidates.sort(
+            local_near_borderline_candidates.sort(
                 key=lambda item: (
                     int(item.get("pair_escape_signal_score", 1 << 30) or (1 << 30)),
                     int(item.get("ci_distance5", 1 << 30) or (1 << 30)),
@@ -2961,6 +3722,15 @@ def _diverse_pair_frontier_pool(
                     -int(item.get("pair_wide_ascii_contiguous_8", 0) or 0),
                     -int(item.get("pair_wide_zero_high_pairs_8", 0) or 0),
                     -int(item.get("pair_flaglike_tail_pairs_8", 0) or 0),
+                    str(item.get("candidate_hex", "")),
+                )
+            )
+            local_wide_borderline_candidates.sort(
+                key=lambda item: (
+                    int(item.get("pair_escape_signal_score", 1 << 30) or (1 << 30)),
+                    int(item.get("ci_distance5", 1 << 30) or (1 << 30)),
+                    int(item.get("raw_distance10", 1 << 30) or (1 << 30)),
+                    int(item.get("pair_mutation_radius", 1 << 30) or (1 << 30)),
                     str(item.get("candidate_hex", "")),
                 )
             )
@@ -2996,8 +3766,10 @@ def _diverse_pair_frontier_pool(
             else:
                 if local_kept_candidates:
                     pair_status_by_lane["local_escape"] = "gate_kept_escape"
-                elif local_borderline_candidates:
+                elif local_near_borderline_candidates:
                     pair_status_by_lane["local_escape"] = "gate_borderline_escape"
+                elif local_wide_borderline_candidates:
+                    pair_status_by_lane["local_escape"] = "gate_filtered_wide_local_escape"
                 elif local_filtered_candidates:
                     pair_status_by_lane["local_escape"] = "gate_filtered_local_escape"
                 elif profile_escape_entries:
@@ -3013,6 +3785,8 @@ def _diverse_pair_frontier_pool(
                 diagnostics["pair_escape_source_statuses"][pair_key] = "gate_kept_escape"
             elif pair_status_by_lane["local_escape"] == "gate_borderline_escape":
                 diagnostics["pair_escape_source_statuses"][pair_key] = "gate_borderline_escape"
+            elif pair_status_by_lane["local_escape"] == "gate_filtered_wide_local_escape":
+                diagnostics["pair_escape_source_statuses"][pair_key] = "gate_filtered_wide_local_escape"
             elif pair_status_by_lane["local_escape"] == "gate_filtered_local_escape":
                 diagnostics["pair_escape_source_statuses"][pair_key] = "gate_filtered_local_escape"
             elif pair_status_by_lane["hard_escape"] == "gate_filtered_hard_escape":
@@ -3021,7 +3795,9 @@ def _diverse_pair_frontier_pool(
                 diagnostics["pair_escape_source_statuses"][pair_key] = pair_status_by_lane["local_escape"]
             diagnostics["pair_gate_borderline_summary"][pair_key] = {
                 "kept_local": len(local_kept_candidates),
-                "borderline_local": len(local_borderline_candidates),
+                "near_local": len(local_near_borderline_candidates),
+                "wide_local": len(local_wide_borderline_candidates),
+                "borderline_local": len(local_near_borderline_candidates) + len(local_wide_borderline_candidates),
                 "rejected_local": len(local_filtered_candidates),
                 "hard_escape": len(hard_filtered_candidates),
             }
@@ -3034,7 +3810,7 @@ def _diverse_pair_frontier_pool(
                 candidate["pair_drop_reason"] = ""
                 accepted_local.append(candidate)
                 diagnostics["pair_gate_kept_escape"].append(_compact_pair_candidate(candidate))
-            for candidate in local_borderline_candidates[:EXACT1_PAIR_TOP_LOCAL_ESCAPE_PER_PAIR]:
+            for candidate in local_near_borderline_candidates[:EXACT1_PAIR_TOP_LOCAL_ESCAPE_PER_PAIR]:
                 candidate_hex = _candidate_hex_from_entry(candidate)
                 if candidate_hex in seen_local:
                     continue
@@ -3042,14 +3818,20 @@ def _diverse_pair_frontier_pool(
                 candidate["pair_drop_reason"] = "gate_borderline_escape"
                 accepted_local.append(candidate)
                 diagnostics["pair_borderline_escape_candidates"].append(_compact_pair_candidate(candidate))
+                diagnostics["pair_near_local_escape_candidates"].append(_compact_pair_candidate(candidate))
+            for candidate in local_wide_borderline_candidates[:EXACT1_PAIR_HARD_ESCAPE_DIAG_SAMPLES]:
+                diagnostics["pair_wide_local_escape_candidates"].append(_compact_pair_candidate(candidate))
+                diagnostics["pair_escape_candidates_dropped"].append(_compact_pair_candidate(candidate))
             for candidate in local_kept_candidates[EXACT1_PAIR_TOP_LOCAL_ESCAPE_PER_PAIR:]:
                 candidate["pair_drop_reason"] = "escape_signal_but_ranked_out"
                 drop_reasons["escape_signal_but_ranked_out"] = drop_reasons.get("escape_signal_but_ranked_out", 0) + 1
                 diagnostics["pair_escape_candidates_dropped"].append(_compact_pair_candidate(candidate))
-            for candidate in local_borderline_candidates[EXACT1_PAIR_TOP_LOCAL_ESCAPE_PER_PAIR:]:
+            for candidate in local_near_borderline_candidates[EXACT1_PAIR_TOP_LOCAL_ESCAPE_PER_PAIR:]:
                 candidate["pair_drop_reason"] = "escape_signal_but_ranked_out"
                 drop_reasons["escape_signal_but_ranked_out"] = drop_reasons.get("escape_signal_but_ranked_out", 0) + 1
                 diagnostics["pair_escape_candidates_dropped"].append(_compact_pair_candidate(candidate))
+            for candidate in local_wide_borderline_candidates:
+                drop_reasons["gate_filtered_wide_local_escape"] = drop_reasons.get("gate_filtered_wide_local_escape", 0) + 1
             for candidate in local_filtered_candidates:
                 drop_reasons["gate_filtered_local_escape"] = drop_reasons.get("gate_filtered_local_escape", 0) + 1
                 diagnostics["pair_gate_failed_escape"].append(_compact_pair_candidate(candidate))
@@ -3805,16 +4587,52 @@ def run_compare_aware_guided_pool(
                 "primary_pair_set": {
                     "locked_pair_positions": [list(item) for item in primary_pair_run["locked_pair_positions"]],
                     "selection_key": list(_exact1_pair_set_selection_key(primary_pair_run)),
+                    "projected_beats_neighbor_count": sum(
+                        1
+                        for pair_map in primary_pair_run["pair_generation_details"].get("pair_projected_competitive_status", {}).values()
+                        if isinstance(pair_map, dict)
+                        for status in pair_map.values()
+                        if str(status) == "projected_beats_neighbor"
+                    ),
+                    "projected_local_compatible_count": sum(
+                        1
+                        for pair_map in primary_pair_run["pair_generation_details"].get("pair_escape_source_projected_quality_band", {}).values()
+                        if isinstance(pair_map, dict)
+                        for pos_map in pair_map.values()
+                        if isinstance(pos_map, dict)
+                        for band in pos_map.values()
+                        if str(band) == "projected_local_compatible"
+                    ),
                     "pair_gate_kept_escape": len(primary_pair_run["pair_frontier_diagnostics"].get("pair_gate_kept_escape", [])),
                     "pair_borderline_escape_candidates": len(primary_pair_run["pair_frontier_diagnostics"].get("pair_borderline_escape_candidates", [])),
+                    "pair_near_local_escape_candidates": len(primary_pair_run["pair_frontier_diagnostics"].get("pair_near_local_escape_candidates", [])),
+                    "pair_wide_local_escape_candidates": len(primary_pair_run["pair_frontier_diagnostics"].get("pair_wide_local_escape_candidates", [])),
                     "gate_filtered_local_escape": int(primary_pair_run["pair_drop_reasons"].get("gate_filtered_local_escape", 0) or 0),
                     "gate_filtered_hard_escape": int(primary_pair_run["pair_drop_reasons"].get("gate_filtered_hard_escape", 0) or 0),
                 },
                 "alternate_pair_set": {
                     "locked_pair_positions": [list(item) for item in alternate_locked_pair_positions],
                     "selection_key": list(_exact1_pair_set_selection_key(exact1_pair_runs[-1])) if len(exact1_pair_runs) > 1 else [],
+                    "projected_beats_neighbor_count": sum(
+                        1
+                        for pair_map in exact1_pair_runs[-1]["pair_generation_details"].get("pair_projected_competitive_status", {}).values()
+                        if len(exact1_pair_runs) > 1 and isinstance(pair_map, dict)
+                        for status in pair_map.values()
+                        if str(status) == "projected_beats_neighbor"
+                    ) if len(exact1_pair_runs) > 1 else 0,
+                    "projected_local_compatible_count": sum(
+                        1
+                        for pair_map in exact1_pair_runs[-1]["pair_generation_details"].get("pair_escape_source_projected_quality_band", {}).values()
+                        if len(exact1_pair_runs) > 1 and isinstance(pair_map, dict)
+                        for pos_map in pair_map.values()
+                        if isinstance(pos_map, dict)
+                        for band in pos_map.values()
+                        if str(band) == "projected_local_compatible"
+                    ) if len(exact1_pair_runs) > 1 else 0,
                     "pair_gate_kept_escape": len(exact1_pair_runs[-1]["pair_frontier_diagnostics"].get("pair_gate_kept_escape", [])) if len(exact1_pair_runs) > 1 else 0,
                     "pair_borderline_escape_candidates": len(exact1_pair_runs[-1]["pair_frontier_diagnostics"].get("pair_borderline_escape_candidates", [])) if len(exact1_pair_runs) > 1 else 0,
+                    "pair_near_local_escape_candidates": len(exact1_pair_runs[-1]["pair_frontier_diagnostics"].get("pair_near_local_escape_candidates", [])) if len(exact1_pair_runs) > 1 else 0,
+                    "pair_wide_local_escape_candidates": len(exact1_pair_runs[-1]["pair_frontier_diagnostics"].get("pair_wide_local_escape_candidates", [])) if len(exact1_pair_runs) > 1 else 0,
                     "gate_filtered_local_escape": int(exact1_pair_runs[-1]["pair_drop_reasons"].get("gate_filtered_local_escape", 0) or 0) if len(exact1_pair_runs) > 1 else 0,
                     "gate_filtered_hard_escape": int(exact1_pair_runs[-1]["pair_drop_reasons"].get("gate_filtered_hard_escape", 0) or 0) if len(exact1_pair_runs) > 1 else 0,
                 },
@@ -3970,12 +4788,110 @@ def run_compare_aware_guided_pool(
                     "pair_borderline_escape_candidates": len(
                         pair_frontier_diagnostics.get("pair_borderline_escape_candidates", [])
                     ),
+                    "pair_near_local_escape_candidates": len(
+                        pair_frontier_diagnostics.get("pair_near_local_escape_candidates", [])
+                    ),
+                    "pair_wide_local_escape_candidates": len(
+                        pair_frontier_diagnostics.get("pair_wide_local_escape_candidates", [])
+                    ),
                     "pair_gate_failed_escape": len(pair_frontier_diagnostics.get("pair_gate_failed_escape", [])),
                     "pair_gate_input_summary": pair_frontier_diagnostics.get("pair_gate_input_summary", {}),
                     "pair_gate_borderline_summary": pair_frontier_diagnostics.get("pair_gate_borderline_summary", {}),
                     "pair_best_local_escape": pair_frontier_diagnostics.get("pair_best_local_escape", {}),
                     "pair_best_hard_escape": pair_frontier_diagnostics.get("pair_best_hard_escape", {}),
                     "pair_neighbor_generation_summary": pair_generation_details.get("pair_neighbor_generation_summary", {}),
+                    "pair_single_byte_guard_summary": pair_generation_details.get("pair_single_byte_guard_summary", {}),
+                    "pair_single_byte_guard_candidates": pair_generation_details.get("pair_single_byte_guard_candidates", {}),
+                    "pair_single_byte_guard_status_counts": pair_generation_details.get("pair_single_byte_guard_status_counts", {}),
+                    "pair_guard_soft_promoted_values": pair_generation_details.get("pair_guard_soft_promoted_values", {}),
+                    "pair_guard_nonbase_starved": pair_generation_details.get("pair_guard_nonbase_starved", {}),
+                    "pair_guard_soft_quality_band": pair_generation_details.get("pair_guard_soft_quality_band", {}),
+                    "pair_guard_soft_rank_summary": pair_generation_details.get("pair_guard_soft_rank_summary", {}),
+                    "pair_guard_soft_distance_delta": pair_generation_details.get("pair_guard_soft_distance_delta", {}),
+                    "pair_guard_soft_raw_delta": pair_generation_details.get("pair_guard_soft_raw_delta", {}),
+                    "pair_guard_soft_structure_delta": pair_generation_details.get("pair_guard_soft_structure_delta", {}),
+                    "pair_projected_vs_neighbor_summary": pair_generation_details.get(
+                        "pair_projected_vs_neighbor_summary",
+                        {},
+                    ),
+                    "pair_projected_competitive_status": pair_generation_details.get(
+                        "pair_projected_competitive_status",
+                        {},
+                    ),
+                    "pair_projected_competitive_winner": pair_generation_details.get(
+                        "pair_projected_competitive_winner",
+                        {},
+                    ),
+                    "pair_projected_blocked_by_neighbor": pair_generation_details.get(
+                        "pair_projected_blocked_by_neighbor",
+                        {},
+                    ),
+                    "pair_projected_best_delta_gap": pair_generation_details.get(
+                        "pair_projected_best_delta_gap",
+                        {},
+                    ),
+                    "projected_beats_neighbor_count": sum(
+                        1
+                        for pair_map in pair_generation_details.get("pair_projected_competitive_status", {}).values()
+                        if isinstance(pair_map, dict)
+                        for status in pair_map.values()
+                        if str(status) == "projected_beats_neighbor"
+                    ),
+                    "projected_local_compatible_count": sum(
+                        1
+                        for pair_map in pair_generation_details.get("pair_escape_source_projected_quality_band", {}).values()
+                        if isinstance(pair_map, dict)
+                        for pos_map in pair_map.values()
+                        if isinstance(pos_map, dict)
+                        for band in pos_map.values()
+                        if str(band) == "projected_local_compatible"
+                    ),
+                    "projected_distance_explosive_count": sum(
+                        1
+                        for pair_map in pair_generation_details.get("pair_escape_source_projected_quality_band", {}).values()
+                        if isinstance(pair_map, dict)
+                        for pos_map in pair_map.values()
+                        if isinstance(pos_map, dict)
+                        for band in pos_map.values()
+                        if str(band) == "projected_distance_explosive"
+                    ),
+                    "pair_escape_source_projected_quality_band": pair_generation_details.get(
+                        "pair_escape_source_projected_quality_band",
+                        {},
+                    ),
+                    "pair_escape_source_projected_rank_summary": pair_generation_details.get(
+                        "pair_escape_source_projected_rank_summary",
+                        {},
+                    ),
+                    "pair_escape_source_projected_direction": pair_generation_details.get(
+                        "pair_escape_source_projected_direction",
+                        {},
+                    ),
+                    "pair_escape_source_projected_step": pair_generation_details.get(
+                        "pair_escape_source_projected_step",
+                        {},
+                    ),
+                    "pair_escape_source_projected_kept_values": pair_generation_details.get(
+                        "pair_escape_source_projected_kept_values",
+                        {},
+                    ),
+                    "pair_escape_source_projected_dropped_values": pair_generation_details.get(
+                        "pair_escape_source_projected_dropped_values",
+                        {},
+                    ),
+                    "pair_escape_source_projected_values": pair_generation_details.get(
+                        "pair_escape_source_projected_values",
+                        {},
+                    ),
+                    "pair_escape_source_projected_origins": pair_generation_details.get(
+                        "pair_escape_source_projected_origins",
+                        {},
+                    ),
+                    "lineage_projection_summary": pair_generation_details.get("lineage_projection_summary", {}),
+                    "pair_escape_source_reject_reasons": pair_generation_details.get(
+                        "pair_escape_source_reject_reasons",
+                        {},
+                    ),
                     "pair_mutation_radius_summary": pair_frontier_diagnostics.get(
                         "pair_mutation_radius_summary",
                         pair_generation_details.get("pair_mutation_radius_summary", {}),
@@ -3985,6 +4901,12 @@ def run_compare_aware_guided_pool(
                     ),
                     "pair_local_escape_borderline_count": int(
                         pair_frontier_diagnostics.get("pair_local_escape_borderline_count", 0) or 0
+                    ),
+                    "pair_near_local_escape_count": int(
+                        pair_frontier_diagnostics.get("pair_near_local_escape_count", 0) or 0
+                    ),
+                    "pair_wide_local_escape_count": int(
+                        pair_frontier_diagnostics.get("pair_wide_local_escape_count", 0) or 0
                     ),
                     "pair_local_escape_reject_count": int(
                         pair_frontier_diagnostics.get("pair_local_escape_reject_count", 0) or 0
@@ -3998,6 +4920,7 @@ def run_compare_aware_guided_pool(
                     "pair_profile_kept_escape": sum(
                         len(items) for items in pair_frontier_diagnostics.get("pair_profile_kept_escape", {}).values()
                     ),
+                    "pair_radius_band_counts": pair_frontier_diagnostics.get("pair_radius_band_counts", {}),
                     "pair_profile_truncation_summary": pair_frontier_diagnostics.get("pair_profile_truncation_summary", {}),
                 }
             )
@@ -4133,6 +5056,49 @@ def run_compare_aware_guided_pool(
         "pair_escape_mode": pair_frontier_diagnostics.get("pair_escape_mode", ""),
         "pair_escape_pool_strategy": pair_generation_details.get("pair_escape_pool_strategy", ""),
         "pair_neighbor_generation_summary": pair_generation_details.get("pair_neighbor_generation_summary", {}),
+        "pair_single_byte_guard_summary": pair_generation_details.get("pair_single_byte_guard_summary", {}),
+        "pair_single_byte_guard_candidates": pair_generation_details.get("pair_single_byte_guard_candidates", {}),
+        "pair_single_byte_guard_status_counts": pair_generation_details.get("pair_single_byte_guard_status_counts", {}),
+        "pair_guard_soft_promoted_values": pair_generation_details.get("pair_guard_soft_promoted_values", {}),
+        "pair_guard_nonbase_starved": pair_generation_details.get("pair_guard_nonbase_starved", {}),
+        "pair_guard_soft_quality_band": pair_generation_details.get("pair_guard_soft_quality_band", {}),
+        "pair_guard_soft_rank_summary": pair_generation_details.get("pair_guard_soft_rank_summary", {}),
+        "pair_guard_soft_distance_delta": pair_generation_details.get("pair_guard_soft_distance_delta", {}),
+        "pair_guard_soft_raw_delta": pair_generation_details.get("pair_guard_soft_raw_delta", {}),
+        "pair_guard_soft_structure_delta": pair_generation_details.get("pair_guard_soft_structure_delta", {}),
+        "pair_projected_vs_neighbor_summary": pair_generation_details.get("pair_projected_vs_neighbor_summary", {}),
+        "pair_projected_competitive_status": pair_generation_details.get("pair_projected_competitive_status", {}),
+        "pair_projected_competitive_winner": pair_generation_details.get("pair_projected_competitive_winner", {}),
+        "pair_projected_blocked_by_neighbor": pair_generation_details.get("pair_projected_blocked_by_neighbor", {}),
+        "pair_projected_best_delta_gap": pair_generation_details.get("pair_projected_best_delta_gap", {}),
+        "pair_escape_source_projected_quality_band": pair_generation_details.get(
+            "pair_escape_source_projected_quality_band",
+            {},
+        ),
+        "pair_escape_source_projected_rank_summary": pair_generation_details.get(
+            "pair_escape_source_projected_rank_summary",
+            {},
+        ),
+        "pair_escape_source_projected_direction": pair_generation_details.get(
+            "pair_escape_source_projected_direction",
+            {},
+        ),
+        "pair_escape_source_projected_step": pair_generation_details.get(
+            "pair_escape_source_projected_step",
+            {},
+        ),
+        "pair_escape_source_projected_kept_values": pair_generation_details.get(
+            "pair_escape_source_projected_kept_values",
+            {},
+        ),
+        "pair_escape_source_projected_dropped_values": pair_generation_details.get(
+            "pair_escape_source_projected_dropped_values",
+            {},
+        ),
+        "pair_escape_source_projected_values": pair_generation_details.get("pair_escape_source_projected_values", {}),
+        "pair_escape_source_projected_origins": pair_generation_details.get("pair_escape_source_projected_origins", {}),
+        "lineage_projection_summary": pair_generation_details.get("lineage_projection_summary", {}),
+        "pair_escape_source_reject_reasons": pair_generation_details.get("pair_escape_source_reject_reasons", {}),
         "pair_mutation_radius_summary": pair_frontier_diagnostics.get(
             "pair_mutation_radius_summary",
             pair_generation_details.get("pair_mutation_radius_summary", {}),
@@ -4152,11 +5118,14 @@ def run_compare_aware_guided_pool(
         "pair_gate_failed_escape": pair_frontier_diagnostics.get("pair_gate_failed_escape", []),
         "pair_gate_kept_escape": pair_frontier_diagnostics.get("pair_gate_kept_escape", []),
         "pair_borderline_escape_candidates": pair_frontier_diagnostics.get("pair_borderline_escape_candidates", []),
+        "pair_near_local_escape_candidates": pair_frontier_diagnostics.get("pair_near_local_escape_candidates", []),
+        "pair_wide_local_escape_candidates": pair_frontier_diagnostics.get("pair_wide_local_escape_candidates", []),
         "pair_gate_input_summary": pair_frontier_diagnostics.get("pair_gate_input_summary", {}),
         "pair_gate_borderline_summary": pair_frontier_diagnostics.get("pair_gate_borderline_summary", {}),
         "pair_escape_source_statuses": pair_frontier_diagnostics.get("pair_escape_source_statuses", {}),
         "pair_escape_lane_counts": pair_frontier_diagnostics.get("pair_escape_lane_counts", {}),
         "pair_escape_status_by_lane": pair_frontier_diagnostics.get("pair_escape_status_by_lane", {}),
+        "pair_radius_band_counts": pair_frontier_diagnostics.get("pair_radius_band_counts", {}),
         "pair_best_preserve_candidate": pair_frontier_diagnostics.get("pair_best_preserve_candidate"),
         "pair_best_escape_candidate": pair_frontier_diagnostics.get("pair_best_escape_candidate"),
         "pair_best_local_escape": pair_frontier_diagnostics.get("pair_best_local_escape", {}),
@@ -4166,6 +5135,12 @@ def run_compare_aware_guided_pool(
         ),
         "pair_local_escape_borderline_count": int(
             pair_frontier_diagnostics.get("pair_local_escape_borderline_count", 0) or 0
+        ),
+        "pair_near_local_escape_count": int(
+            pair_frontier_diagnostics.get("pair_near_local_escape_count", 0) or 0
+        ),
+        "pair_wide_local_escape_count": int(
+            pair_frontier_diagnostics.get("pair_wide_local_escape_count", 0) or 0
         ),
         "pair_local_escape_reject_count": int(
             pair_frontier_diagnostics.get("pair_local_escape_reject_count", 0) or 0
@@ -4288,6 +5263,11 @@ def run_compare_aware_guided_pool(
         "pair_escape_mode": guided_payload["pair_escape_mode"],
         "pair_escape_pool_strategy": guided_payload["pair_escape_pool_strategy"],
         "pair_neighbor_generation_summary": guided_payload["pair_neighbor_generation_summary"],
+        "pair_single_byte_guard_summary": guided_payload["pair_single_byte_guard_summary"],
+        "pair_single_byte_guard_candidates": guided_payload["pair_single_byte_guard_candidates"],
+        "pair_single_byte_guard_status_counts": guided_payload["pair_single_byte_guard_status_counts"],
+        "pair_guard_soft_promoted_values": guided_payload["pair_guard_soft_promoted_values"],
+        "pair_guard_nonbase_starved": guided_payload["pair_guard_nonbase_starved"],
         "pair_mutation_radius_summary": guided_payload["pair_mutation_radius_summary"],
         "pair_escape_source_values": guided_payload["pair_escape_source_values"],
         "pair_escape_source_counts": guided_payload["pair_escape_source_counts"],
@@ -4300,17 +5280,22 @@ def run_compare_aware_guided_pool(
         "pair_gate_failed_escape": guided_payload["pair_gate_failed_escape"],
         "pair_gate_kept_escape": guided_payload["pair_gate_kept_escape"],
         "pair_borderline_escape_candidates": guided_payload["pair_borderline_escape_candidates"],
+        "pair_near_local_escape_candidates": guided_payload["pair_near_local_escape_candidates"],
+        "pair_wide_local_escape_candidates": guided_payload["pair_wide_local_escape_candidates"],
         "pair_gate_input_summary": guided_payload["pair_gate_input_summary"],
         "pair_gate_borderline_summary": guided_payload["pair_gate_borderline_summary"],
         "pair_escape_source_statuses": guided_payload["pair_escape_source_statuses"],
         "pair_escape_lane_counts": guided_payload["pair_escape_lane_counts"],
         "pair_escape_status_by_lane": guided_payload["pair_escape_status_by_lane"],
+        "pair_radius_band_counts": guided_payload["pair_radius_band_counts"],
         "pair_best_preserve_candidate": guided_payload["pair_best_preserve_candidate"],
         "pair_best_escape_candidate": guided_payload["pair_best_escape_candidate"],
         "pair_best_local_escape": guided_payload["pair_best_local_escape"],
         "pair_best_hard_escape": guided_payload["pair_best_hard_escape"],
         "pair_local_escape_candidate_count": guided_payload["pair_local_escape_candidate_count"],
         "pair_local_escape_borderline_count": guided_payload["pair_local_escape_borderline_count"],
+        "pair_near_local_escape_count": guided_payload["pair_near_local_escape_count"],
+        "pair_wide_local_escape_count": guided_payload["pair_wide_local_escape_count"],
         "pair_local_escape_reject_count": guided_payload["pair_local_escape_reject_count"],
         "pair_hard_escape_candidate_count": guided_payload["pair_hard_escape_candidate_count"],
         "pair_profile_preserve_entries": guided_payload["pair_profile_preserve_entries"],
@@ -4543,6 +5528,32 @@ def run_compare_aware_smt(
             transform_model=transform_model,
             lineage_entries=lineage_entries,
         )
+        for position_key, values in dict(base_entry.get("pair_escape_source_projected_kept_values", {})).items():
+            try:
+                position = int(position_key)
+            except (TypeError, ValueError):
+                continue
+            merged = list(dict.fromkeys([
+                *[int(value) & 0xFF for value in lineage_value_pools.get(position, [])],
+                *[int(value) & 0xFF for value in values if isinstance(value, (int, str))],
+            ]))
+            if merged:
+                lineage_value_pools[position] = merged
+        for position_key, winner in dict(base_entry.get("pair_projected_competitive_winner", {})).items():
+            try:
+                position = int(position_key)
+            except (TypeError, ValueError):
+                continue
+            if not isinstance(winner, dict) or str(winner.get("family", "")) != "projected_soft_family":
+                continue
+            winner_value = int(winner.get("value", -1))
+            if not (0 <= winner_value <= 0xFF):
+                continue
+            merged = list(dict.fromkeys([
+                *[int(value) & 0xFF for value in lineage_value_pools.get(position, [])],
+                winner_value & 0xFF,
+            ]))
+            lineage_value_pools[position] = merged
     preferred_smt_entries: list[dict[str, object]] = []
     if frontier_submode == FRONTIER_EXACT1_SUBMODE:
         preferred_smt_entries.extend(
@@ -4557,13 +5568,26 @@ def run_compare_aware_smt(
         )
         preferred_smt_entries.extend(
             dict(entry)
-            for entry in base_entry.get("pair_borderline_escape_candidates", [])
+            for entry in base_entry.get("pair_near_local_escape_candidates", [])
             if isinstance(entry, dict)
         )
         preferred_smt_entries.extend(
             dict(entry)
             for entry in dict(base_entry.get("pair_best_local_escape", {})).values()
             if isinstance(entry, dict)
+        )
+        preferred_smt_entries.extend(
+            {
+                "candidate_hex": f"{base_anchor}{DEFAULT_FIXED_SUFFIX_HEX}",
+                "cand8_hex": base_anchor,
+                "pair_positions": [int(position_key)],
+                "pair_values": [int(winner.get('value', 0) or 0)],
+            }
+            for position_key, winner in dict(base_entry.get("pair_projected_competitive_winner", {})).items()
+            if str(position_key).strip().isdigit()
+            and isinstance(winner, dict)
+            and str(winner.get("family", "")) == "projected_soft_family"
+            and 0 <= int(winner.get("value", -1) or -1) <= 0xFF
         )
     feedback_value_pools = _smt_feedback_value_pools(
         base_anchor=base_anchor,
@@ -5155,6 +6179,14 @@ class CompareAwareSearchStrategy(SolverStrategy):
                 int(run.get("pair_stage_stats", {}).get("pair_local_escape_borderline_count", 0) or 0)
                 for run in iteration_runs
             )
+            near_pair_count = sum(
+                int(run.get("pair_stage_stats", {}).get("pair_near_local_escape_count", 0) or 0)
+                for run in iteration_runs
+            )
+            wide_pair_count = sum(
+                int(run.get("pair_stage_stats", {}).get("pair_wide_local_escape_count", 0) or 0)
+                for run in iteration_runs
+            )
             kept_escape_count = sum(
                 int(run.get("pair_stage_stats", {}).get("pair_gate_kept_escape", 0) or 0)
                 for run in iteration_runs
@@ -5162,10 +6194,10 @@ class CompareAwareSearchStrategy(SolverStrategy):
             if not improved_frontier_candidates and frontier_converged_reason == "continue":
                 frontier_converged_reason = "distance_not_improved"
             if frontier_converged_reason == "distance_not_improved":
-                if improved_pair_count <= 0 and borderline_pair_count <= 0 and kept_escape_count <= 0:
+                if improved_pair_count <= 0 and near_pair_count <= 0 and kept_escape_count <= 0:
                     frontier_stall_stage = "pair_pool"
                 elif improved_triad_count <= 0:
-                    frontier_stall_stage = "frontier_refine" if borderline_pair_count > 0 or kept_escape_count > 0 else "triad_pool"
+                    frontier_stall_stage = "frontier_refine" if near_pair_count > 0 or kept_escape_count > 0 else "triad_pool"
                 else:
                     frontier_stall_stage = "frontier_refine"
             if active_lane == FRONTIER_EXACT1_SUBMODE:
@@ -5204,6 +6236,8 @@ class CompareAwareSearchStrategy(SolverStrategy):
                     "improved_pair_frontier_pool_count": improved_pair_count,
                     "improved_triad_frontier_pool_count": improved_triad_count,
                     "borderline_pair_frontier_pool_count": borderline_pair_count,
+                    "near_local_pair_frontier_pool_count": near_pair_count,
+                    "wide_local_pair_frontier_pool_count": wide_pair_count,
                     "kept_escape_pair_frontier_pool_count": kept_escape_count,
                     "feedback_value_pools": {
                         source_anchor: {str(key): list(values) for key, values in value_pool.items()}
@@ -5286,6 +6320,44 @@ class CompareAwareSearchStrategy(SolverStrategy):
                     for run in iteration.get("guided_runs", [])
                     if str(run.get("frontier_submode", "")) == FRONTIER_EXACT1_SUBMODE
                 ),
+                "exact1_projected_local_compatible_count": sum(
+                    int(run.get("pair_stage_stats", {}).get("projected_local_compatible_count", 0) or 0)
+                    for iteration in frontier_iterations
+                    for run in iteration.get("guided_runs", [])
+                    if str(run.get("frontier_submode", "")) == FRONTIER_EXACT1_SUBMODE
+                ),
+                "exact1_near_local_escape_count": sum(
+                    int(run.get("pair_stage_stats", {}).get("pair_near_local_escape_count", 0) or 0)
+                    for iteration in frontier_iterations
+                    for run in iteration.get("guided_runs", [])
+                    if str(run.get("frontier_submode", "")) == FRONTIER_EXACT1_SUBMODE
+                ),
+                "exact1_wide_local_escape_count": sum(
+                    int(run.get("pair_stage_stats", {}).get("pair_wide_local_escape_count", 0) or 0)
+                    for iteration in frontier_iterations
+                    for run in iteration.get("guided_runs", [])
+                    if str(run.get("frontier_submode", "")) == FRONTIER_EXACT1_SUBMODE
+                ),
+                "exact1_best_near_local_distance": min(
+                    (
+                        int(entry.get("ci_distance5", 1 << 30) or (1 << 30))
+                        for iteration in frontier_iterations
+                        for run in iteration.get("guided_runs", [])
+                        if str(run.get("frontier_submode", "")) == FRONTIER_EXACT1_SUBMODE
+                        for entry in run.get("pair_near_local_escape_candidates", [])
+                        if isinstance(entry, dict)
+                    ),
+                    default=None,
+                ),
+                "exact1_pair_quality_winner": next(
+                    (
+                        str(run.get("pair_set_mode", ""))
+                        for iteration in reversed(frontier_iterations)
+                        for run in reversed(iteration.get("guided_runs", []))
+                        if str(run.get("frontier_submode", "")) == FRONTIER_EXACT1_SUBMODE
+                    ),
+                    "",
+                ),
                 "exact1_hard_escape_filtered_count": sum(
                     int(run.get("pair_stage_stats", {}).get("pair_drop_reasons", {}).get("gate_filtered_hard_escape", 0) or 0)
                     for iteration in frontier_iterations
@@ -5356,10 +6428,43 @@ class CompareAwareSearchStrategy(SolverStrategy):
                 for run in frontier_guided_runs
                 if str(run.get("frontier_submode", "")) == FRONTIER_EXACT1_SUBMODE
             ),
-            "exact1_local_escape_borderline_count": sum(
-                int(run.get("pair_stage_stats", {}).get("pair_local_escape_borderline_count", 0) or 0)
+                "exact1_local_escape_borderline_count": sum(
+                    int(run.get("pair_stage_stats", {}).get("pair_local_escape_borderline_count", 0) or 0)
+                    for run in frontier_guided_runs
+                    if str(run.get("frontier_submode", "")) == FRONTIER_EXACT1_SUBMODE
+                ),
+                "exact1_projected_local_compatible_count": sum(
+                    int(run.get("pair_stage_stats", {}).get("projected_local_compatible_count", 0) or 0)
+                    for run in frontier_guided_runs
+                    if str(run.get("frontier_submode", "")) == FRONTIER_EXACT1_SUBMODE
+                ),
+                "exact1_near_local_escape_count": sum(
+                    int(run.get("pair_stage_stats", {}).get("pair_near_local_escape_count", 0) or 0)
+                    for run in frontier_guided_runs
+                    if str(run.get("frontier_submode", "")) == FRONTIER_EXACT1_SUBMODE
+                ),
+            "exact1_wide_local_escape_count": sum(
+                int(run.get("pair_stage_stats", {}).get("pair_wide_local_escape_count", 0) or 0)
                 for run in frontier_guided_runs
                 if str(run.get("frontier_submode", "")) == FRONTIER_EXACT1_SUBMODE
+            ),
+            "exact1_best_near_local_distance": min(
+                (
+                    int(entry.get("ci_distance5", 1 << 30) or (1 << 30))
+                    for run in frontier_guided_runs
+                    if str(run.get("frontier_submode", "")) == FRONTIER_EXACT1_SUBMODE
+                    for entry in run.get("pair_near_local_escape_candidates", [])
+                    if isinstance(entry, dict)
+                ),
+                default=None,
+            ),
+            "exact1_pair_quality_winner": next(
+                (
+                    str(run.get("pair_set_mode", ""))
+                    for run in reversed(frontier_guided_runs)
+                    if str(run.get("frontier_submode", "")) == FRONTIER_EXACT1_SUBMODE
+                ),
+                "",
             ),
             "exact1_hard_escape_filtered_count": sum(
                 int(run.get("pair_stage_stats", {}).get("pair_drop_reasons", {}).get("gate_filtered_hard_escape", 0) or 0)
