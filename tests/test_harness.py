@@ -4,11 +4,34 @@ from reverse_agent.evidence import StructuredEvidence
 from reverse_agent.harness import (
     HarnessCase,
     HarnessConfig,
+    _safe_console_log,
     filter_harness_cases,
     run_harness,
 )
 from reverse_agent.pipeline import SolveResult
 from reverse_agent.tool_runners import ToolAutomationConfig
+
+
+def test_safe_console_log_replaces_unencodable_output(monkeypatch) -> None:
+    class FakeStdout:
+        encoding = "gbk"
+
+        def __init__(self) -> None:
+            self.output = ""
+
+        def write(self, value: str) -> None:
+            value.encode(self.encoding)
+            self.output += value
+
+        def flush(self) -> None:
+            return
+
+    fake_stdout = FakeStdout()
+    monkeypatch.setattr("sys.stdout", fake_stdout)
+
+    _safe_console_log("候选评分Top3: ´")
+
+    assert "候选评分Top3: ?" in fake_stdout.output
 
 
 def test_filter_harness_cases_supports_case_ids_tags_and_limit() -> None:

@@ -1241,7 +1241,7 @@ def _locked_pair_positions_for_exact1(
 
 
 def _compact_pair_candidate(entry: dict[str, object]) -> dict[str, object]:
-    return {
+    compact = {
         "candidate_hex": str(entry.get("candidate_hex", "")),
         "cand8_hex": str(entry.get("cand8_hex", "")),
         "ci_exact_wchars": int(entry.get("ci_exact_wchars", 0) or 0),
@@ -1269,6 +1269,61 @@ def _compact_pair_candidate(entry: dict[str, object]) -> dict[str, object]:
             for key, value in dict(entry.get("pair_value_origin_by_pos", {})).items()
         },
     }
+    if entry.get("pair_projected_winner_available"):
+        compact["pair_projected_winner_available"] = [
+            dict(item)
+            for item in entry.get("pair_projected_winner_available", [])
+            if isinstance(item, dict)
+        ]
+    if entry.get("pair_projected_winner_contributions"):
+        compact["pair_projected_winner_contributions"] = [
+            dict(item)
+            for item in entry.get("pair_projected_winner_contributions", [])
+            if isinstance(item, dict)
+        ]
+    if entry.get("pair_projected_boundary_mix"):
+        compact["pair_projected_boundary_mix"] = list(entry.get("pair_projected_boundary_mix", []))
+    if entry.get("pair_projected_boundary_role"):
+        compact["pair_projected_boundary_role"] = str(entry.get("pair_projected_boundary_role", ""))
+    if entry.get("pair_projected_winner_gate_status"):
+        compact["pair_projected_winner_gate_status"] = str(entry.get("pair_projected_winner_gate_status", ""))
+    return compact
+
+
+def _projected_winner_gate_status(entry: dict[str, object]) -> str:
+    available = [
+        item
+        for item in entry.get("pair_projected_winner_available", [])
+        if isinstance(item, dict)
+    ]
+    if not available:
+        return ""
+    contributions = [
+        item
+        for item in entry.get("pair_projected_winner_contributions", [])
+        if isinstance(item, dict)
+    ]
+    if not contributions:
+        pair_positions = [int(item) for item in entry.get("pair_positions", []) if isinstance(item, int) or str(item).isdigit()]
+        pair_values = [int(item) & 0xFF for item in entry.get("pair_values", []) if isinstance(item, int) or str(item).isdigit()]
+        value_by_position = dict(zip(pair_positions, pair_values))
+        base_only = all(
+            int(value_by_position.get(int(item.get("position", -1)), -1)) == int(item.get("base_value", -2))
+            for item in available
+        )
+        return "projected_winner_kept_as_base_only" if base_only else "projected_winner_lost_after_pair_metrics"
+    quality_band = str(entry.get("pair_escape_quality_band", ""))
+    status = str(entry.get("pair_escape_status", ""))
+    mix_sources = {str(item.get("paired_source", "")) for item in contributions}
+    if quality_band == "near_local_escape":
+        return "projected_winner_promoted_to_near_local"
+    if quality_band == "wide_local_escape" and (
+        "neighbor" in mix_sources or "projected_runner_up" in mix_sources
+    ):
+        return "projected_winner_mixed_with_neighbor_wide"
+    if status == "keep":
+        return "projected_winner_reached_pair_gate"
+    return "projected_winner_lost_after_pair_metrics"
 
 
 def _alternate_locked_pair_positions_for_exact1(
@@ -1354,6 +1409,63 @@ def _exact1_pair_set_selection_key(result: dict[str, object]) -> tuple[int, int,
         -int(pair_stage_stats.get("projected_local_compatible_count", 0) or 0),
         -len(diagnostics.get("pair_gate_kept_escape", [])),
     )
+
+
+def _exact1_projected_competition_summary(
+    *,
+    pair_stage_stats: dict[str, object],
+    pair_set_comparison_summary: dict[str, object] | None = None,
+) -> dict[str, object]:
+    projected_beats_neighbor_count = int(pair_stage_stats.get("projected_beats_neighbor_count", 0) or 0)
+    kept_escape_count = int(pair_stage_stats.get("pair_gate_kept_escape", 0) or 0)
+    near_local_escape_count = int(pair_stage_stats.get("pair_near_local_escape_count", 0) or 0)
+    wide_local_escape_count = int(pair_stage_stats.get("pair_wide_local_escape_count", 0) or 0)
+    pair_set_diagnosis = "pair_set_not_evaluated"
+    if isinstance(pair_set_comparison_summary, dict) and pair_set_comparison_summary:
+        projected_pair_set_wins = [
+            int(details.get("projected_beats_neighbor_count", 0) or 0)
+            for details in pair_set_comparison_summary.values()
+            if isinstance(details, dict)
+        ]
+        if projected_pair_set_wins and max(projected_pair_set_wins) <= 0:
+            pair_set_diagnosis = "pair_set_not_limiting_single_byte_competition"
+        elif projected_pair_set_wins:
+            pair_set_diagnosis = "pair_set_rotation_secondary_to_projected_winner"
+    stall_reason = "single_byte_projected_competition"
+    if projected_beats_neighbor_count > 0:
+        if near_local_escape_count > 0 or kept_escape_count > 0:
+            stall_reason = "projected_winner_reached_pair_gate"
+        elif wide_local_escape_count > 0:
+            stall_reason = "pair_refine_after_projected_winner"
+        else:
+            stall_reason = "pair_gate_after_projected_winner"
+    return {
+        "stall_reason": stall_reason,
+        "pair_set_diagnosis": pair_set_diagnosis,
+        "projected_beats_neighbor_count": projected_beats_neighbor_count,
+        "pair_gate_kept_escape_count": kept_escape_count,
+        "near_local_escape_count": near_local_escape_count,
+        "wide_local_escape_count": wide_local_escape_count,
+    }
+
+
+def _exact1_projected_competition_reason_from_runs(runs: Sequence[dict[str, object]]) -> str:
+    priority = {
+        "pair_refine_after_projected_winner": 0,
+        "projected_winner_reached_pair_gate": 1,
+        "pair_gate_after_projected_winner": 2,
+        "single_byte_projected_competition": 3,
+    }
+    reasons = [
+        str(
+            dict(run.get("pair_stage_stats", {}).get("exact1_projected_competition_summary", {})).get("stall_reason", "")
+        )
+        for run in runs
+    ]
+    reasons = [reason for reason in reasons if reason]
+    if not reasons:
+        return ""
+    return min(reasons, key=lambda reason: (priority.get(reason, 1 << 30), reason))
 
 
 def _entry_anchor_bytes(entry: dict[str, object]) -> bytes:
@@ -2837,6 +2949,8 @@ def _top_compare_aware_pair_entries(
         "pair_projected_competitive_winner": {},
         "pair_projected_blocked_by_neighbor": {},
         "pair_projected_best_delta_gap": {},
+        "pair_projected_boundary_candidates": {},
+        "pair_projected_preserve_candidates": {},
     }
     allowed_pairs = {tuple(sorted((int(left), int(right)))) for left, right in (locked_pair_positions or [])}
     for left, right in itertools.combinations(positions, 2):
@@ -2983,6 +3097,9 @@ def _top_compare_aware_pair_entries(
             projected_competitive_winner: dict[str, dict[str, object]] = {}
             projected_blocked_by_neighbor: dict[str, dict[str, object]] = {}
             projected_best_delta_gap: dict[str, dict[str, int]] = {}
+            projected_summary_by_pos: dict[int, dict[str, object]] = {}
+            projected_winner_by_pos: dict[int, dict[str, object]] = {}
+            neighbor_summary_by_pos: dict[int, dict[str, object]] = {}
             if baseline_entry:
                 for position, values, origin_map in (
                     (int(left), escape_left_values, escape_left_origins),
@@ -3204,6 +3321,7 @@ def _top_compare_aware_pair_entries(
                             "origins": list(best_neighbor.get("origins", [])),
                         }
                         competitive_candidates.append(neighbor_summary_item)
+                        neighbor_summary_by_pos[int(position)] = dict(neighbor_summary_item)
                     competitive_candidates.sort(key=_exact1_soft_family_competition_key)
                     winner_item = competitive_candidates[0] if competitive_candidates else None
                     loser_item = competitive_candidates[1] if len(competitive_candidates) > 1 else None
@@ -3238,6 +3356,7 @@ def _top_compare_aware_pair_entries(
                         if promoted_value != base_bytes[position]:
                             soft_promoted = [promoted_value]
                     if projected_summary_item is not None:
+                        projected_summary_by_pos[int(position)] = dict(projected_summary_item)
                         if winner_item is projected_summary_item:
                             projected_kept_values[str(position)] = [int(projected_summary_item.get("value", 0) or 0)]
                             projected_dropped_values[str(position)] = [
@@ -3245,6 +3364,7 @@ def _top_compare_aware_pair_entries(
                                 for item in projected_candidates
                                 if int(item.get("value", 0) or 0) not in projected_kept_values[str(position)]
                             ]
+                            projected_winner_by_pos[int(position)] = dict(projected_summary_item)
                         projected_competitive_status[str(position)] = competitive_status
                         projected_competitive_winner[str(position)] = dict(winner_item or projected_summary_item)
                         if loser_item is not None and winner_item is not projected_summary_item:
@@ -3376,6 +3496,34 @@ def _top_compare_aware_pair_entries(
                 abs(value - base_bytes[right]) for value in escape_right_values
             ]
 
+        def _pair_value_source(position: int, value: int) -> str:
+            normalized = int(value) & 0xFF
+            if normalized == int(base_bytes[position]):
+                return "base"
+            neighbor = neighbor_summary_by_pos.get(int(position), {})
+            if neighbor and normalized == int(neighbor.get("value", -1) or -1):
+                return "neighbor"
+            projected_winner = projected_winner_by_pos.get(int(position), {})
+            if projected_winner and normalized == int(projected_winner.get("value", -1) or -1):
+                return "projected_winner"
+            projected = projected_summary_by_pos.get(int(position), {})
+            if projected and normalized == int(projected.get("value", -1) or -1):
+                return "projected_runner_up"
+            return "other"
+
+        def _projected_winner_available_items() -> list[dict[str, object]]:
+            return [
+                {
+                    "position": int(position),
+                    "value": int(winner.get("value", 0) or 0) & 0xFF,
+                    "base_value": int(base_bytes[int(position)]),
+                    "quality_band": str(winner.get("quality_band", "")),
+                    "ci_distance_delta": int(winner.get("ci_distance_delta", 1 << 30) or (1 << 30)),
+                    "raw_distance_delta": int(winner.get("raw_distance_delta", 1 << 30) or (1 << 30)),
+                }
+                for position, winner in sorted(projected_winner_by_pos.items())
+            ]
+
         def _pair_entries_for_values(
             left_candidates: Sequence[int],
             right_candidates: Sequence[int],
@@ -3396,6 +3544,27 @@ def _top_compare_aware_pair_entries(
                         abs(int(left_value) - int(base_bytes[left])),
                         abs(int(right_value) - int(base_bytes[right])),
                     )
+                    projected_available = _projected_winner_available_items()
+                    projected_contributions: list[dict[str, object]] = []
+                    values_by_pos = {int(left): int(left_value) & 0xFF, int(right): int(right_value) & 0xFF}
+                    for winner_position, winner in projected_winner_by_pos.items():
+                        winner_value = int(winner.get("value", 0) or 0) & 0xFF
+                        if values_by_pos.get(int(winner_position)) != winner_value:
+                            continue
+                        paired_position = int(right) if int(winner_position) == int(left) else int(left)
+                        paired_value = values_by_pos.get(paired_position, int(base_bytes[paired_position]))
+                        projected_contributions.append(
+                            {
+                                "position": int(winner_position),
+                                "value": winner_value,
+                                "quality_band": str(winner.get("quality_band", "")),
+                                "ci_distance_delta": int(winner.get("ci_distance_delta", 1 << 30) or (1 << 30)),
+                                "raw_distance_delta": int(winner.get("raw_distance_delta", 1 << 30) or (1 << 30)),
+                                "paired_position": paired_position,
+                                "paired_value": int(paired_value) & 0xFF,
+                                "paired_source": _pair_value_source(paired_position, int(paired_value) & 0xFF),
+                            }
+                        )
                     entry.update(
                         {
                             "pair_positions": [int(left), int(right)],
@@ -3420,6 +3589,13 @@ def _top_compare_aware_pair_entries(
                                 str(left): list(dict.fromkeys((left_origin_map or {}).get(int(left_value), []))),
                                 str(right): list(dict.fromkeys((right_origin_map or {}).get(int(right_value), []))),
                             },
+                            "pair_projected_winner_available": projected_available,
+                            "pair_projected_winner_contributions": projected_contributions,
+                            "pair_projected_boundary_mix": [
+                                str(item.get("paired_source", ""))
+                                for item in projected_contributions
+                                if str(item.get("paired_source", ""))
+                            ],
                         }
                     )
                     entries.append(entry)
@@ -3432,6 +3608,68 @@ def _top_compare_aware_pair_entries(
                 )
             )
             return entries
+
+        def _projected_boundary_entries() -> list[dict[str, object]]:
+            if not projected_winner_by_pos:
+                return []
+            boundary_entries: list[dict[str, object]] = []
+            seen_boundary: set[str] = set()
+            for winner_position, winner in sorted(projected_winner_by_pos.items()):
+                if int(winner_position) not in {int(left), int(right)}:
+                    continue
+                other_position = int(right) if int(winner_position) == int(left) else int(left)
+                other_options: list[tuple[int, str]] = [(int(base_bytes[other_position]), "base")]
+                neighbor = neighbor_summary_by_pos.get(other_position, {})
+                if neighbor:
+                    other_options.append((int(neighbor.get("value", 0) or 0) & 0xFF, "neighbor"))
+                projected_other = projected_summary_by_pos.get(other_position, {})
+                projected_other_value = int(projected_other.get("value", -1) or -1)
+                if projected_other and not (
+                    other_position in projected_winner_by_pos
+                    and projected_other_value == int(projected_winner_by_pos[other_position].get("value", -2) or -2)
+                ):
+                    other_options.append((projected_other_value & 0xFF, "projected_runner_up"))
+                for other_value, other_source in dict.fromkeys(other_options):
+                    if int(winner_position) == int(left):
+                        left_value = int(winner.get("value", 0) or 0) & 0xFF
+                        right_value = int(other_value) & 0xFF
+                    else:
+                        left_value = int(other_value) & 0xFF
+                        right_value = int(winner.get("value", 0) or 0) & 0xFF
+                    generated = _pair_entries_for_values(
+                        [left_value],
+                        [right_value],
+                        escape_mode="escape",
+                        left_origin_map=escape_left_origins,
+                        right_origin_map=escape_right_origins,
+                    )
+                    if not generated:
+                        continue
+                    entry = generated[0]
+                    candidate_hex = _candidate_hex_from_entry(entry)
+                    if not candidate_hex or candidate_hex in seen_boundary:
+                        continue
+                    seen_boundary.add(candidate_hex)
+                    entry["pair_candidate_origin"] = (
+                        "exact1_projected_preserve_lane"
+                        if other_source == "base"
+                        else "exact1_projected_boundary"
+                    )
+                    entry["pair_neighbor_mode"] = (
+                        "projected_preserve_lane"
+                        if other_source == "base"
+                        else "projected_boundary"
+                    )
+                    entry["pair_projected_boundary_role"] = f"projected_winner_with_{other_source}"
+                    boundary_entries.append(entry)
+            boundary_entries.sort(
+                key=lambda item: _exact1_escape_profile_sort_key(
+                    item,
+                    transform_model,
+                    baseline_entry=baseline_entry,
+                )
+            )
+            return boundary_entries
 
         pair_entries: list[dict[str, object]]
         if frontier_submode == FRONTIER_EXACT1_SUBMODE:
@@ -3454,6 +3692,36 @@ def _top_compare_aware_pair_entries(
                     left_origin_map=escape_left_origins,
                     right_origin_map=escape_right_origins,
                 )
+                boundary_entries = _projected_boundary_entries()
+                if boundary_entries:
+                    preserve_lane_entries = [
+                        entry
+                        for entry in boundary_entries
+                        if str(entry.get("pair_candidate_origin", "")) == "exact1_projected_preserve_lane"
+                    ]
+                    boundary_escape_entries = [
+                        entry
+                        for entry in boundary_entries
+                        if str(entry.get("pair_candidate_origin", "")) != "exact1_projected_preserve_lane"
+                    ]
+                    merged_escape_entries: list[dict[str, object]] = []
+                    seen_escape_hex: set[str] = set()
+                    for entry in [*preserve_lane_entries, *boundary_escape_entries, *escape_entries]:
+                        candidate_hex = _candidate_hex_from_entry(entry)
+                        if not candidate_hex or candidate_hex in seen_escape_hex:
+                            continue
+                        seen_escape_hex.add(candidate_hex)
+                        merged_escape_entries.append(entry)
+                    escape_entries = merged_escape_entries
+                    pair_generation_details["pair_projected_preserve_candidates"][pair_key] = [
+                        _compact_pair_candidate(item) for item in preserve_lane_entries
+                    ]
+                    pair_generation_details["pair_projected_boundary_candidates"][pair_key] = [
+                        _compact_pair_candidate(item) for item in boundary_escape_entries
+                    ]
+                else:
+                    pair_generation_details["pair_projected_preserve_candidates"][pair_key] = []
+                    pair_generation_details["pair_projected_boundary_candidates"][pair_key] = []
                 escape_entries.sort(
                     key=lambda item: _exact1_escape_profile_sort_key(
                         item,
@@ -3462,7 +3730,23 @@ def _top_compare_aware_pair_entries(
                     )
                 )
             pair_key = f"{left},{right}"
-            kept_escape = escape_entries[: min(max(0, top_per_pair), EXACT1_PAIR_PROFILE_ESCAPE_TOP)]
+            projected_preserve_entries = [
+                entry
+                for entry in escape_entries
+                if str(entry.get("pair_candidate_origin", "")) == "exact1_projected_preserve_lane"
+            ][:1]
+            regular_escape_entries = [
+                entry
+                for entry in escape_entries
+                if str(entry.get("pair_candidate_origin", "")) != "exact1_projected_preserve_lane"
+            ]
+            kept_escape = regular_escape_entries[: min(max(0, top_per_pair), EXACT1_PAIR_PROFILE_ESCAPE_TOP)]
+            seen_kept_escape = {_candidate_hex_from_entry(entry) for entry in kept_escape}
+            for entry in projected_preserve_entries:
+                candidate_hex = _candidate_hex_from_entry(entry)
+                if candidate_hex and candidate_hex not in seen_kept_escape:
+                    kept_escape.append(entry)
+                    seen_kept_escape.add(candidate_hex)
             remaining_slots = max(0, top_per_pair - len(kept_escape))
             kept_preserve = preserve_entries[: min(remaining_slots, EXACT1_PAIR_PROFILE_PRESERVE_TOP)]
             pair_entries = [*kept_escape, *kept_preserve]
@@ -3597,6 +3881,11 @@ def _diverse_pair_frontier_pool(
             "pair_profile_kept_escape": dict((pair_profile_details or {}).get("pair_profile_kept_escape", {})),
             "pair_profile_drop_reasons": dict((pair_profile_details or {}).get("pair_profile_drop_reasons", {})),
             "pair_profile_truncation_summary": dict((pair_profile_details or {}).get("pair_profile_truncation_summary", {})),
+            "pair_projected_winner_gate_summary": {},
+            "pair_projected_winner_gate_status_counts": {},
+            "pair_projected_preserve_entries": [],
+            "pair_projected_boundary_entries": [],
+            "pair_projected_boundary_wide_candidates": [],
         }
         accepted_local: list[dict[str, object]] = []
         accepted_preserve: list[dict[str, object]] = []
@@ -3639,8 +3928,14 @@ def _diverse_pair_frontier_pool(
                 candidate["pair_escape_status"] = str(signal.get("status", "reject"))
                 candidate["pair_escape_quality_band"] = str(signal.get("quality_band", ""))
                 candidate["pair_borderline_quality_reason"] = str(signal.get("quality_reason", ""))
+                candidate["pair_projected_winner_gate_status"] = _projected_winner_gate_status(candidate)
                 compact = _compact_pair_candidate(candidate)
                 diagnostics["pair_gate_input_summary"].setdefault(pair_key, []).append(compact)
+                gate_status = str(candidate.get("pair_projected_winner_gate_status", ""))
+                if gate_status:
+                    diagnostics["pair_projected_winner_gate_summary"].setdefault(pair_key, []).append(compact)
+                    status_counts = diagnostics["pair_projected_winner_gate_status_counts"].setdefault(pair_key, {})
+                    status_counts[gate_status] = int(status_counts.get(gate_status, 0) or 0) + 1
                 lane = str(signal.get("lane", ""))
                 pair_lane_counts[lane] = pair_lane_counts.get(lane, 0) + 1
                 quality_band = str(signal.get("quality_band", ""))
@@ -3809,7 +4104,12 @@ def _diverse_pair_frontier_pool(
                 seen_local.add(candidate_hex)
                 candidate["pair_drop_reason"] = ""
                 accepted_local.append(candidate)
-                diagnostics["pair_gate_kept_escape"].append(_compact_pair_candidate(candidate))
+                compact_candidate = _compact_pair_candidate(candidate)
+                diagnostics["pair_gate_kept_escape"].append(compact_candidate)
+                if str(candidate.get("pair_candidate_origin", "")) == "exact1_projected_boundary":
+                    diagnostics["pair_projected_boundary_entries"].append(compact_candidate)
+                elif str(candidate.get("pair_candidate_origin", "")) == "exact1_projected_preserve_lane":
+                    diagnostics["pair_projected_preserve_entries"].append(compact_candidate)
             for candidate in local_near_borderline_candidates[:EXACT1_PAIR_TOP_LOCAL_ESCAPE_PER_PAIR]:
                 candidate_hex = _candidate_hex_from_entry(candidate)
                 if candidate_hex in seen_local:
@@ -3817,11 +4117,19 @@ def _diverse_pair_frontier_pool(
                 seen_local.add(candidate_hex)
                 candidate["pair_drop_reason"] = "gate_borderline_escape"
                 accepted_local.append(candidate)
-                diagnostics["pair_borderline_escape_candidates"].append(_compact_pair_candidate(candidate))
-                diagnostics["pair_near_local_escape_candidates"].append(_compact_pair_candidate(candidate))
+                compact_candidate = _compact_pair_candidate(candidate)
+                diagnostics["pair_borderline_escape_candidates"].append(compact_candidate)
+                diagnostics["pair_near_local_escape_candidates"].append(compact_candidate)
+                if str(candidate.get("pair_candidate_origin", "")) == "exact1_projected_boundary":
+                    diagnostics["pair_projected_boundary_entries"].append(compact_candidate)
+                elif str(candidate.get("pair_candidate_origin", "")) == "exact1_projected_preserve_lane":
+                    diagnostics["pair_projected_preserve_entries"].append(compact_candidate)
             for candidate in local_wide_borderline_candidates[:EXACT1_PAIR_HARD_ESCAPE_DIAG_SAMPLES]:
-                diagnostics["pair_wide_local_escape_candidates"].append(_compact_pair_candidate(candidate))
-                diagnostics["pair_escape_candidates_dropped"].append(_compact_pair_candidate(candidate))
+                compact_candidate = _compact_pair_candidate(candidate)
+                diagnostics["pair_wide_local_escape_candidates"].append(compact_candidate)
+                diagnostics["pair_escape_candidates_dropped"].append(compact_candidate)
+                if str(candidate.get("pair_candidate_origin", "")) == "exact1_projected_boundary":
+                    diagnostics["pair_projected_boundary_wide_candidates"].append(compact_candidate)
             for candidate in local_kept_candidates[EXACT1_PAIR_TOP_LOCAL_ESCAPE_PER_PAIR:]:
                 candidate["pair_drop_reason"] = "escape_signal_but_ranked_out"
                 drop_reasons["escape_signal_but_ranked_out"] = drop_reasons.get("escape_signal_but_ranked_out", 0) + 1
@@ -4830,6 +5138,31 @@ def run_compare_aware_guided_pool(
                         "pair_projected_best_delta_gap",
                         {},
                     ),
+                    "pair_projected_boundary_candidates": pair_generation_details.get(
+                        "pair_projected_boundary_candidates",
+                        {},
+                    ),
+                    "pair_projected_preserve_candidates": pair_generation_details.get(
+                        "pair_projected_preserve_candidates",
+                        {},
+                    ),
+                    "pair_projected_winner_gate_summary": pair_frontier_diagnostics.get(
+                        "pair_projected_winner_gate_summary",
+                        {},
+                    ),
+                    "pair_projected_winner_gate_status_counts": pair_frontier_diagnostics.get(
+                        "pair_projected_winner_gate_status_counts",
+                        {},
+                    ),
+                    "pair_projected_boundary_entries": len(
+                        pair_frontier_diagnostics.get("pair_projected_boundary_entries", [])
+                    ),
+                    "pair_projected_preserve_entries": len(
+                        pair_frontier_diagnostics.get("pair_projected_preserve_entries", [])
+                    ),
+                    "pair_projected_boundary_wide_candidates": len(
+                        pair_frontier_diagnostics.get("pair_projected_boundary_wide_candidates", [])
+                    ),
                     "projected_beats_neighbor_count": sum(
                         1
                         for pair_map in pair_generation_details.get("pair_projected_competitive_status", {}).values()
@@ -4923,6 +5256,10 @@ def run_compare_aware_guided_pool(
                     "pair_radius_band_counts": pair_frontier_diagnostics.get("pair_radius_band_counts", {}),
                     "pair_profile_truncation_summary": pair_frontier_diagnostics.get("pair_profile_truncation_summary", {}),
                 }
+            )
+            pair_stage_stats["exact1_projected_competition_summary"] = _exact1_projected_competition_summary(
+                pair_stage_stats=pair_stage_stats,
+                pair_set_comparison_summary=pair_set_comparison_summary,
             )
     if frontier_submode == FRONTIER_EXACT1_SUBMODE:
         value_pools = {
@@ -5071,6 +5408,13 @@ def run_compare_aware_guided_pool(
         "pair_projected_competitive_winner": pair_generation_details.get("pair_projected_competitive_winner", {}),
         "pair_projected_blocked_by_neighbor": pair_generation_details.get("pair_projected_blocked_by_neighbor", {}),
         "pair_projected_best_delta_gap": pair_generation_details.get("pair_projected_best_delta_gap", {}),
+        "pair_projected_boundary_candidates": pair_generation_details.get("pair_projected_boundary_candidates", {}),
+        "pair_projected_preserve_candidates": pair_generation_details.get("pair_projected_preserve_candidates", {}),
+        "pair_projected_winner_gate_summary": pair_frontier_diagnostics.get("pair_projected_winner_gate_summary", {}),
+        "pair_projected_winner_gate_status_counts": pair_frontier_diagnostics.get(
+            "pair_projected_winner_gate_status_counts",
+            {},
+        ),
         "pair_escape_source_projected_quality_band": pair_generation_details.get(
             "pair_escape_source_projected_quality_band",
             {},
@@ -5120,6 +5464,12 @@ def run_compare_aware_guided_pool(
         "pair_borderline_escape_candidates": pair_frontier_diagnostics.get("pair_borderline_escape_candidates", []),
         "pair_near_local_escape_candidates": pair_frontier_diagnostics.get("pair_near_local_escape_candidates", []),
         "pair_wide_local_escape_candidates": pair_frontier_diagnostics.get("pair_wide_local_escape_candidates", []),
+        "pair_projected_preserve_entries": pair_frontier_diagnostics.get("pair_projected_preserve_entries", []),
+        "pair_projected_boundary_entries": pair_frontier_diagnostics.get("pair_projected_boundary_entries", []),
+        "pair_projected_boundary_wide_candidates": pair_frontier_diagnostics.get(
+            "pair_projected_boundary_wide_candidates",
+            [],
+        ),
         "pair_gate_input_summary": pair_frontier_diagnostics.get("pair_gate_input_summary", {}),
         "pair_gate_borderline_summary": pair_frontier_diagnostics.get("pair_gate_borderline_summary", {}),
         "pair_escape_source_statuses": pair_frontier_diagnostics.get("pair_escape_source_statuses", {}),
@@ -5154,6 +5504,7 @@ def run_compare_aware_guided_pool(
         "pair_profile_kept_escape": pair_frontier_diagnostics.get("pair_profile_kept_escape", {}),
         "pair_profile_drop_reasons": pair_frontier_diagnostics.get("pair_profile_drop_reasons", {}),
         "pair_profile_truncation_summary": pair_frontier_diagnostics.get("pair_profile_truncation_summary", {}),
+        "exact1_projected_competition_summary": pair_stage_stats.get("exact1_projected_competition_summary", {}),
         "pair_drop_reasons": pair_drop_reasons,
         "positions": positions,
         "exact_floor": exact_floor,
@@ -5282,6 +5633,13 @@ def run_compare_aware_guided_pool(
         "pair_borderline_escape_candidates": guided_payload["pair_borderline_escape_candidates"],
         "pair_near_local_escape_candidates": guided_payload["pair_near_local_escape_candidates"],
         "pair_wide_local_escape_candidates": guided_payload["pair_wide_local_escape_candidates"],
+        "pair_projected_boundary_candidates": guided_payload["pair_projected_boundary_candidates"],
+        "pair_projected_preserve_candidates": guided_payload["pair_projected_preserve_candidates"],
+        "pair_projected_preserve_entries": guided_payload["pair_projected_preserve_entries"],
+        "pair_projected_boundary_entries": guided_payload["pair_projected_boundary_entries"],
+        "pair_projected_boundary_wide_candidates": guided_payload["pair_projected_boundary_wide_candidates"],
+        "pair_projected_winner_gate_summary": guided_payload["pair_projected_winner_gate_summary"],
+        "pair_projected_winner_gate_status_counts": guided_payload["pair_projected_winner_gate_status_counts"],
         "pair_gate_input_summary": guided_payload["pair_gate_input_summary"],
         "pair_gate_borderline_summary": guided_payload["pair_gate_borderline_summary"],
         "pair_escape_source_statuses": guided_payload["pair_escape_source_statuses"],
@@ -5304,6 +5662,7 @@ def run_compare_aware_guided_pool(
         "pair_profile_kept_escape": guided_payload["pair_profile_kept_escape"],
         "pair_profile_drop_reasons": guided_payload["pair_profile_drop_reasons"],
         "pair_profile_truncation_summary": guided_payload["pair_profile_truncation_summary"],
+        "exact1_projected_competition_summary": guided_payload["exact1_projected_competition_summary"],
         "pair_drop_reasons": pair_drop_reasons,
         "positions": positions,
         "value_pools": {str(key): list(values[:GUIDED_POOL_TOP_VALUES]) for key, values in value_pools.items()},
@@ -5489,6 +5848,100 @@ def _smt_feedback_value_pools(
     return pools
 
 
+def _exact1_projected_winner_smt_entries(
+    *,
+    base_anchor: str,
+    base_entry: dict[str, object],
+) -> list[dict[str, object]]:
+    winner_entries: list[dict[str, object]] = []
+    status_root = dict(base_entry.get("pair_projected_competitive_status", {}))
+    winner_root = dict(base_entry.get("pair_projected_competitive_winner", {}))
+    flattened: list[tuple[str, dict[str, object], str]] = []
+    for key, winner_or_map in winner_root.items():
+        if isinstance(winner_or_map, dict) and any(isinstance(value, dict) for value in winner_or_map.values()):
+            status_map = status_root.get(str(key), {})
+            status_map = status_map if isinstance(status_map, dict) else {}
+            for position_key, winner in winner_or_map.items():
+                if isinstance(winner, dict):
+                    flattened.append((str(position_key), winner, str(status_map.get(str(position_key), ""))))
+        elif isinstance(winner_or_map, dict):
+            flattened.append((str(key), winner_or_map, str(status_root.get(str(key), ""))))
+    for position_key, winner, status in flattened:
+        if not str(position_key).strip().isdigit():
+            continue
+        if status != "projected_beats_neighbor":
+            continue
+        if not isinstance(winner, dict) or str(winner.get("family", "")) != "projected_soft_family":
+            continue
+        winner_value = int(winner.get("value", -1) or -1)
+        if not (0 <= winner_value <= 0xFF):
+            continue
+        winner_entries.append(
+            {
+                "candidate_hex": f"{base_anchor}{DEFAULT_FIXED_SUFFIX_HEX}",
+                "cand8_hex": base_anchor,
+                "pair_positions": [int(position_key)],
+                "pair_values": [winner_value & 0xFF],
+            }
+        )
+    seen_positions = {tuple(entry.get("pair_positions", [])) for entry in winner_entries}
+    for item in base_entry.get("pair_projected_winner_available", []):
+        if not isinstance(item, dict):
+            continue
+        position = int(item.get("position", -1) or -1)
+        winner_value = int(item.get("value", -1) or -1)
+        if not (0 <= position < 8 and 0 <= winner_value <= 0xFF):
+            continue
+        if (position,) in seen_positions:
+            continue
+        seen_positions.add((position,))
+        winner_entries.append(
+            {
+                "candidate_hex": f"{base_anchor}{DEFAULT_FIXED_SUFFIX_HEX}",
+                "cand8_hex": base_anchor,
+                "pair_positions": [position],
+                "pair_values": [winner_value & 0xFF],
+            }
+        )
+    return winner_entries
+
+
+def _exact1_smt_preferred_entries(
+    *,
+    base_anchor: str,
+    base_entry: dict[str, object],
+) -> list[dict[str, object]]:
+    preferred_entries: list[dict[str, object]] = []
+    def _bucket_entries(value: object) -> list[dict[str, object]]:
+        if isinstance(value, list):
+            return [dict(entry) for entry in value if isinstance(entry, dict)]
+        if isinstance(value, dict):
+            entries: list[dict[str, object]] = []
+            for item in value.values():
+                if isinstance(item, dict):
+                    entries.append(dict(item))
+                elif isinstance(item, list):
+                    entries.extend(dict(entry) for entry in item if isinstance(entry, dict))
+            return entries
+        return []
+
+    for bucket_key in (
+        "pair_profile_kept_preserve",
+        "pair_gate_kept_escape",
+        "pair_near_local_escape_candidates",
+        "pair_projected_preserve_entries",
+        "pair_projected_boundary_entries",
+    ):
+        preferred_entries.extend(_bucket_entries(base_entry.get(bucket_key, [])))
+    preferred_entries.extend(
+        _exact1_projected_winner_smt_entries(
+            base_anchor=base_anchor,
+            base_entry=base_entry,
+        )
+    )
+    return preferred_entries
+
+
 def run_compare_aware_smt(
     *,
     target: Path,
@@ -5557,37 +6010,10 @@ def run_compare_aware_smt(
     preferred_smt_entries: list[dict[str, object]] = []
     if frontier_submode == FRONTIER_EXACT1_SUBMODE:
         preferred_smt_entries.extend(
-            dict(entry)
-            for entry in base_entry.get("pair_profile_kept_preserve", [])
-            if isinstance(entry, dict)
-        )
-        preferred_smt_entries.extend(
-            dict(entry)
-            for entry in base_entry.get("pair_gate_kept_escape", [])
-            if isinstance(entry, dict)
-        )
-        preferred_smt_entries.extend(
-            dict(entry)
-            for entry in base_entry.get("pair_near_local_escape_candidates", [])
-            if isinstance(entry, dict)
-        )
-        preferred_smt_entries.extend(
-            dict(entry)
-            for entry in dict(base_entry.get("pair_best_local_escape", {})).values()
-            if isinstance(entry, dict)
-        )
-        preferred_smt_entries.extend(
-            {
-                "candidate_hex": f"{base_anchor}{DEFAULT_FIXED_SUFFIX_HEX}",
-                "cand8_hex": base_anchor,
-                "pair_positions": [int(position_key)],
-                "pair_values": [int(winner.get('value', 0) or 0)],
-            }
-            for position_key, winner in dict(base_entry.get("pair_projected_competitive_winner", {})).items()
-            if str(position_key).strip().isdigit()
-            and isinstance(winner, dict)
-            and str(winner.get("family", "")) == "projected_soft_family"
-            and 0 <= int(winner.get("value", -1) or -1) <= 0xFF
+            _exact1_smt_preferred_entries(
+                base_anchor=base_anchor,
+                base_entry=base_entry,
+            )
         )
     feedback_value_pools = _smt_feedback_value_pools(
         base_anchor=base_anchor,
@@ -6200,8 +6626,15 @@ class CompareAwareSearchStrategy(SolverStrategy):
                     frontier_stall_stage = "frontier_refine" if near_pair_count > 0 or kept_escape_count > 0 else "triad_pool"
                 else:
                     frontier_stall_stage = "frontier_refine"
+            exact1_projected_competition_reason = (
+                _exact1_projected_competition_reason_from_runs(iteration_runs)
+                if active_lane == FRONTIER_EXACT1_SUBMODE
+                else ""
+            )
             if active_lane == FRONTIER_EXACT1_SUBMODE:
-                frontier_exact1_stall_reason = frontier_converged_reason or frontier_stall_stage
+                frontier_exact1_stall_reason = (
+                    exact1_projected_competition_reason or frontier_converged_reason or frontier_stall_stage
+                )
             else:
                 frontier_exact0_stall_reason = frontier_converged_reason or frontier_stall_stage
             frontier_iterations.append(
@@ -6238,6 +6671,7 @@ class CompareAwareSearchStrategy(SolverStrategy):
                     "borderline_pair_frontier_pool_count": borderline_pair_count,
                     "near_local_pair_frontier_pool_count": near_pair_count,
                     "wide_local_pair_frontier_pool_count": wide_pair_count,
+                    "exact1_projected_competition_reason": exact1_projected_competition_reason,
                     "kept_escape_pair_frontier_pool_count": kept_escape_count,
                     "feedback_value_pools": {
                         source_anchor: {str(key): list(values) for key, values in value_pool.items()}
@@ -6325,6 +6759,24 @@ class CompareAwareSearchStrategy(SolverStrategy):
                     for iteration in frontier_iterations
                     for run in iteration.get("guided_runs", [])
                     if str(run.get("frontier_submode", "")) == FRONTIER_EXACT1_SUBMODE
+                ),
+                "exact1_projected_competition_reason": _exact1_projected_competition_reason_from_runs(
+                    [
+                        run
+                        for iteration in frontier_iterations
+                        for run in iteration.get("guided_runs", [])
+                        if str(run.get("frontier_submode", "")) == FRONTIER_EXACT1_SUBMODE
+                    ]
+                ),
+                "exact1_projected_competition_summary": next(
+                    (
+                        dict(run.get("pair_stage_stats", {}).get("exact1_projected_competition_summary", {}))
+                        for iteration in reversed(frontier_iterations)
+                        for run in reversed(iteration.get("guided_runs", []))
+                        if str(run.get("frontier_submode", "")) == FRONTIER_EXACT1_SUBMODE
+                        and dict(run.get("pair_stage_stats", {}).get("exact1_projected_competition_summary", {}))
+                    ),
+                    {},
                 ),
                 "exact1_near_local_escape_count": sum(
                     int(run.get("pair_stage_stats", {}).get("pair_near_local_escape_count", 0) or 0)
@@ -6437,6 +6889,22 @@ class CompareAwareSearchStrategy(SolverStrategy):
                     int(run.get("pair_stage_stats", {}).get("projected_local_compatible_count", 0) or 0)
                     for run in frontier_guided_runs
                     if str(run.get("frontier_submode", "")) == FRONTIER_EXACT1_SUBMODE
+                ),
+                "exact1_projected_competition_reason": _exact1_projected_competition_reason_from_runs(
+                    [
+                        run
+                        for run in frontier_guided_runs
+                        if str(run.get("frontier_submode", "")) == FRONTIER_EXACT1_SUBMODE
+                    ]
+                ),
+                "exact1_projected_competition_summary": next(
+                    (
+                        dict(run.get("pair_stage_stats", {}).get("exact1_projected_competition_summary", {}))
+                        for run in reversed(frontier_guided_runs)
+                        if str(run.get("frontier_submode", "")) == FRONTIER_EXACT1_SUBMODE
+                        and dict(run.get("pair_stage_stats", {}).get("exact1_projected_competition_summary", {}))
+                    ),
+                    {},
                 ),
                 "exact1_near_local_escape_count": sum(
                     int(run.get("pair_stage_stats", {}).get("pair_near_local_escape_count", 0) or 0)
@@ -6554,6 +7022,29 @@ class CompareAwareSearchStrategy(SolverStrategy):
                 frontier_validations=[*frontier_guided_validations, *final_validations],
                 fallback_entry=default_smt_entry,
             )
+            best_smt_anchor = (
+                str(best_smt_entry.get("cand8_hex", "")).strip().lower()
+                or str(best_smt_entry.get("candidate_hex", ""))[:16].strip().lower()
+            )
+            if best_smt_anchor:
+                smt_context_entry = next(
+                    (
+                        entry
+                        for entry in [
+                            *frontier_guided_entries,
+                            *current_frontier_candidates,
+                            *final_top_entries,
+                        ]
+                        if (
+                            str(entry.get("cand8_hex", "")).strip().lower()
+                            or str(entry.get("candidate_hex", ""))[:16].strip().lower()
+                        )
+                        == best_smt_anchor
+                    ),
+                    {},
+                )
+                if smt_context_entry:
+                    best_smt_entry = {**dict(smt_context_entry), **dict(best_smt_entry)}
             smt_run = run_compare_aware_smt(
                 target=file_path,
                 artifacts_dir=artifacts_dir / "smt",

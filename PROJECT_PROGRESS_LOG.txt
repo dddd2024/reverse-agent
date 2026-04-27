@@ -2010,3 +2010,220 @@ Reverse Agent 项目进展日志（截至 2026-04-16）
   - 优先考虑让 projected 值不再与纯 `escape_neighbor` 同权，而是根据 exact1 baseline 的 `ci_distance5/raw_distance10/structure_delta` 做更强的 local-compatible 过滤或降权；
   - 若下一轮仍然 `projected_local_compatible_count = 0`，再考虑改成“projected-only escape lane”或切回 pair 组合规则，而不是继续扩 source 家族。
 
+## 2026-04-24 exact1 projected-vs-neighbor competitive handoff
+
+1) 代码改动
+- 在 `reverse_agent/strategies/compare_aware_search.py` 中补齐了 exact1 projected-vs-neighbor 计划里还没完全落地的两段 handoff：
+  - 新增 `_exact1_projected_competition_summary()` / `_exact1_projected_competition_reason_from_runs()`，把 exact1 当前停滞明确区分成：
+    - `single_byte_projected_competition`
+    - `pair_gate_after_projected_winner`
+    - `projected_winner_reached_pair_gate`
+    - `pair_refine_after_projected_winner`
+  - `pair_set_comparison_summary` 现在会被进一步归因为：
+    - `pair_set_not_limiting_single_byte_competition`
+    - `pair_set_rotation_secondary_to_projected_winner`
+- 收紧了 exact1 的 SMT value pool handoff：
+  - 新增 `_exact1_projected_winner_smt_entries()` / `_exact1_smt_preferred_entries()`；
+  - SMT 只再吃：
+    - `pair_profile_kept_preserve`
+    - `pair_gate_kept_escape`
+    - `pair_near_local_escape_candidates`
+    - `projected_beats_neighbor` 的 projected winner
+  - 不再把 `pair_best_local_escape` 这种 wide-local 诊断值直接送入 SMT；
+  - projected runner-up / neighbor winner 也不会再通过这条 exact1 偏好通道泄漏进 SMT。
+
+2) 自动化验证
+- `python -m pytest -q tests/test_compare_aware_search_strategy.py -k "projected_competition or run_compare_aware_smt_records_feedback_value_pools_from_improved_frontier_entries"` -> `3 passed`
+- `python -m pytest -q tests/test_compare_aware_search_strategy.py -k "projected_family_competition or soft_guard_prefers_projected_origin_over_escape_neighbor"` -> `3 passed`
+- `python -m pytest -q tests/test_compare_aware_search_strategy.py` -> `47 passed`
+- `python -m pytest -q` -> `119 passed`
+
+3) 真实样本回归
+- 新 run:
+  - `solve_reports\\harness_runs\\samplereverse_exact1_projected_vs_neighbor_20260424_rerun`
+- 数据集：
+  - `samplereverse_exact1_projected_vs_neighbor_20260424.json`
+- 目标：
+  - `E:\\xwechat_files\\wxid_9ky6h8wz58b912_a1e5\\msg\\file\\2026-04\\samplereverse.exe`
+- 关键 artifact：
+  - `solve_reports\\harness_runs\\samplereverse_exact1_projected_vs_neighbor_20260424_rerun\\reports\\tool_artifacts\\samplereverse\\frontier_guided_1_5a3e7f46ddd474d0\\samplereverse_compare_aware_guided_pool_result.json`
+  - `solve_reports\\harness_runs\\samplereverse_exact1_projected_vs_neighbor_20260424_rerun\\reports\\tool_artifacts\\samplereverse\\samplereverse_compare_aware_strata_summary.json`
+- 注意：
+  - harness 末尾仍因已知 `gbk` 编码错误退出；
+  - compare-aware / frontier / SMT artifacts 已完整生成，本轮结论有效。
+
+4) 关键结果
+- 这次已经不再是 “projected 全部生成后直接消失”：
+  - `projected_beats_neighbor_count = 2`
+  - `pair_projected_competitive_status` 首次明确出现两个 `projected_beats_neighbor`
+  - 对应 projected winner 都已进入 `pair_guard_soft_promoted_values`
+- 但 projected winner 仍未把 exact1 推进到 near-local：
+  - `exact1_projected_local_compatible_count = 0`
+  - `exact1_near_local_escape_count = 0`
+  - `exact1_wide_local_escape_count = 3`
+  - `pair_gate_kept_escape_count = 1`
+- 新的竞争摘要已经成功把瓶颈改写清楚：
+  - `frontier_exact1_stall_reason = projected_winner_reached_pair_gate`
+  - `exact1_projected_competition_summary.stall_reason = projected_winner_reached_pair_gate`
+  - `exact1_projected_competition_summary.pair_set_diagnosis = pair_set_rotation_secondary_to_projected_winner`
+- projected 当前主要还是输在 distance，而不是 raw/structure：
+  - `pair_projected_competitive_status` 中其余失败位置均落在 `projected_loses_on_distance`
+- runtime best 仍未改善：
+  - exact2:
+    - `78d540b49c590770...` -> `runtime_ci_exact_wchars=2`, `runtime_ci_distance5=246`
+  - exact1:
+    - `5a3e7f46ddd474d0...` -> `runtime_ci_exact_wchars=1`, `runtime_ci_distance5=258`
+
+5) 结论
+- 本轮已经完成了原计划里最关键的“projected vs neighbor 正面竞争 + bounded handoff”闭环，并且真实样本确认：
+  - projected winner 可以打赢同位置 neighbor；
+  - artifact 能直接回答 projected 是赢了还是输在 distance/raw/structure；
+  - SMT 不再把 wide-local / runner-up 诊断值当成 exact1 偏好输入。
+- 当前默认下一步应转向：
+  - 继续压 exact1 projected winner 进入 pair 后的质量，让 `projected_winner_reached_pair_gate` 进一步推进到 `near_local_escape`；
+  - 优先研究为什么当前 projected winner 仍只能停在 wide-local / kept-local 边缘，而不是继续回头扩 projected source 家族；
+  - pair-set 轮换本轮已不再是首要瓶颈，除非后续 artifact 重新显示 projected winner 数量掉回 0。
+
+## 2026-04-24 exact1 projected pair-gate boundary diagnostics
+
+1) 代码改动
+- 在 `reverse_agent/strategies/compare_aware_search.py` 中实现 exact1 projected winner 的 pair-gate 去向诊断：
+  - pair candidate 现在记录：
+    - `pair_projected_winner_available`
+    - `pair_projected_winner_contributions`
+    - `pair_projected_boundary_mix`
+    - `pair_projected_winner_gate_status`
+  - 新增 gate status：
+    - `projected_winner_kept_as_base_only`
+    - `projected_winner_mixed_with_neighbor_wide`
+    - `projected_winner_lost_after_pair_metrics`
+    - `projected_winner_promoted_to_near_local`
+- 新增 bounded `exact1_projected_boundary` 通道：
+  - 只使用已有 `projected_beats_neighbor` winner；
+  - 只组合：
+    - projected winner + base
+    - projected winner + current best neighbor
+    - projected winner + projected runner-up
+  - 不扩大 `EXACT1_PROJECTED_STEP_LIMIT`；
+  - 不新增 samplereverse 专用硬编码。
+- SMT handoff 继续保持通用：
+  - 支持 nested `pair_projected_competitive_*` artifact；
+  - 接收 `pair_projected_boundary_entries`；
+  - 从 candidate-level `pair_projected_winner_available` 兜底提取 projected winner；
+  - 继续排除 wide-local diagnostic。
+- 在 SMT 调用前把 same-anchor guided context 合并回 validation-selected SMT base，避免 validation entry 丢失 pair-gate/projected diagnostics。
+
+2) 自动化验证
+- `python -m pytest -q tests/test_compare_aware_search_strategy.py -k "projected or near_local or smt_records"` -> `9 passed`
+- `python -m pytest -q tests/test_compare_aware_search_strategy.py` -> `49 passed`
+- `python -m pytest -q` -> `121 passed`
+
+3) 真实样本回归
+- 最终有效 run：
+  - `solve_reports\\harness_runs\\samplereverse_exact1_projected_pair_gate_20260424_smt`
+- 数据集：
+  - `samplereverse_exact1_projected_vs_neighbor_20260424.json`
+- 目标：
+  - `E:\\xwechat_files\\wxid_9ky6h8wz58b912_a1e5\\msg\\file\\2026-04\\samplereverse.exe`
+- 注意：
+  - harness 末尾仍因已知 `gbk` 编码错误退出；
+  - compare-aware / frontier / SMT artifacts 已完整生成，本轮结论有效。
+
+4) 关键结果
+- runtime best 未改善：
+  - exact2 仍为 `78d540b49c590770...`，`runtime_ci_exact_wchars=2`，`runtime_ci_distance5=246`
+  - exact1 仍为 `5a3e7f46ddd474d0...`，`runtime_ci_exact_wchars=1`，`runtime_ci_distance5=258`
+- frontier 仍停在：
+  - `frontier_exact1_stall_reason = projected_winner_reached_pair_gate`
+  - `exact1_projected_competition_summary.projected_beats_neighbor_count = 2`
+  - `exact1_near_local_escape_count = 0`
+  - `exact1_wide_local_escape_count = 3`
+- 新诊断明确回答了 projected winner 的去向：
+  - `[1,2]` kept escape 是 `projected_winner_kept_as_base_only`，即 pair gate 保留的是 base 值 `[62,127]`，没有真正消费 projected value `63`。
+  - bounded boundary 生成了 `5a3f7c46ddd474d0`，即 `[1,2] -> [63,124]`，但被判为 `projected_winner_mixed_with_neighbor_wide`。
+  - `pair_projected_boundary_entries = []`，说明没有 boundary candidate 达到 keep/near-local。
+- SMT handoff 已确认吃到 projected winner：
+  - `feedback_value_pools["1"]` 包含 `63`
+  - SMT 仍返回 `targeted z3 finished with unknown`
+
+5) 结论
+- 本轮没有提升 runtime best，但完成了计划中的关键 observability 和 bounded boundary lane。
+- 当前更精确瓶颈：
+  - projected winner `63@pos1` 不再是“没被生成/没被传递”；
+  - 它进入 boundary 和 SMT；
+  - 但在 pair gate 里与 neighbor `124@pos2` 混合后仍表现为 wide-local，且 z3 在包含 `63` 的 value pool 下仍 unknown。
+- 下一轮默认方向：
+  - 不继续扩 projected source；
+  - 转向 projected-only preserve lane / pair composition policy；
+  - 重点比较 `projected winner + base` 为什么比 base-only差，以及是否需要让 projected winner 先以 preserve-style 单点 lane 稳住，再进入 pair escape。
+
+## 2026-04-24 exact1 projected preserve lane + harness encoding fix
+
+1) 代码改动
+- 修复 harness 控制台输出编码问题：
+  - `reverse_agent/harness.py` 新增 `_safe_console_log()`；
+  - harness CLI 不再直接把日志交给裸 `print`；
+  - 当 Windows 控制台是 `gbk` 且日志含不可编码字符时，会用 replacement 输出，不再让样本在报告末尾变成 error。
+- 在 `reverse_agent/strategies/compare_aware_search.py` 中新增 projected-only preserve-style lane：
+  - `projected_winner + base` 现在标记为 `exact1_projected_preserve_lane`；
+  - mixed 组合仍保留为 `exact1_projected_boundary`；
+  - 每个 pair 单独保留一个 projected preserve lane 名额，避免它被 `projected_winner + neighbor` 的 distance 排名挤掉；
+  - 新增 artifact 字段：
+    - `pair_projected_preserve_candidates`
+    - `pair_projected_preserve_entries`
+  - SMT preferred entries 现在也接收 `pair_projected_preserve_entries`。
+
+2) 自动化验证
+- `python -m pytest -q tests/test_compare_aware_search_strategy.py -k "projected or near_local or smt_records"` -> `9 passed`
+- `python -m pytest -q tests/test_harness.py` -> `5 passed`
+- `python -m pytest -q tests/test_compare_aware_search_strategy.py` -> `49 passed`
+- `python -m pytest -q` -> `122 passed`
+
+3) 真实样本回归
+- 新 run:
+  - `solve_reports\\harness_runs\\samplereverse_exact1_projected_preserve_lane_20260424`
+- 数据集：
+  - `samplereverse_exact1_projected_vs_neighbor_20260424.json`
+- 目标：
+  - `E:\\xwechat_files\\wxid_9ky6h8wz58b912_a1e5\\msg\\file\\2026-04\\samplereverse.exe`
+- harness 结果：
+  - `error_cases = 0`
+  - `completed_without_expected = 1`
+  - 已确认之前的 `gbk` 编码错误不再终止 run。
+
+4) 关键结果
+- runtime best 仍未超过 baseline：
+  - exact2 仍为 `78d540b49c590770...`，`runtime_ci_exact_wchars=2`，`runtime_ci_distance5=246`
+  - exact1 仍为 `5a3e7f46ddd474d0...`，`runtime_ci_exact_wchars=1`，`runtime_ci_distance5=258`
+- projected-only preserve lane 成功进入 near-local：
+  - `exact1_near_local_escape_count = 2`
+  - `pair_projected_preserve_entries` 包含：
+    - `5a3f7f46ddd474d0...`
+    - pair `[1,2] -> [63,127]`
+    - `pair_candidate_origin = exact1_projected_preserve_lane`
+    - `pair_projected_winner_gate_status = projected_winner_promoted_to_near_local`
+  - `pair_projected_winner_gate_status_counts` 同时显示：
+    - `projected_winner_kept_as_base_only`
+    - `projected_winner_mixed_with_neighbor_wide`
+    - `projected_winner_promoted_to_near_local`
+- mixed boundary 仍差：
+  - `[1,2] -> [63,124]` 仍为 `projected_winner_mixed_with_neighbor_wide`
+  - `pair_projected_boundary_entries = []`
+- SMT 仍未突破：
+  - `feedback_value_pools["1"]` 包含 `63`
+  - `summary = targeted z3 finished with unknown`
+
+5) 结论
+- 本轮完成了两个目标：
+  - harness reporting/logging 的 `gbk` 失败已修复；
+  - projected winner 已能通过 preserve-style 单点 lane 进入 near-local。
+- 但这仍只是 exact1 局部推进，不是最终求解突破：
+  - projected-only `[63, base]` 能进 near-local；
+  - mixed `[63, neighbor]` 仍 wide；
+  - SMT 吃到 `63` 后仍 unknown；
+  - runtime best 未改善。
+- 下一轮默认方向：
+  - 在 projected preserve lane 基础上做 second-hop composition；
+  - 优先尝试 “preserve-stabilized projected winner -> 再选第二字节”，而不是直接把 projected winner 和当前 neighbor 混合；
+  - 同时补一个输出选择防护：模型只返回 `flag{` 这种前缀时，不应覆盖 runtime-evidence candidate。
+

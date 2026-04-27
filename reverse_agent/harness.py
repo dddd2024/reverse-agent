@@ -5,6 +5,7 @@ import hashlib
 import json
 import re
 import subprocess
+import sys
 import traceback
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
@@ -374,15 +375,25 @@ def main(argv: list[str] | None = None) -> int:
         fail_fast=args.fail_fast,
     )
 
-    summary = run_harness(config, log=print)
-    print(
+    summary = run_harness(config, log=_safe_console_log)
+    _safe_console_log(
         "[harness] completed "
         f"total={summary.total_cases} executed={summary.executed_cases} resumed={summary.resumed_cases} "
         f"passed={summary.passed_cases} failed={summary.failed_cases} errors={summary.error_cases} "
         f"accuracy={summary.accuracy_when_labeled}"
     )
-    print(f"[harness] summary: {summary.summary_path}")
+    _safe_console_log(f"[harness] summary: {summary.summary_path}")
     return 0
+
+
+def _safe_console_log(message: object) -> None:
+    text = str(message)
+    try:
+        print(text)
+    except UnicodeEncodeError:
+        encoding = sys.stdout.encoding or "utf-8"
+        safe_text = text.encode(encoding, errors="replace").decode(encoding, errors="replace")
+        sys.stdout.write(safe_text + "\n")
 
 
 def _case_result_from_solve_result(
