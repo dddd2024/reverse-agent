@@ -308,3 +308,14 @@ Stop and report without further code changes if any condition occurs:
 9. A proposed fix touches pipeline, GUI, model API, or broad harness behavior.
 10. Codex needs full `PROJECT_PROGRESS_LOG.txt` to proceed.
 11. Codex needs to scan full `solve_reports` rather than indexed artifacts and the latest harness run.
+
+## Codex Execution Result
+
+本轮 Codex 已执行该计划。
+
+- 已运行最小 harness：`samplereverse_handoff_verify_20260429`。
+- harness 未解出样本，best exact/distance 未提升，瓶颈仍是 `projected_winner_reached_pair_gate`。
+- 失败分类为 `B.selected_but_not_composed`：projected preserve handoff 已进入 `pair_frontier_pool`，但未进入 runtime validation。
+- 已做最小局部修正：固定 validation 数量内为 `projected_winner_promoted_to_near_local` handoff 保留一个验证槽位。
+- 已运行策略测试和全量测试，结果记录在 `project_state/codex_execution_report.md`。
+- 未扩大搜索预算，未修改 `pipeline.py`、`harness.py`、GUI、模型路径或旧 blind search。

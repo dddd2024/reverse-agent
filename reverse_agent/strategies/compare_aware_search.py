@@ -1874,6 +1874,42 @@ def _diverse_validation_candidates(
     return selected[:validate_top]
 
 
+def _frontier_guided_validation_candidates(
+    guided_entries: Sequence[dict[str, object]],
+    pair_frontier_pool: Sequence[dict[str, object]],
+    *,
+    validate_top: int,
+) -> list[dict[str, object]]:
+    selected = [dict(entry) for entry in guided_entries[: max(0, validate_top)]]
+    if validate_top <= 0:
+        return selected
+    handoff = next(
+        (
+            item
+            for item in pair_frontier_pool
+            if str(item.get("pair_candidate_origin", "")) == "exact1_projected_preserve_lane"
+            and str(item.get("pair_projected_boundary_role", "")) == "projected_winner_with_base"
+            and str(item.get("pair_projected_winner_gate_status", "")) == "projected_winner_promoted_to_near_local"
+        ),
+        None,
+    )
+    if not handoff:
+        return selected
+    handoff_hex = _candidate_hex_from_entry(handoff)
+    if not handoff_hex:
+        return selected
+    selected_hexes = {_candidate_hex_from_entry(item) for item in selected}
+    if handoff_hex in selected_hexes:
+        return selected
+    handoff_entry = dict(handoff)
+    handoff_entry.setdefault("frontier_role", "projected_preserve_handoff")
+    if len(selected) < validate_top:
+        selected.append(handoff_entry)
+    else:
+        selected[-1] = handoff_entry
+    return selected
+
+
 def _frontier_role_for_runtime_validation(entry: dict[str, object]) -> str:
     runtime_exact = int(entry.get("runtime_ci_exact_wchars", 0) or 0)
     if runtime_exact >= 2:
@@ -5531,7 +5567,11 @@ def run_compare_aware_guided_pool(
         "value_pool_limit": GUIDED_POOL_TOP_VALUES,
         "best": guided_entries[0] if guided_entries else base_entry,
         "top_entries": guided_entries[:GUIDED_POOL_BEAM_LIMIT],
-        "validation_candidates": guided_entries[:GUIDED_POOL_VALIDATE_TOP],
+        "validation_candidates": _frontier_guided_validation_candidates(
+            guided_entries,
+            pair_frontier_pool,
+            validate_top=GUIDED_POOL_VALIDATE_TOP,
+        ),
         "stage_stats": stage_stats,
         "pair_stage_stats": pair_stage_stats,
         "pair_frontier_pool": pair_frontier_pool[:FRONTIER_PAIR_SEED_LIMIT],

@@ -155,6 +155,40 @@ def test_diverse_validation_candidates_keeps_cross_basin_frontier() -> None:
     ]
 
 
+def test_frontier_guided_validation_candidates_preserve_projected_handoff_slot() -> None:
+    guided_entries = [
+        {
+            "candidate_hex": f"{idx:016x}41414141414141",
+            "cand8_hex": f"{idx:016x}",
+            "ci_exact_wchars": 1,
+            "ci_distance5": 200 + idx,
+            "raw_distance10": 300 + idx,
+        }
+        for idx in range(1, 12)
+    ]
+    handoff = {
+        "candidate_hex": "5a3f7f46ddd474d041414141414141",
+        "cand8_hex": "5a3f7f46ddd474d0",
+        "ci_exact_wchars": 0,
+        "ci_distance5": 740,
+        "raw_distance10": 820,
+        "pair_candidate_origin": "exact1_projected_preserve_lane",
+        "pair_projected_boundary_role": "projected_winner_with_base",
+        "pair_projected_winner_gate_status": "projected_winner_promoted_to_near_local",
+    }
+
+    selected = compare_aware_search._frontier_guided_validation_candidates(
+        [*guided_entries, handoff],
+        [handoff],
+        validate_top=10,
+    )
+
+    assert len(selected) == 10
+    assert selected[-1]["cand8_hex"] == "5a3f7f46ddd474d0"
+    assert selected[-1]["frontier_role"] == "projected_preserve_handoff"
+    assert guided_entries[9]["cand8_hex"] not in {item["cand8_hex"] for item in selected}
+
+
 def test_resolve_compare_aware_anchors_keeps_new_default_anchor_first(monkeypatch) -> None:
     monkeypatch.setattr(
         compare_aware_search,
