@@ -64,7 +64,7 @@
     "do not scan entire solve_reports unless explicitly needed"
   ],
   "expected_gpt_output": "project_state/decision_packet.md",
-  "generated_at": "2026-04-28T14:41:30Z",
+  "generated_at": "2026-04-28T15:48:42Z",
   "included": [
     "current state",
     "best candidates",

@@ -4159,6 +4159,24 @@ def _diverse_pair_frontier_pool(
 
         accepted = [*accepted_local, *accepted_preserve]
         selected = accepted[:keep_limit]
+        projected_preserve_handoff = next(
+            (
+                item
+                for item in accepted_local
+                if str(item.get("pair_candidate_origin", "")) == "exact1_projected_preserve_lane"
+                and str(item.get("pair_projected_boundary_role", "")) == "projected_winner_with_base"
+                and str(item.get("pair_escape_quality_band", "")) in {"near_local_escape", "kept_local_escape"}
+            ),
+            None,
+        )
+        if projected_preserve_handoff and keep_limit > 0:
+            projected_hex = _candidate_hex_from_entry(projected_preserve_handoff)
+            selected_hexes = {_candidate_hex_from_entry(item) for item in selected}
+            if projected_hex and projected_hex not in selected_hexes:
+                if len(selected) < keep_limit:
+                    selected.append(projected_preserve_handoff)
+                else:
+                    selected[-1] = projected_preserve_handoff
         preserve_candidates_all = [item for item in accepted_preserve]
         escape_candidates_all = [item for item in accepted_local]
         diagnostics["pair_preserve_pool"] = [_compact_pair_candidate(item) for item in preserve_candidates_all[:keep_limit]]

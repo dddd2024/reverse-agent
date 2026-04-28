@@ -207,3 +207,13 @@ pytest tests -q
 5. 需要扩大搜索预算才能看到任何变化。
 6. 需要使用 `compare_semantics_agree=false` 候选作为主线。
 7. 修改超过 `compare_aware_search.py` 和对应测试文件范围。
+
+## Codex Execution Result
+
+本轮 Codex 已执行该审计计划。
+
+- 本地 artifact 已按 `artifact_index.json` 复核，关键路径存在。
+- 已补充 exact1 projected preserve handoff 的最小回归测试。
+- 已在 `CompareAwareSearchStrategy` 中做局部修正，避免 tight pair frontier pool 下 projected preserve handoff 被普通 local escape 完全吞掉。
+- 已运行目标测试和全量测试，结果记录在 `project_state/codex_execution_report.md`。
+- 未扩大搜索预算，未修改 `pipeline.py`、`harness.py`、GUI 或旧 blind search。

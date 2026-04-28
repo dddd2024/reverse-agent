@@ -1978,6 +1978,90 @@ def test_diverse_pair_frontier_pool_exact1_promotes_projected_boundary_base_to_n
     assert drop_reasons == {}
 
 
+def test_diverse_pair_frontier_pool_exact1_projected_preserve_gets_handoff_slot_when_pool_tight(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        compare_aware_search,
+        "_guided_sort_key",
+        lambda entry, transform_model, **kwargs: (
+            int(entry.get("ci_distance5", 1 << 30)),
+            int(entry.get("raw_distance10", 1 << 30)),
+            -int(entry.get("ci_exact_wchars", 0)),
+            str(entry.get("candidate_hex", "")),
+        ),
+    )
+    selected, drop_reasons, diagnostics = compare_aware_search._diverse_pair_frontier_pool(
+        {
+            (0, 2): [
+                {
+                    "candidate_hex": "5a3e7f46ddd474d041414141414141",
+                    "cand8_hex": "5a3e7f46ddd474d0",
+                    "ci_exact_wchars": 1,
+                    "ci_distance5": 258,
+                    "raw_distance10": 290,
+                    "pair_escape_mode": "escape",
+                    "pair_wide_ascii_contiguous_8": 1,
+                    "pair_wide_zero_high_pairs_8": 1,
+                    "pair_flaglike_tail_pairs_8": 0,
+                    "pair_positions": [0, 2],
+                    "pair_values": [0x5A, 0x7F],
+                    "pair_mutation_radius": 0,
+                },
+                {
+                    "candidate_hex": "5b3e7f46ddd474d041414141414141",
+                    "cand8_hex": "5b3e7f46ddd474d0",
+                    "ci_exact_wchars": 0,
+                    "ci_distance5": 330,
+                    "raw_distance10": 330,
+                    "pair_escape_mode": "escape",
+                    "pair_wide_ascii_contiguous_8": 0,
+                    "pair_wide_zero_high_pairs_8": 0,
+                    "pair_flaglike_tail_pairs_8": 0,
+                    "pair_positions": [0, 2],
+                    "pair_values": [0x5B, 0x7F],
+                    "pair_mutation_radius": 1,
+                    "pair_candidate_origin": "exact1_projected_preserve_lane",
+                    "pair_projected_boundary_role": "projected_winner_with_base",
+                    "pair_projected_winner_available": [
+                        {"position": 0, "value": 0x5B, "base_value": 0x5A}
+                    ],
+                    "pair_projected_winner_contributions": [
+                        {
+                            "position": 0,
+                            "value": 0x5B,
+                            "paired_position": 2,
+                            "paired_value": 0x7F,
+                            "paired_source": "base",
+                        }
+                    ],
+                },
+            ]
+        },
+        transform_model=SamplereverseTransformModel(),
+        anchor_mode=FRONTIER_ANCHOR_MODE,
+        frontier_submode=FRONTIER_EXACT1_SUBMODE,
+        baseline_entry={
+            "candidate_hex": "5a3e7f46ddd474d041414141414141",
+            "cand8_hex": "5a3e7f46ddd474d0",
+            "ci_exact_wchars": 1,
+            "ci_distance5": 258,
+            "raw_distance10": 290,
+            "pair_wide_ascii_contiguous_8": 1,
+            "pair_wide_zero_high_pairs_8": 1,
+            "pair_flaglike_tail_pairs_8": 0,
+        },
+        keep_limit=1,
+    )
+
+    assert selected[0]["cand8_hex"] == "5b3e7f46ddd474d0"
+    assert diagnostics["pair_projected_preserve_entries"][0]["cand8_hex"] == "5b3e7f46ddd474d0"
+    assert diagnostics["pair_projected_preserve_entries"][0]["pair_projected_winner_gate_status"] == (
+        "projected_winner_promoted_to_near_local"
+    )
+    assert drop_reasons == {}
+
+
 def test_exact1_pair_set_selection_prefers_near_local_over_wide_borderline() -> None:
     near_result = {
         "pair_frontier_pool": [],
