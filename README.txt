@@ -66,6 +66,37 @@ Reverse Agent（GUI 逆向解题助手）
 - 对同一个 `--run-name` 再次执行时，默认会跳过已完成样本。
 - 可结合 `--case-id`、`--tag`、`--limit` 做 smoke / regression 子集运行。
 
+GPT + Codex 协作流
+1) Codex 先生成低 token 状态文件：
+`python -m reverse_agent.project_state build`
+
+2) Codex 提交并推送轻量状态目录：
+- 提交 `project_state\*.json`
+- 提交 `project_state\*.md`
+- 提交 `project_state\rounds\.gitkeep`
+- 不提交完整 `solve_reports\`
+
+3) 网页版 GPT 在 GitHub Project 中优先读取：
+- `project_state\task_packet.json`
+- `project_state\current_state.json`
+- `project_state\artifact_index.json`
+
+4) GPT 生成或更新：
+`project_state\decision_packet.md`
+
+5) Codex 读取 `decision_packet.md`，审计本地代码，做最小实现并运行测试。
+
+6) Codex 写入执行报告：
+`project_state\codex_execution_report.md`
+
+7) Codex 归档本轮状态：
+`python -m reverse_agent.project_state archive-round`
+
+8) 如需给 GPT 上传紧凑上下文包：
+`python -m reverse_agent.project_state pack --out gpt_context_pack.zip`
+
+说明：`project_state\` 是 GPT 与 Codex 的低 token 接口；`PROJECT_PROGRESS_LOG.txt` 是人工总账，只在策略复盘或状态包缺失时读取。
+
 常用配置
 - Copilot CLI 推荐模板（Windows）：
   - `gh copilot -p "{prompt}" --allow-all-tools --allow-all-paths -s`

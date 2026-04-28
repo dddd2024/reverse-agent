@@ -1,0 +1,9 @@
+{
+  "context_level": 2,
+  "generated_at": "2026-04-28T14:41:30Z",
+  "missing_evidence": [],
+  "next_local_action": "",
+  "reason": "projected_winner_reached_pair_gate",
+  "recommended_packet": "project_state/task_packet.json",
+  "should_call_model": true
+}

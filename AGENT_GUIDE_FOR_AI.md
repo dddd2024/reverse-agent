@@ -3,8 +3,16 @@
 Use this file as the **first-read startup guide** so a new AI session can begin work immediately.
 
 ## Current Project Status (Read First)
-- Latest execution log is maintained in `PROJECT_PROGRESS_LOG.txt`.
-- Start every new `samplereverse` session by reading `PROJECT_PROGRESS_LOG.txt` first.
+- Prefer the compact state packet for every new `samplereverse` session:
+  1. Read `project_state\task_packet.json` first.
+  2. Then read `project_state\current_state.json`.
+  3. Then read `project_state\artifact_index.json`.
+  4. If those are missing, build them with:
+     `python -m reverse_agent.project_state build --reports-dir solve_reports --sample samplereverse`
+- Latest execution log is maintained in `PROJECT_PROGRESS_LOG.txt`, but it is the human ledger, not the default model input.
+- Read `PROJECT_PROGRESS_LOG.txt` only when the compact packet is missing, `model_gate.context_level=3`, a strategic review is needed, or you need the original wording for historical failed directions.
+- Web GPT generates `project_state\decision_packet.md`; Codex audits and executes that packet, then writes `project_state\codex_execution_report.md`.
+- Do not read full `solve_reports\` by default; use `project_state\artifact_index.json` references first.
 - `samplereverse` now runs on the profile + compare-aware strategy path, not the old blind-search-only flow.
 - The file records:
   - what has already been completed,
@@ -50,7 +58,7 @@ Use this file as the **first-read startup guide** so a new AI session can begin 
   - `solve_reports\tool_artifacts\samplereverse_compare_aware_long4_strata\samplereverse_compare_aware_compare_1.json`
   - `solve_reports\tool_artifacts\samplereverse_compare_aware_long5_newbest\samplereverse_compare_aware_result.json`
   - `solve_reports\tool_artifacts\samplereverse_compare_aware_pairscan_newbest_exact2\pairscan_summary.json`
-- Do not default back to the old `sample_solver` blind search unless the compare-aware main line shows no new progress for two consecutive iterations.
+- Do not default back to the old `sample_solver` blind search unless a decision packet explicitly gives a new evidence-backed override reason.
 
 ## Fixed Input/Output Contract
 - Input: executable file path or downloadable URL.

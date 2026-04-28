@@ -5,6 +5,7 @@ __pycache__/
 .pytest_cache/
 
 solve_reports/
+gpt_context_pack.zip
 
 .venv/
 venv/

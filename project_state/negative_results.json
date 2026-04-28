@@ -1,0 +1,34 @@
+[
+  {
+    "direction": "old sample_solver blind search",
+    "do_not_repeat": true,
+    "override_allowed": true,
+    "override_reason_required": true,
+    "reason": "compare-aware profile path is current primary route",
+    "severity": "soft_block"
+  },
+  {
+    "direction": "only increase guided_pool beam or budget",
+    "do_not_repeat": true,
+    "override_allowed": true,
+    "override_reason_required": true,
+    "reason": "previous project notes indicate low return",
+    "severity": "soft_block"
+  },
+  {
+    "direction": "use compare_semantics_agree=false candidates as primary frontier",
+    "do_not_repeat": true,
+    "override_allowed": true,
+    "override_reason_required": true,
+    "reason": "runtime/offline semantics disagree",
+    "severity": "hard_block"
+  },
+  {
+    "direction": "commit full solve_reports directory",
+    "do_not_repeat": true,
+    "override_allowed": false,
+    "override_reason_required": false,
+    "reason": "solve_reports is runtime output and may contain bulky or local data",
+    "severity": "hard_block"
+  }
+]
