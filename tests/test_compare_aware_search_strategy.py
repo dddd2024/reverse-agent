@@ -12,8 +12,10 @@ from reverse_agent.strategies.compare_aware_search import (
     FRONTIER_ANCHOR_MODE,
     FRONTIER_EXACT0_SUBMODE,
     FRONTIER_EXACT1_SUBMODE,
+    FRONTIER_MAX_ANCHORS,
     GUIDED_POOL_EXPLORATION_SLOTS,
     GUIDED_POOL_TOP_VALUES,
+    PROJECTED_PRESERVE_SECOND_HOP_ROLE,
     RESULT_FILE_NAME,
     VALIDATION_FILE_NAME,
     _alternate_locked_pair_positions_for_exact1,
@@ -27,11 +29,13 @@ from reverse_agent.strategies.compare_aware_search import (
     _extract_hot_positions,
     _feedback_value_pools_from_frontier_entries,
     _frontier_anchor_candidates,
+    _frontier_continuation_candidates,
     _guided_pool_beam_entries,
     _improved_frontier_candidates,
     _mine_exact1_lineage_value_sources,
     _refine_anchor_plan,
     _select_smt_base_entry,
+    _validated_projected_preserve_second_hop_candidates,
     run_compare_aware_smt,
     validate_compare_aware_results,
     resolve_compare_aware_anchors,
@@ -2401,6 +2405,113 @@ def test_improved_frontier_candidates_only_promote_runtime_improved_lineages() -
 
     assert [item["anchor"] for item in improved] == ["5a3e7f46ddd474d0"]
     assert improved[0]["improvement_gate_passed"] is True
+
+
+def test_validated_projected_preserve_handoff_can_seed_second_hop_composition() -> None:
+    candidates = _validated_projected_preserve_second_hop_candidates(
+        [
+            {
+                "candidate_hex": "5a3f7f46ddd474d041414141414141",
+                "cand8_hex": "5a3f7f46ddd474d0",
+                "frontier_role": "projected_preserve_handoff",
+                "compare_semantics_agree": True,
+                "runtime_ci_exact_wchars": 0,
+                "runtime_ci_distance5": 740,
+                "offline_raw_distance10": 772,
+            }
+        ],
+        context_entries=[
+            {
+                "candidate_hex": "5a3f7f46ddd474d041414141414141",
+                "cand8_hex": "5a3f7f46ddd474d0",
+                "source_anchor": "78d540b49c590770",
+                "anchor_mode": FRONTIER_ANCHOR_MODE,
+                "anchor_lineage": "exact2_seed(78d540b49c590770) -> guided(frontier)",
+                "pair_candidate_origin": "exact1_projected_preserve_lane",
+                "pair_projected_boundary_role": "projected_winner_with_base",
+                "pair_projected_winner_gate_status": "projected_winner_promoted_to_near_local",
+            }
+        ],
+    )
+
+    assert len(candidates) == 1
+    assert candidates[0]["anchor"] == "5a3f7f46ddd474d0"
+    assert candidates[0]["frontier_role"] == PROJECTED_PRESERVE_SECOND_HOP_ROLE
+    assert candidates[0]["frontier_submode"] == FRONTIER_EXACT1_SUBMODE
+    assert candidates[0]["source_anchor"] == "78d540b49c590770"
+    assert candidates[0]["improvement_gate_passed"] is False
+
+    continuation, reason, used_second_hop = _frontier_continuation_candidates(
+        improved_frontier_candidates=[],
+        second_hop_frontier_candidates=candidates,
+        frontier_converged_reason="distance_not_improved",
+        iteration_index=1,
+    )
+
+    assert reason == "continue"
+    assert used_second_hop is True
+    assert continuation[0]["frontier_role"] == PROJECTED_PRESERVE_SECOND_HOP_ROLE
+
+
+def test_second_hop_composition_does_not_admit_compare_disagree_candidate() -> None:
+    candidates = _validated_projected_preserve_second_hop_candidates(
+        [
+            {
+                "candidate_hex": "5a3f7f46ddd474d041414141414141",
+                "cand8_hex": "5a3f7f46ddd474d0",
+                "frontier_role": "projected_preserve_handoff",
+                "compare_semantics_agree": False,
+                "runtime_ci_exact_wchars": 0,
+                "runtime_ci_distance5": 740,
+            }
+        ],
+        context_entries=[
+            {
+                "candidate_hex": "5a3f7f46ddd474d041414141414141",
+                "cand8_hex": "5a3f7f46ddd474d0",
+                "pair_candidate_origin": "exact1_projected_preserve_lane",
+                "pair_projected_boundary_role": "projected_winner_with_base",
+                "pair_projected_winner_gate_status": "projected_winner_promoted_to_near_local",
+            }
+        ],
+    )
+
+    assert candidates == []
+
+
+def test_second_hop_composition_does_not_expand_budget() -> None:
+    validations = []
+    context_entries = []
+    for idx in range(FRONTIER_MAX_ANCHORS + 3):
+        cand8 = f"5a3f7f46ddd47{idx:02x}0"[:16]
+        candidate_hex = f"{cand8}41414141414141"
+        validations.append(
+            {
+                "candidate_hex": candidate_hex,
+                "cand8_hex": cand8,
+                "frontier_role": "projected_preserve_handoff",
+                "compare_semantics_agree": True,
+                "runtime_ci_exact_wchars": 0,
+                "runtime_ci_distance5": 740 + idx,
+            }
+        )
+        context_entries.append(
+            {
+                "candidate_hex": candidate_hex,
+                "cand8_hex": cand8,
+                "source_anchor": "78d540b49c590770",
+                "pair_candidate_origin": "exact1_projected_preserve_lane",
+                "pair_projected_boundary_role": "projected_winner_with_base",
+                "pair_projected_winner_gate_status": "projected_winner_promoted_to_near_local",
+            }
+        )
+
+    candidates = _validated_projected_preserve_second_hop_candidates(
+        validations,
+        context_entries=context_entries,
+    )
+
+    assert len(candidates) == max(1, FRONTIER_MAX_ANCHORS - 1)
 
 
 def test_select_smt_base_entry_prefers_better_compare_agree_frontier() -> None:

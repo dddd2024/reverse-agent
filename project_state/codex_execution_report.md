@@ -2,117 +2,69 @@
 
 ## Summary
 
-本轮按 `project_state/decision_packet.md` 执行 validation-slot patch 的最小真实验证。Preflight 通过：工作区初始干净，`_frontier_guided_validation_candidates()`、`run_compare_aware_guided_pool()` 调用点、以及 `test_frontier_guided_validation_candidates_preserve_projected_handoff_slot()` 都存在。
+本轮按 `project_state/decision_packet.md` 执行 second-hop composition audit。审计确认存在真实 composition gap：`5a3f7f46ddd474d0` 已经作为 `projected_preserve_handoff` 完成 runtime validation，且 `compare_semantics_agree=true`，但因为没有 runtime distance gain，它不会进入 `_improved_frontier_candidates()`，也不会被 `_frontier_anchor_candidates()` 选为 best exact0 anchor，因此无法成为下一轮 frontier-guided anchor。
 
-验证结论：validation-slot patch 已经生效。目标 handoff `5a3f7f46ddd474d0` 已从 `pair_frontier_pool` 进入 `validation_candidates`，并出现在 `frontier_guided_1_5a3e7f46ddd474d0/guided_pool_validation/` 的 runtime validation 结果中。
-
-该候选 validation 后没有 runtime gain：`runtime_ci_exact_wchars=0`，`runtime_ci_distance5=740`，`compare_semantics_agree=true`。因此当前失败分类从 **B. selected_but_not_composed** 推进为 **D. validated_but_no_runtime_gain**。本轮不需要继续修 validation ordering，也没有扩大搜索预算。
+本轮做了最小 metadata-gated patch：只允许已验证、compare-agree、且带有 `exact1_projected_preserve_lane / projected_winner_with_base / projected_winner_promoted_to_near_local` 语义的 handoff，作为 `validated_projected_preserve_second_hop` 进入下一轮 bounded frontier-guided composition。没有调整 beam、budget、topN、timeout、blind search、pipeline、harness、GUI 或模型路径。
 
 ## Files Changed
 
-- `project_state/artifact_index.json`
-- `project_state/current_state.json`
-- `project_state/model_gate.json`
-- `project_state/task_packet.json`
+- `reverse_agent/strategies/compare_aware_search.py`
+- `tests/test_compare_aware_search_strategy.py`
 - `project_state/codex_execution_report.md`
 - `PROJECT_PROGRESS_LOG.txt`
 
-No strategy or test code was changed in this execution turn.
+## Audit Result
 
-## Audit And Harness Result
+Candidate table:
 
-Preflight:
+| candidate | source stage | metadata role | validation result | next-hop eligible after patch | drop/composition point before patch |
+|---|---|---|---|---|---|
+| `78d540b49c590770` | pairscan / guided seed | `exact2_seed` | exact=2, dist5=246, agree=true | yes, retained as best | none |
+| `5a3e7f46ddd474d0` | frontier guided | `exact1_frontier` | exact=1, dist5=258, agree=true | yes, active exact1 anchor | continues as primary frontier |
+| `5a3f7f46ddd474d0` | projected preserve handoff | `projected_preserve_handoff`, `exact1_projected_preserve_lane`, `projected_winner_promoted_to_near_local` | exact=0, dist5=740, agree=true | yes, only as metadata-gated second-hop anchor | not selected by `_frontier_anchor_candidates()` / `_improved_frontier_candidates()` |
 
-| check | result |
-|---|---|
-| initial worktree clean | yes |
-| state pointed to previous run | `samplereverse_handoff_verify_20260429` |
-| helper exists | yes |
-| guided pool uses helper | yes |
-| regression test exists | yes |
+The gap was in frontier continuation, not validation ordering. The validation-slot patch remains valid and was not changed.
 
-Tests:
+## Implementation
 
-| command | result |
-|---|---|
-| `python -m pytest -q tests/test_compare_aware_search_strategy.py` | `51 passed` |
-| `python -m pytest -q` | `133 passed` |
+- Added `PROJECTED_PRESERVE_SECOND_HOP_ROLE = "validated_projected_preserve_second_hop"`.
+- Added `_validated_projected_preserve_second_hop_candidates()` to extract only metadata-gated, compare-agree projected preserve handoffs from validation plus preserved context metadata.
+- Added `_frontier_continuation_candidates()` so `distance_not_improved` can continue only when a bounded second-hop candidate exists and `FRONTIER_MAX_ITERATIONS` still has room.
+- Updated the frontier loop to carry `second_hop_frontier_candidates`, `frontier_continuation_candidates`, and `used_second_hop_frontier_candidates` into artifacts.
+- Kept exact2 best selection untouched and did not promote the handoff as final answer or best candidate.
 
-Harness command:
-
-```powershell
-python -m reverse_agent.harness --dataset .\samplereverse_exact1_projected_vs_neighbor_20260424.json --run-name samplereverse_validation_slot_verify_20260430 --reports-dir solve_reports --analysis-mode "Auto" --model-type "Copilot CLI" --copilot-timeout-seconds 300 --ctf-skill-profile compact --case-id samplereverse-exact1-projected-vs-neighbor --no-resume
-```
-
-Harness summary:
-
-| field | value |
-|---|---|
-| run | `samplereverse_validation_slot_verify_20260430` |
-| summary | `solve_reports\harness_runs\samplereverse_validation_slot_verify_20260430\summary.json` |
-| error_cases | `1` |
-| harness error | Copilot CLI quota `402 You have no quota` during final model call |
-| artifacts needed for this task | complete |
-
-The harness reached and completed compare-aware, guided-pool validation, frontier validation, refine validation, and SMT artifacts before the final model call failed. The Copilot quota error prevents `error_cases=0`, but it does not invalidate the validation-slot evidence this task needed.
-
-## Validation Evidence
-
-Target candidate:
-
-| field | value |
-|---|---|
-| cand8 | `5a3f7f46ddd474d0` |
-| candidate_hex | `5a3f7f46ddd474d041414141414141` |
-| pair_candidate_origin | `exact1_projected_preserve_lane` |
-| pair_projected_boundary_role | `projected_winner_with_base` |
-| pair_projected_winner_gate_status | `projected_winner_promoted_to_near_local` |
-| frontier_role in validation slot | `projected_preserve_handoff` |
-
-Validation path:
-
-```text
-solve_reports\harness_runs\samplereverse_validation_slot_verify_20260430\reports\tool_artifacts\samplereverse\frontier_guided_1_5a3e7f46ddd474d0\guided_pool_validation\samplereverse_compare_aware_guided_pool_validation.json
-```
-
-Runtime result:
-
-| candidate | runtime exact | runtime distance5 | compare agree | result |
-|---|---:|---:|---|---|
-| `5a3e7f46ddd474d0` | 1 | 258 | true | unchanged exact1 frontier |
-| `5a3f7f46ddd474d0` | 0 | 740 | true | validated but no gain |
-| `78d540b49c590770` | 2 | 246 | true | unchanged exact2 best |
-
-Current bottleneck remains:
-
-| field | value |
-|---|---|
-| stage | `frontier_refine` |
-| reason | `projected_winner_reached_pair_gate` |
-| classification | `D. validated_but_no_runtime_gain` |
-
-## Generated State
+## Tests
 
 Ran:
 
 ```powershell
-python -m reverse_agent.project_state build --reports-dir solve_reports --sample samplereverse --run-name samplereverse_validation_slot_verify_20260430
-python -m reverse_agent.project_state status
+python -m pytest -q tests/test_compare_aware_search_strategy.py -k "second_hop_composition or validated_projected_preserve_handoff"
+python -m pytest -q tests/test_compare_aware_search_strategy.py
+python -m pytest -q
 ```
 
-`project_state status` now reports:
+Results:
 
-| field | value |
+| command | result |
 |---|---|
-| latest_harness_run | `solve_reports\harness_runs\samplereverse_validation_slot_verify_20260430` |
-| missing | `[]` |
-| should_call_model | `False` |
-| context_level | `1` |
-| reason | `latest harness case has errors` |
-| task | `collect_missing_evidence` |
+| targeted second-hop tests | `3 passed, 51 deselected` |
+| strategy tests | `54 passed` |
+| full test suite | `136 passed` |
 
-The `latest harness case has errors` state is caused by Copilot quota during the final model stage, not by missing compare-aware artifacts.
+Added tests:
+
+- `test_validated_projected_preserve_handoff_can_seed_second_hop_composition`
+- `test_second_hop_composition_does_not_admit_compare_disagree_candidate`
+- `test_second_hop_composition_does_not_expand_budget`
+
+No harness was run in this turn. The change is covered by focused unit tests, and the latest harness is already known to fail at final Copilot model call with quota `402` after compare-aware artifacts are generated.
 
 ## Next Suggested Task
 
-Do not make further validation-ordering changes. The next useful work is a second-hop composition audit from the validated-but-no-gain state: determine how to compose after the preserve-stabilized projected winner rather than mixing `63@pos1` directly with the current neighbor, while keeping the current no-budget-expansion discipline.
+Run a fresh harness when model quota is available or when artifact-only validation is desired:
+
+```powershell
+python -m reverse_agent.harness --dataset .\samplereverse_exact1_projected_vs_neighbor_20260424.json --run-name samplereverse_second_hop_composition_audit_20260430 --reports-dir solve_reports --analysis-mode "Auto" --model-type "Copilot CLI" --copilot-timeout-seconds 300 --ctf-skill-profile compact --case-id samplereverse-exact1-projected-vs-neighbor --no-resume
+```
+
+Acceptance evidence for the next run: a `frontier_guided_2_5a3f7f46ddd474d0` artifact or equivalent second-hop guided run should appear, marked with `frontier_role=validated_projected_preserve_second_hop`. If it still stalls, classify the next bottleneck based on second-hop artifacts rather than validation-slot presence.

@@ -90,6 +90,7 @@ EXACT2_ANCHOR_MODE = "exact2"
 FRONTIER_ANCHOR_MODE = "frontier"
 FRONTIER_EXACT1_SUBMODE = "frontier_exact1"
 FRONTIER_EXACT0_SUBMODE = "frontier_exact0"
+PROJECTED_PRESERVE_SECOND_HOP_ROLE = "validated_projected_preserve_second_hop"
 PAIR_TAIL_FLAGLIKE_BYTES = set(b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_{}-")
 
 PAIRSCAN_TOOL = "pairscan"
@@ -487,7 +488,7 @@ def _lineage_root(*, source_anchor: str, frontier_role: str, anchor_mode: str) -
 
 def _frontier_submode_for_role(frontier_role: str) -> str:
     normalized_role = str(frontier_role).strip()
-    if normalized_role == "exact1_frontier":
+    if normalized_role in {"exact1_frontier", PROJECTED_PRESERVE_SECOND_HOP_ROLE}:
         return FRONTIER_EXACT1_SUBMODE
     if normalized_role in {"exact0_frontier", "distance_probe", "raw_distance_probe", "frontier_anchor"}:
         return FRONTIER_EXACT0_SUBMODE
@@ -1694,6 +1695,96 @@ def _improved_frontier_candidates(
         )
     )
     return improved[: max(1, FRONTIER_MAX_ANCHORS - 1)]
+
+
+def _metadata_value(entry: dict[str, object], context: dict[str, object], key: str) -> str:
+    value = str(entry.get(key, "")).strip()
+    if value:
+        return value
+    return str(context.get(key, "")).strip()
+
+
+def _validated_projected_preserve_second_hop_candidates(
+    validations: Sequence[dict[str, object]],
+    *,
+    context_entries: Sequence[dict[str, object]],
+    limit: int = max(1, FRONTIER_MAX_ANCHORS - 1),
+) -> list[dict[str, object]]:
+    context_by_anchor = _context_by_anchor(context_entries)
+    selected: list[dict[str, object]] = []
+    seen: set[str] = set()
+    for entry in sorted(validations, key=_runtime_validation_sort_key):
+        if not bool(entry.get("compare_semantics_agree")):
+            continue
+        anchor = str(entry.get("cand8_hex", "")).strip().lower() or str(entry.get("candidate_hex", ""))[:16].lower()
+        if len(anchor) != 16 or anchor in seen:
+            continue
+        if int(entry.get("runtime_ci_exact_wchars", 0) or 0) >= 2:
+            continue
+        context = context_by_anchor.get(anchor, {})
+        frontier_role = _metadata_value(entry, context, "frontier_role")
+        pair_origin = _metadata_value(entry, context, "pair_candidate_origin")
+        boundary_role = _metadata_value(entry, context, "pair_projected_boundary_role")
+        gate_status = _metadata_value(entry, context, "pair_projected_winner_gate_status")
+        if frontier_role != "projected_preserve_handoff" and pair_origin != "exact1_projected_preserve_lane":
+            continue
+        if boundary_role != "projected_winner_with_base":
+            continue
+        if gate_status != "projected_winner_promoted_to_near_local":
+            continue
+        source_anchor = (
+            str(entry.get("source_anchor", "")).strip().lower()
+            or str(context.get("source_anchor", "")).strip().lower()
+            or anchor
+        )
+        base_lineage = (
+            str(entry.get("anchor_lineage", "")).strip()
+            or str(context.get("anchor_lineage", "")).strip()
+            or _lineage_root(
+                source_anchor=source_anchor,
+                frontier_role=frontier_role or "projected_preserve_handoff",
+                anchor_mode=FRONTIER_ANCHOR_MODE,
+            )
+        )
+        candidate = dict(context)
+        candidate.update({key: value for key, value in entry.items() if value not in ("", None, [])})
+        candidate.update(
+            {
+                "anchor": anchor,
+                "cand8_hex": anchor,
+                "frontier_role": PROJECTED_PRESERVE_SECOND_HOP_ROLE,
+                "anchor_mode": FRONTIER_ANCHOR_MODE,
+                "frontier_submode": FRONTIER_EXACT1_SUBMODE,
+                "source_anchor": source_anchor,
+                "anchor_lineage": _append_lineage(base_lineage, "second-hop(projected-preserve)"),
+                "second_hop_source_role": frontier_role or pair_origin,
+                "second_hop_reason": "validated_projected_preserve_handoff_no_runtime_gain",
+                "improvement_gate_passed": False,
+            }
+        )
+        selected.append(candidate)
+        seen.add(anchor)
+        if len(selected) >= limit:
+            break
+    return selected
+
+
+def _frontier_continuation_candidates(
+    *,
+    improved_frontier_candidates: Sequence[dict[str, object]],
+    second_hop_frontier_candidates: Sequence[dict[str, object]],
+    frontier_converged_reason: str,
+    iteration_index: int,
+) -> tuple[list[dict[str, object]], str, bool]:
+    if improved_frontier_candidates:
+        return list(improved_frontier_candidates), frontier_converged_reason, False
+    if (
+        frontier_converged_reason == "distance_not_improved"
+        and iteration_index < FRONTIER_MAX_ITERATIONS
+        and second_hop_frontier_candidates
+    ):
+        return list(second_hop_frontier_candidates), "continue", True
+    return [], frontier_converged_reason, False
 
 
 def _runtime_prefix_hex(compare_payload: dict[str, object], prefix_bytes: int) -> str:
@@ -6632,23 +6723,48 @@ class CompareAwareSearchStrategy(SolverStrategy):
                 log=log,
             )
 
+            frontier_context_entries = [
+                *frontier_top_entries,
+                *iteration_guided_entries,
+                *frontier_guided_entries,
+                *guided_entries,
+                *bridge_entries,
+                *active_frontier_candidates,
+                *current_frontier_candidates,
+            ]
+            frontier_validation_entries = [
+                *bridge_validations,
+                *guided_validations,
+                *frontier_guided_validations,
+                *frontier_validations,
+            ]
             refreshed_frontier_candidates = _collect_frontier_promoted_anchors(
-                [*bridge_validations, *guided_validations, *frontier_guided_validations, *frontier_validations],
-                context_entries=[*frontier_top_entries, *iteration_guided_entries, *frontier_guided_entries, *guided_entries, *bridge_entries],
+                frontier_validation_entries,
+                context_entries=frontier_context_entries,
             )
             improved_frontier_candidates = _improved_frontier_candidates(
-                [*bridge_validations, *guided_validations, *frontier_guided_validations, *frontier_validations],
-                context_entries=[*frontier_top_entries, *iteration_guided_entries, *frontier_guided_entries, *guided_entries, *bridge_entries],
+                frontier_validation_entries,
+                context_entries=frontier_context_entries,
                 baseline_validations=[*bridge_validations, *guided_validations, *final_validations, *iteration_guided_validations],
             )
+            second_hop_frontier_candidates = _validated_projected_preserve_second_hop_candidates(
+                frontier_validation_entries,
+                context_entries=frontier_context_entries,
+            )
             best_frontier_after = _best_compare_agree_frontier_entry(
-                [*bridge_validations, *guided_validations, *frontier_guided_validations, *frontier_validations]
+                frontier_validation_entries
             )
             best_improved_frontier = improved_frontier_candidates[0] if improved_frontier_candidates else None
             frontier_converged_reason = _frontier_iteration_converged_reason(
-                validations=[*bridge_validations, *guided_validations, *frontier_guided_validations, *frontier_validations],
+                validations=frontier_validation_entries,
                 previous_best_frontier=best_frontier_before,
                 current_best_frontier=best_improved_frontier or best_frontier_after,
+                iteration_index=frontier_iteration,
+            )
+            continuation_frontier_candidates, frontier_converged_reason, used_second_hop = _frontier_continuation_candidates(
+                improved_frontier_candidates=improved_frontier_candidates,
+                second_hop_frontier_candidates=second_hop_frontier_candidates,
+                frontier_converged_reason=frontier_converged_reason,
                 iteration_index=frontier_iteration,
             )
             improved_pair_count = sum(
@@ -6724,6 +6840,9 @@ class CompareAwareSearchStrategy(SolverStrategy):
                     ),
                     "frontier_candidates_after": refreshed_frontier_candidates,
                     "improved_frontier_candidates": improved_frontier_candidates,
+                    "second_hop_frontier_candidates": second_hop_frontier_candidates,
+                    "frontier_continuation_candidates": continuation_frontier_candidates,
+                    "used_second_hop_frontier_candidates": used_second_hop,
                     "improved_pair_frontier_pool_count": improved_pair_count,
                     "improved_triad_frontier_pool_count": improved_triad_count,
                     "borderline_pair_frontier_pool_count": borderline_pair_count,
@@ -6748,7 +6867,7 @@ class CompareAwareSearchStrategy(SolverStrategy):
             final_validations = frontier_validations
             final_refine_anchors = frontier_refine_anchors
             final_anchor_sources = frontier_anchor_sources
-            current_frontier_candidates = improved_frontier_candidates
+            current_frontier_candidates = continuation_frontier_candidates
             best_frontier_before = best_frontier_after
 
             if frontier_converged_reason != "continue":

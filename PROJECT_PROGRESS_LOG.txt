@@ -2265,3 +2265,40 @@ Reverse Agent 项目进展日志（截至 2026-04-16）
 - 不应继续修 validation ordering，也不应扩大 beam/budget。
 - 下一轮默认方向：从已验证但无收益的 preserve-stabilized projected winner 出发，审计 second-hop composition，而不是继续验证槽位或回到 projected source 扩张。
 
+## 2026-04-30 second-hop composition metadata-gated anchor patch
+
+1) 审计结论
+- `5a3f7f46ddd474d0` 已经 validated but no runtime gain：
+  - `runtime_ci_exact_wchars = 0`
+  - `runtime_ci_distance5 = 740`
+  - `compare_semantics_agree = true`
+- 真实断点在 frontier continuation：
+  - 候选不是 runtime-improved frontier；
+  - 也不是 `_frontier_anchor_candidates()` 选出的 best exact0；
+  - 因而不会成为下一轮 frontier-guided anchor。
+
+2) 代码改动
+- 在 `reverse_agent/strategies/compare_aware_search.py` 中新增 metadata-gated second-hop anchor：
+  - role: `validated_projected_preserve_second_hop`
+  - 只接受 compare-agree 的 `projected_preserve_handoff`
+  - 必须由 metadata/context 证明：
+    - `exact1_projected_preserve_lane`
+    - `projected_winner_with_base`
+    - `projected_winner_promoted_to_near_local`
+- 新增 `_frontier_continuation_candidates()`：
+  - 只有在 `distance_not_improved` 且还有 frontier iteration 名额时，才允许 second-hop continuation；
+  - 不改 beam/budget/topN/timeout；
+  - 不替换 exact2 best，不把 handoff 当 final answer。
+
+3) 自动化验证
+- `python -m pytest -q tests/test_compare_aware_search_strategy.py -k "second_hop_composition or validated_projected_preserve_handoff"` -> `3 passed, 51 deselected`
+- `python -m pytest -q tests/test_compare_aware_search_strategy.py` -> `54 passed`
+- `python -m pytest -q` -> `136 passed`
+
+4) 结论
+- second-hop composition gap 已做最小修复。
+- 本轮未跑 harness；当前环境已知 Copilot quota 会在最终模型调用处 `402`，而该补丁已有本地单测覆盖。
+- 下一轮有 quota 或需要 artifact 验证时，默认 run：
+  - `samplereverse_second_hop_composition_audit_20260430`
+  - 重点检查是否出现 `frontier_guided_2_5a3f7f46ddd474d0` 或等价 second-hop guided artifact。
+
