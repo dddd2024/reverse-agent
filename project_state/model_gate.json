@@ -1,9 +1,9 @@
 {
-  "context_level": 2,
-  "generated_at": "2026-04-28T16:27:49Z",
+  "context_level": 1,
+  "generated_at": "2026-04-30T14:24:23Z",
   "missing_evidence": [],
-  "next_local_action": "",
-  "reason": "projected_winner_reached_pair_gate",
+  "next_local_action": "inspect_failed_case_result",
+  "reason": "latest harness case has errors",
   "recommended_packet": "project_state/task_packet.json",
-  "should_call_model": true
+  "should_call_model": false
 }

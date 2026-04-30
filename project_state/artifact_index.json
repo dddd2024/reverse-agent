@@ -1,123 +1,123 @@
 {
-  "generated_at": "2026-04-28T16:27:49Z",
+  "generated_at": "2026-04-30T14:24:23Z",
   "latest_artifacts": {
-    "bridge_search_result": "solve_reports\\harness_runs\\samplereverse_handoff_verify_20260429\\reports\\tool_artifacts\\samplereverse\\bridge\\bridge_search_result.json",
-    "bridge_validation": "solve_reports\\harness_runs\\samplereverse_handoff_verify_20260429\\reports\\tool_artifacts\\samplereverse\\bridge\\bridge_validation\\bridge_validation.json",
+    "bridge_search_result": "solve_reports\\harness_runs\\samplereverse_validation_slot_verify_20260430\\reports\\tool_artifacts\\samplereverse\\bridge\\bridge_search_result.json",
+    "bridge_validation": "solve_reports\\harness_runs\\samplereverse_validation_slot_verify_20260430\\reports\\tool_artifacts\\samplereverse\\bridge\\bridge_validation\\bridge_validation.json",
     "checkpoint": "solve_reports\\tool_artifacts\\samplereverse_optimizer_smoke\\samplereverse_search_checkpoint.json",
-    "compare_aware_result": "solve_reports\\harness_runs\\samplereverse_handoff_verify_20260429\\reports\\tool_artifacts\\samplereverse\\frontier_refine_1\\samplereverse_compare_aware_result.json",
-    "compare_probe": "solve_reports\\harness_runs\\samplereverse_handoff_verify_20260429\\reports\\tool_artifacts\\samplereverse\\samplereverse_compare_probe.json",
-    "compare_probe_log": "solve_reports\\harness_runs\\samplereverse_handoff_verify_20260429\\reports\\tool_artifacts\\samplereverse\\samplereverse_compare_probe.log",
-    "frontier_summary": "solve_reports\\harness_runs\\samplereverse_handoff_verify_20260429\\reports\\tool_artifacts\\samplereverse\\samplereverse_compare_aware_frontier_summary.json",
-    "guided_pool_result": "solve_reports\\harness_runs\\samplereverse_handoff_verify_20260429\\reports\\tool_artifacts\\samplereverse\\frontier_guided_1_5a3e7f46ddd474d0\\samplereverse_compare_aware_guided_pool_result.json",
-    "guided_pool_validation": "solve_reports\\harness_runs\\samplereverse_handoff_verify_20260429\\reports\\tool_artifacts\\samplereverse\\frontier_guided_1_5a3e7f46ddd474d0\\guided_pool_validation\\samplereverse_compare_aware_guided_pool_validation.json",
-    "pairscan_summary": "solve_reports\\harness_runs\\samplereverse_handoff_verify_20260429\\reports\\tool_artifacts\\samplereverse\\bridge\\pairscan_summary.json",
-    "run_manifest": "solve_reports\\harness_runs\\samplereverse_handoff_verify_20260429\\run_manifest.json",
-    "smt_result": "solve_reports\\harness_runs\\samplereverse_handoff_verify_20260429\\reports\\tool_artifacts\\samplereverse\\smt\\samplereverse_compare_aware_smt_result.json",
+    "compare_aware_result": "solve_reports\\harness_runs\\samplereverse_validation_slot_verify_20260430\\reports\\tool_artifacts\\samplereverse\\frontier_refine_1\\samplereverse_compare_aware_result.json",
+    "compare_probe": "solve_reports\\harness_runs\\samplereverse_validation_slot_verify_20260430\\reports\\tool_artifacts\\samplereverse\\samplereverse_compare_probe.json",
+    "compare_probe_log": "solve_reports\\harness_runs\\samplereverse_validation_slot_verify_20260430\\reports\\tool_artifacts\\samplereverse\\samplereverse_compare_probe.log",
+    "frontier_summary": "solve_reports\\harness_runs\\samplereverse_validation_slot_verify_20260430\\reports\\tool_artifacts\\samplereverse\\samplereverse_compare_aware_frontier_summary.json",
+    "guided_pool_result": "solve_reports\\harness_runs\\samplereverse_validation_slot_verify_20260430\\reports\\tool_artifacts\\samplereverse\\frontier_guided_1_5a3e7f46ddd474d0\\samplereverse_compare_aware_guided_pool_result.json",
+    "guided_pool_validation": "solve_reports\\harness_runs\\samplereverse_validation_slot_verify_20260430\\reports\\tool_artifacts\\samplereverse\\frontier_guided_1_5a3e7f46ddd474d0\\guided_pool_validation\\samplereverse_compare_aware_guided_pool_validation.json",
+    "pairscan_summary": "solve_reports\\harness_runs\\samplereverse_validation_slot_verify_20260430\\reports\\tool_artifacts\\samplereverse\\bridge\\pairscan_summary.json",
+    "run_manifest": "solve_reports\\harness_runs\\samplereverse_validation_slot_verify_20260430\\run_manifest.json",
+    "smt_result": "solve_reports\\harness_runs\\samplereverse_validation_slot_verify_20260430\\reports\\tool_artifacts\\samplereverse\\smt\\samplereverse_compare_aware_smt_result.json",
     "smt_validation": null,
-    "strata_summary": "solve_reports\\harness_runs\\samplereverse_handoff_verify_20260429\\reports\\tool_artifacts\\samplereverse\\samplereverse_compare_aware_strata_summary.json",
-    "summary": "solve_reports\\harness_runs\\samplereverse_handoff_verify_20260429\\summary.json"
+    "strata_summary": "solve_reports\\harness_runs\\samplereverse_validation_slot_verify_20260430\\reports\\tool_artifacts\\samplereverse\\samplereverse_compare_aware_strata_summary.json",
+    "summary": "solve_reports\\harness_runs\\samplereverse_validation_slot_verify_20260430\\summary.json"
   },
   "latest_case_results": [
-    "solve_reports\\harness_runs\\samplereverse_handoff_verify_20260429\\case_results\\samplereverse-exact1-projected-vs-neighbor.json"
+    "solve_reports\\harness_runs\\samplereverse_validation_slot_verify_20260430\\case_results\\samplereverse-exact1-projected-vs-neighbor.json"
   ],
-  "latest_harness_run": "solve_reports\\harness_runs\\samplereverse_handoff_verify_20260429",
-  "latest_summary": "solve_reports\\harness_runs\\samplereverse_handoff_verify_20260429\\summary.json",
+  "latest_harness_run": "solve_reports\\harness_runs\\samplereverse_validation_slot_verify_20260430",
+  "latest_summary": "solve_reports\\harness_runs\\samplereverse_validation_slot_verify_20260430\\summary.json",
   "missing": [],
   "recent_artifacts": [
     {
       "kind": "summary",
-      "modified_at": "2026-04-28T16:27:37Z",
-      "path": "solve_reports\\harness_runs\\samplereverse_handoff_verify_20260429\\summary.json",
-      "size_bytes": 929
+      "modified_at": "2026-04-30T14:23:17Z",
+      "path": "solve_reports\\harness_runs\\samplereverse_validation_slot_verify_20260430\\summary.json",
+      "size_bytes": 970
     },
     {
       "kind": "run_manifest",
-      "modified_at": "2026-04-28T16:27:37Z",
-      "path": "solve_reports\\harness_runs\\samplereverse_handoff_verify_20260429\\run_manifest.json",
-      "size_bytes": 2117
+      "modified_at": "2026-04-30T14:23:17Z",
+      "path": "solve_reports\\harness_runs\\samplereverse_validation_slot_verify_20260430\\run_manifest.json",
+      "size_bytes": 2141
     },
     {
       "kind": "smt_result",
-      "modified_at": "2026-04-28T16:21:09Z",
-      "path": "solve_reports\\harness_runs\\samplereverse_handoff_verify_20260429\\reports\\tool_artifacts\\samplereverse\\smt\\samplereverse_compare_aware_smt_result.json",
+      "modified_at": "2026-04-30T14:22:37Z",
+      "path": "solve_reports\\harness_runs\\samplereverse_validation_slot_verify_20260430\\reports\\tool_artifacts\\samplereverse\\smt\\samplereverse_compare_aware_smt_result.json",
       "size_bytes": 847
     },
     {
       "kind": "frontier_summary",
-      "modified_at": "2026-04-28T16:21:06Z",
-      "path": "solve_reports\\harness_runs\\samplereverse_handoff_verify_20260429\\reports\\tool_artifacts\\samplereverse\\samplereverse_compare_aware_frontier_summary.json",
-      "size_bytes": 344405
+      "modified_at": "2026-04-30T14:22:30Z",
+      "path": "solve_reports\\harness_runs\\samplereverse_validation_slot_verify_20260430\\reports\\tool_artifacts\\samplereverse\\samplereverse_compare_aware_frontier_summary.json",
+      "size_bytes": 344645
     },
     {
       "kind": "strata_summary",
-      "modified_at": "2026-04-28T16:21:06Z",
-      "path": "solve_reports\\harness_runs\\samplereverse_handoff_verify_20260429\\reports\\tool_artifacts\\samplereverse\\samplereverse_compare_aware_strata_summary.json",
-      "size_bytes": 29001
+      "modified_at": "2026-04-30T14:22:30Z",
+      "path": "solve_reports\\harness_runs\\samplereverse_validation_slot_verify_20260430\\reports\\tool_artifacts\\samplereverse\\samplereverse_compare_aware_strata_summary.json",
+      "size_bytes": 29041
     },
     {
       "kind": "compare_aware_result",
-      "modified_at": "2026-04-28T16:20:39Z",
-      "path": "solve_reports\\harness_runs\\samplereverse_handoff_verify_20260429\\reports\\tool_artifacts\\samplereverse\\frontier_refine_1\\samplereverse_compare_aware_result.json",
+      "modified_at": "2026-04-30T14:22:02Z",
+      "path": "solve_reports\\harness_runs\\samplereverse_validation_slot_verify_20260430\\reports\\tool_artifacts\\samplereverse\\frontier_refine_1\\samplereverse_compare_aware_result.json",
       "size_bytes": 24749
     },
     {
       "kind": "guided_pool_validation",
-      "modified_at": "2026-04-28T16:18:44Z",
-      "path": "solve_reports\\harness_runs\\samplereverse_handoff_verify_20260429\\reports\\tool_artifacts\\samplereverse\\frontier_guided_1_5a3e7f46ddd474d0\\guided_pool_validation\\samplereverse_compare_aware_guided_pool_validation.json",
-      "size_bytes": 16929
+      "modified_at": "2026-04-30T14:19:27Z",
+      "path": "solve_reports\\harness_runs\\samplereverse_validation_slot_verify_20260430\\reports\\tool_artifacts\\samplereverse\\frontier_guided_1_5a3e7f46ddd474d0\\guided_pool_validation\\samplereverse_compare_aware_guided_pool_validation.json",
+      "size_bytes": 16987
     },
     {
       "kind": "guided_pool_result",
-      "modified_at": "2026-04-28T16:18:17Z",
-      "path": "solve_reports\\harness_runs\\samplereverse_handoff_verify_20260429\\reports\\tool_artifacts\\samplereverse\\frontier_guided_1_5a3e7f46ddd474d0\\samplereverse_compare_aware_guided_pool_result.json",
-      "size_bytes": 1028046
+      "modified_at": "2026-04-30T14:19:00Z",
+      "path": "solve_reports\\harness_runs\\samplereverse_validation_slot_verify_20260430\\reports\\tool_artifacts\\samplereverse\\frontier_guided_1_5a3e7f46ddd474d0\\samplereverse_compare_aware_guided_pool_result.json",
+      "size_bytes": 1028799
     },
     {
       "kind": "compare_aware_result",
-      "modified_at": "2026-04-28T16:17:49Z",
-      "path": "solve_reports\\harness_runs\\samplereverse_handoff_verify_20260429\\reports\\tool_artifacts\\samplereverse\\samplereverse_compare_aware_result.json",
+      "modified_at": "2026-04-30T14:18:32Z",
+      "path": "solve_reports\\harness_runs\\samplereverse_validation_slot_verify_20260430\\reports\\tool_artifacts\\samplereverse\\samplereverse_compare_aware_result.json",
       "size_bytes": 23144
     },
     {
       "kind": "guided_pool_validation",
-      "modified_at": "2026-04-28T16:15:50Z",
-      "path": "solve_reports\\harness_runs\\samplereverse_handoff_verify_20260429\\reports\\tool_artifacts\\samplereverse\\guided_pool\\guided_pool_validation\\samplereverse_compare_aware_guided_pool_validation.json",
-      "size_bytes": 10546
+      "modified_at": "2026-04-30T14:15:38Z",
+      "path": "solve_reports\\harness_runs\\samplereverse_validation_slot_verify_20260430\\reports\\tool_artifacts\\samplereverse\\guided_pool\\guided_pool_validation\\samplereverse_compare_aware_guided_pool_validation.json",
+      "size_bytes": 10634
     },
     {
       "kind": "guided_pool_result",
-      "modified_at": "2026-04-28T16:15:33Z",
-      "path": "solve_reports\\harness_runs\\samplereverse_handoff_verify_20260429\\reports\\tool_artifacts\\samplereverse\\guided_pool\\samplereverse_compare_aware_guided_pool_result.json",
+      "modified_at": "2026-04-30T14:15:20Z",
+      "path": "solve_reports\\harness_runs\\samplereverse_validation_slot_verify_20260430\\reports\\tool_artifacts\\samplereverse\\guided_pool\\samplereverse_compare_aware_guided_pool_result.json",
       "size_bytes": 38696
     },
     {
       "kind": "bridge_validation",
-      "modified_at": "2026-04-28T16:15:33Z",
-      "path": "solve_reports\\harness_runs\\samplereverse_handoff_verify_20260429\\reports\\tool_artifacts\\samplereverse\\bridge\\bridge_validation\\bridge_validation.json",
-      "size_bytes": 2260
+      "modified_at": "2026-04-30T14:15:20Z",
+      "path": "solve_reports\\harness_runs\\samplereverse_validation_slot_verify_20260430\\reports\\tool_artifacts\\samplereverse\\bridge\\bridge_validation\\bridge_validation.json",
+      "size_bytes": 2284
     },
     {
       "kind": "bridge_search_result",
-      "modified_at": "2026-04-28T16:15:30Z",
-      "path": "solve_reports\\harness_runs\\samplereverse_handoff_verify_20260429\\reports\\tool_artifacts\\samplereverse\\bridge\\bridge_search_result.json",
-      "size_bytes": 3959
+      "modified_at": "2026-04-30T14:15:16Z",
+      "path": "solve_reports\\harness_runs\\samplereverse_validation_slot_verify_20260430\\reports\\tool_artifacts\\samplereverse\\bridge\\bridge_search_result.json",
+      "size_bytes": 3967
     },
     {
       "kind": "pairscan_summary",
-      "modified_at": "2026-04-28T16:15:30Z",
-      "path": "solve_reports\\harness_runs\\samplereverse_handoff_verify_20260429\\reports\\tool_artifacts\\samplereverse\\bridge\\pairscan_summary.json",
+      "modified_at": "2026-04-30T14:15:16Z",
+      "path": "solve_reports\\harness_runs\\samplereverse_validation_slot_verify_20260430\\reports\\tool_artifacts\\samplereverse\\bridge\\pairscan_summary.json",
       "size_bytes": 884
     },
     {
       "kind": "compare_probe",
-      "modified_at": "2026-04-28T16:15:28Z",
-      "path": "solve_reports\\harness_runs\\samplereverse_handoff_verify_20260429\\reports\\tool_artifacts\\samplereverse\\samplereverse_compare_probe.json",
+      "modified_at": "2026-04-30T14:15:14Z",
+      "path": "solve_reports\\harness_runs\\samplereverse_validation_slot_verify_20260430\\reports\\tool_artifacts\\samplereverse\\samplereverse_compare_probe.json",
       "size_bytes": 2155
     },
     {
       "kind": "compare_probe_log",
-      "modified_at": "2026-04-28T16:15:28Z",
-      "path": "solve_reports\\harness_runs\\samplereverse_handoff_verify_20260429\\reports\\tool_artifacts\\samplereverse\\samplereverse_compare_probe.log",
+      "modified_at": "2026-04-30T14:15:14Z",
+      "path": "solve_reports\\harness_runs\\samplereverse_validation_slot_verify_20260430\\reports\\tool_artifacts\\samplereverse\\samplereverse_compare_probe.log",
       "size_bytes": 22
     },
     {

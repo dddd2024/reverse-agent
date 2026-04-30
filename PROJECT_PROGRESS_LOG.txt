@@ -2227,3 +2227,41 @@ Reverse Agent 项目进展日志（截至 2026-04-16）
   - 优先尝试 “preserve-stabilized projected winner -> 再选第二字节”，而不是直接把 projected winner 和当前 neighbor 混合；
   - 同时补一个输出选择防护：模型只返回 `flag{` 这种前缀时，不应覆盖 runtime-evidence candidate。
 
+## 2026-04-30 validation slot patch verification
+
+1) 执行范围
+- 按 `project_state/decision_packet.md` 跑 validation-slot patch 的最小验证。
+- 没有改 `reverse_agent/strategies/compare_aware_search.py` 或测试代码；本轮只验证真实 harness artifact 并重建 `project_state`。
+
+2) 自动化验证
+- `python -m pytest -q tests/test_compare_aware_search_strategy.py` -> `51 passed`
+- `python -m pytest -q` -> `133 passed`
+
+3) 真实样本回归
+- 新 run:
+  - `solve_reports\\harness_runs\\samplereverse_validation_slot_verify_20260430`
+- 数据集：
+  - `samplereverse_exact1_projected_vs_neighbor_20260424.json`
+- 目标：
+  - `E:\\xwechat_files\\wxid_9ky6h8wz58b912_a1e5\\msg\\file\\2026-04\\samplereverse.exe`
+- 注意：
+  - compare-aware / guided validation / frontier / SMT artifacts 已完整生成；
+  - harness 最后模型调用因 Copilot CLI quota `402 You have no quota` 记为 `error_cases = 1`，但不影响本轮 validation-slot 证据。
+
+4) 关键结果
+- validation-slot patch 已真实生效：
+  - `5a3f7f46ddd474d0` 已进入 `validation_candidates`；
+  - 同一候选已出现在 `frontier_guided_1_5a3e7f46ddd474d0\\guided_pool_validation\\samplereverse_compare_aware_guided_pool_validation.json`。
+- 该候选 validation 后没有收益：
+  - `runtime_ci_exact_wchars = 0`
+  - `runtime_ci_distance5 = 740`
+  - `compare_semantics_agree = true`
+- 当前 best 未改善：
+  - exact2 仍为 `78d540b49c590770...`，`runtime_ci_exact_wchars=2`，`runtime_ci_distance5=246`
+  - exact1 仍为 `5a3e7f46ddd474d0...`，`runtime_ci_exact_wchars=1`，`runtime_ci_distance5=258`
+
+5) 结论
+- 失败分类从 `B. selected_but_not_composed` 推进为 `D. validated_but_no_runtime_gain`。
+- 不应继续修 validation ordering，也不应扩大 beam/budget。
+- 下一轮默认方向：从已验证但无收益的 preserve-stabilized projected winner 出发，审计 second-hop composition，而不是继续验证槽位或回到 projected source 扩张。
+
