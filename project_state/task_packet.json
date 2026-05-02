@@ -62,11 +62,15 @@
     "do not use compare_semantics_agree=false candidates as primary frontier",
     "do not commit full solve_reports directory",
     "do not scan entire solve_reports unless explicitly needed",
-    "do not rerun the same second-hop verification harness before auditing the loop stop condition"
+    "do not rerun the same second-hop verification harness before auditing the loop stop condition",
+    "do not reimplement the already-tested second-hop candidate generation path",
+    "do not treat used_second_hop_frontier_candidates=true as proof that frontier_guided_2 was emitted"
   ],
   "expected_gpt_output": "project_state/decision_packet.md",
-  "generated_at": "2026-05-02T07:28:27Z",
+  "generated_at": "2026-05-02T08:10:00Z",
   "included": [
+    "what was done",
+    "why the next plan targets loop stop condition",
     "current state",
     "best candidates",
     "stall reason",
@@ -76,9 +80,15 @@
   ],
   "model_gate": {
     "context_level": 2,
-    "reason": "second_hop_continuation_candidate_recorded_but_no_frontier_guided_2_artifact",
+    "reason": "requires model decision because continuation candidate exists but no frontier_guided_2 artifact was emitted",
     "should_call_model": true
   },
+  "missing_evidence": [
+    "whether frontier loop stopped before launching a second guided run",
+    "whether second guided run launched but artifact emission or project_state indexing missed it",
+    "precise branch/function where frontier_continuation_candidates are consumed or dropped"
+  ],
+  "next_local_action": "audit_frontier_loop_stop_condition_and_artifact_emission_before_rerunning_harness",
   "omitted": [
     {
       "name": "full PROJECT_PROGRESS_LOG.txt",
@@ -90,9 +100,12 @@
     }
   ],
   "profile": "samplereverse",
+  "reason": "second-hop continuation candidate is recorded and marked used, but no frontier_guided_2 artifact exists in the latest indexed run",
   "relevant_files": [
     "reverse_agent/strategies/compare_aware_search.py",
-    "tests/test_compare_aware_search_strategy.py"
+    "tests/test_compare_aware_search_strategy.py",
+    "project_state/codex_execution_report.md",
+    "project_state/artifact_index.json"
   ],
   "sample": "samplereverse",
   "sufficiency_check": {
@@ -100,7 +113,9 @@
     "has_current_best": true,
     "has_negative_results": true,
     "has_runtime_validation": true,
-    "has_stall_stage": true
+    "has_stall_stage": true,
+    "has_second_hop_continuation_evidence": true,
+    "has_frontier_guided_2_artifact": false
   },
-  "task": "Generate next decision for recorded second-hop continuation without frontier_guided_2 artifact"
+  "task": "audit_frontier_loop_stop_condition_and_artifact_emission"
 }
