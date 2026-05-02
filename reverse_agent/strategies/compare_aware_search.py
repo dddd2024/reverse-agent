@@ -7513,6 +7513,7 @@ class CompareAwareSearchStrategy(SolverStrategy):
                 **dict(smt_run.get("payload", {})),
                 "exact2_basin_smt": exact2_basin_smt,
             }
+            _write_json(Path(str(smt_run["result_path"])), dict(smt_run["payload"]))
             if not frontier_stall_stage:
                 frontier_stall_stage = (
                     "smt_exact2_basin_diagnostic"

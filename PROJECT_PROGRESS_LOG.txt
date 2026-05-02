@@ -2575,3 +2575,68 @@ Reverse Agent 项目进展日志（截至 2026-04-16）
 - 如果 exact2-basin diagnostic positions/value pools 看起来有推进信号，再实现真实 bounded exact2 SMT pass；仍不扩大 timeout。
 - 如果 diagnostics 没有新信号，则分类为 `candidate_quality_insufficient_after_transform_boundary`，不继续改代码，等待新的 profile/transform hypothesis。
 
+## 2026-05-02 prefix boundary diagnostics artifact + rg tool fix
+
+1) 执行范围
+- 按计划修复本地 `rg` 工具链，并运行新的 diagnostics-only compare-aware harness。
+- 没有扩大 beam/budget/topN/timeout/frontier iteration limit。
+- 没有修改 candidate generation、ranking、runtime validation 或 final selection 规则。
+
+2) `rg` 修复
+- 问题：`rg` 只解析到 Codex App 的 WindowsApps resource path，Windows 拒绝直接执行。
+- 修复：复制已验证可运行的 Copilot ripgrep x64 到用户级 PATH：
+  - `C:\Users\wjc27\AppData\Local\OpenAI\Codex\bin\rg.exe`
+- 验证：
+  - `rg --version` -> `ripgrep 15.0.0`
+  - `rg --files` 在 `F:\reverse-agent` 下可运行。
+
+3) 代码改动
+- 在 `reverse_agent/strategies/compare_aware_search.py` 中修复 metadata emission：
+  - 之前 `exact2_basin_smt` 只加入了 in-memory `smt_run["payload"]`；
+  - 但 `samplereverse_compare_aware_smt_result.json` 已在此之前写出，导致真实 artifact 缺少该字段；
+  - 现在在附加 `exact2_basin_smt` 后回写 SMT result JSON。
+- 在 `tests/test_compare_aware_search_strategy.py` 中补充断言：
+  - strategy metadata 含 `exact2_basin_smt`；
+  - 磁盘 `smt_result.json` 也含 `exact2_basin_smt`。
+
+4) 自动化验证
+- `python -m pytest -q tests/test_compare_aware_search_strategy.py -k "smt or exact2 or boundary or frontier"` -> `26 passed, 31 deselected`
+- `python -m pytest -q tests/test_compare_aware_search_strategy.py` -> `57 passed`
+- `python -m pytest -q` -> `139 passed`
+
+5) Harness
+- 第一轮 run：`samplereverse_prefix_boundary_diagnostics_20260502`
+  - 结果：`prefix_boundary_diagnostics` 存在，但 `exact2_basin_smt` 未落盘；
+  - 结论：metadata emission gap，先修 reporting，不继续搜索。
+- 修复后 run：`samplereverse_prefix_boundary_diagnostics_emitfix_20260502`
+  - summary: `solve_reports\harness_runs\samplereverse_prefix_boundary_diagnostics_emitfix_20260502\summary.json`
+  - SMT artifact: `solve_reports\harness_runs\samplereverse_prefix_boundary_diagnostics_emitfix_20260502\reports\tool_artifacts\samplereverse\smt\samplereverse_compare_aware_smt_result.json`
+  - `prefix_boundary_diagnostics`: present, 16 entries
+  - `exact2_basin_smt`: present
+  - harness completed 1 case, 0 errors
+
+6) exact2 basin diagnostic result
+- `exact2_basin_smt`:
+  - `attempted=false`
+  - `recommended=true`
+  - `base_anchor=78d540b49c590770`
+  - `primary_base_anchor=5a3e7f46ddd474d0`
+  - `runtime_ci_exact_wchars=2`
+  - `runtime_ci_distance5=246`
+  - `variable_byte_positions=[1,2,3,0,4]`
+  - `variable_nibble_positions=[2,3,0,1,4]`
+  - `feedback_value_pools={1:[213,62,60],2:[64,127,128],3:[180,143],0:[120],4:[156]}`
+
+7) 结论
+- Classification: `diagnostics_show_promising_exact2_basin_smt`
+- 当前 runtime best 未改善：
+  - exact2 仍为 `78d540b49c59077041414141414141`，runtime exact2 / distance5 246。
+- 本轮 case `selected_flag` 为模型/候选评分选出的 `flag{`；这不是 compare-aware runtime best 改善，下一轮不要把它当作突破。
+
+8) 下一轮默认方向
+- 实现真实 bounded exact2 SMT pass：
+  - 使用本轮 `exact2_basin_smt` 的 byte/nibble positions 和 value pools；
+  - 不扩大 beam/budget/topN/timeout/frontier iteration limit；
+  - 不改变 final selection 规则；
+  - 目标是验证 exact2 basin 是否能推进到 exact3+。
+

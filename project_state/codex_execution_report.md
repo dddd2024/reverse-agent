@@ -2,59 +2,81 @@
 
 ## Summary
 
-本轮按计划实现 exact2 basin transform/profile boundary 的 diagnostic-only 改动。没有扩大 beam、budget、topN、timeout 或 frontier iteration limit；没有运行新 harness；没有修改 final candidate selection 规则。
+Implemented the planned diagnostics iteration and the local `rg` toolchain fix.
 
-结论：当前 evidence 仍支持 `78d540b49c590770...` 作为 best exact2。新增诊断会在后续 compare-aware artifacts / metadata 中记录 per-wchar boundary breakdown，并在 primary SMT 选择 exact1 frontier 时记录一个 `exact2_basin_smt` diagnostic payload，说明 exact2 basin 若作为诊断 base 会使用哪些 variable positions/value pools。该 payload 不运行额外 runtime validation，不替换 best。
+The first diagnostics harness run produced `prefix_boundary_diagnostics` but no persisted `exact2_basin_smt`. That exposed a metadata emission gap: the strategy attached the diagnostic to the in-memory SMT artifact payload after `run_compare_aware_smt()` had already written `samplereverse_compare_aware_smt_result.json`. I fixed that by rewriting the SMT result payload after adding `exact2_basin_smt`. This is metadata-only and does not change candidate generation, ranking, validation, budgets, or final selection.
+
+Final diagnostics run:
+
+```text
+samplereverse_prefix_boundary_diagnostics_emitfix_20260502
+```
 
 ## Implemented Changes
 
 | area | change | behavior impact |
 |---|---|---|
-| prefix boundary diagnostics | 新增 per-wchar breakdown helper，记录 raw/target UTF-16 pair、distance、continuous exact、wide-structure metrics | metadata only |
-| runtime validation | 每条 `validate_compare_aware_results()` validation 附加 `prefix_boundary` | metadata only |
-| frontier/refine metadata | `frontier_summary`、`strata_summary`、strategy metadata 和 search artifact payload 增加 `prefix_boundary_diagnostics` | metadata only |
-| SMT diagnostics | primary SMT payload 增加 `prefix_boundary`；当 primary base 不是 exact2 且存在 compare-agree exact2 时，附加 `exact2_basin_smt` diagnostic | metadata only |
-| tests | 增加 boundary breakdown 和 exact2-basin SMT diagnostic 单测 | no runtime behavior change |
+| rg tooling | Copied verified Copilot ripgrep 15.0.0 x64 binary to `C:\Users\wjc27\AppData\Local\OpenAI\Codex\bin\rg.exe` | local tooling only |
+| SMT diagnostics | Persist updated SMT payload after attaching `exact2_basin_smt` | metadata only |
+| tests | Added assertion that strategy metadata and `smt_result.json` both contain `exact2_basin_smt` | coverage only |
 
-## Boundary Evidence
+## Diagnostics Wiring Audit
 
-| candidate | runtime prefix pairs | runtime exact | distance5 | interpretation |
-|---|---|---:|---:|---|
-| `78d540b49c590770` | `4600 6c00 4464 830d 311c` | 2 | 246 | stable exact2 basin: `f`, `l` match |
-| `5a3e7f46ddd474d0` | `4600 6135 7f0b 8c68 8502` | 1 | 258 | exact1 frontier: only `f` matches |
-| `5a3f7f46ddd474d0` | `7493 4b15 6ba6 9ef3 370f` | 0 | 740 | projected preserve anchor collapses before first wchar |
-| `5a3f7fc2ddd474d0` | `854a e01a bc18 692c 7505` | 0 | 419 | best new second-hop candidate remains exact0 |
+| diagnostic field | expected location | present? | behavior impact | evidence |
+|---|---|---:|---|---|
+| `prefix_boundary` | runtime validations and primary SMT payload | yes | metadata only | validation records and SMT payload include per-wchar breakdown |
+| `prefix_boundary_diagnostics` | frontier/strata summaries | yes | metadata only | `frontier_summary` has 16 entries |
+| primary SMT `prefix_boundary` | `smt/samplereverse_compare_aware_smt_result.json` | yes | metadata only | primary base `5a3e7f46ddd474d0`, exact1 / distance5 258 |
+| `exact2_basin_smt` | `smt/samplereverse_compare_aware_smt_result.json` | yes | metadata only | base `78d540b49c590770`, primary base `5a3e7f46ddd474d0` |
+| metadata-only guard | tests | yes | no selection change | `test_exact2_basin_smt_diagnostic_does_not_replace_primary_frontier_base` |
+| final selection isolation | strategy path | yes | no runtime best change | diagnostic `attempted=false`, no validation candidates |
+
+## exact2 Basin Payload
+
+| field | value | bounded? | implication |
+|---|---|---:|---|
+| base candidate | `78d540b49c590770` | yes | stable compare-agree exact2 reference |
+| runtime exact / distance5 | `2 / 246` | yes | still best runtime-consistent exact2 |
+| prefix boundary matched wchars | `f`, `l` | yes | exact2 basin preserved |
+| primary SMT base | `5a3e7f46ddd474d0` | yes | current SMT still chooses exact1 frontier |
+| variable byte positions | `[1, 2, 3, 0, 4]` | yes | bounded exact2 SMT pass is now well-scoped |
+| variable nibble positions | `[2, 3, 0, 1, 4]` | yes | bounded nibble objective is available |
+| value pools | `{1:[213,62,60], 2:[64,127,128], 3:[180,143], 0:[120], 4:[156]}` | yes | small enough for targeted follow-up |
+| runtime validation status | diagnostic only, no validation candidates | yes | no final selection impact |
 
 ## Classification
 
-Classification: `transform_profile_boundary_diagnostics_added`.
+| classification | evidence for | evidence against | next action | recommendation |
+|---|---|---|---|---|
+| diagnostics show promising exact2_basin_smt | bounded positions and value pools exist for exact2 base | no exact3+ yet | implement real bounded exact2 SMT pass | recommended |
+| diagnostics show no exact2-basin signal | none | payload is populated and recommended | do not choose this | no |
+| candidate_quality_insufficient_after_transform_boundary | current runtime best still exact2 | exact2 SMT diagnostic has actionable bounded scope | defer until after bounded pass | not yet |
+| transform/profile boundary bug found | none | diagnostics are consistent with metadata-only path | no boundary fix now | no |
+| diagnostics insufficient | first run exposed missing persisted payload | fixed and verified in second run | done | resolved |
 
-Current best did not improve:
+## Results
 
-- exact2 remains `78d540b49c59077041414141414141`, runtime exact2 / distance5 246.
-- exact1 remains `5a3e7f46ddd474d041414141414141`, runtime exact1 / distance5 258.
-- `5a3f7f46ddd474d0` remains downgraded and must not be promoted.
-
-The current inability to reach exact3+ is not proven to be a scorer bug yet. The next artifact-producing run should use the new diagnostics to decide between:
-
-- candidate quality insufficient,
-- transform/profile boundary missing a useful signal,
-- SMT base choice needing a bounded exact2-basin diagnostic execution.
+- `rg --version` -> ripgrep 15.0.0.
+- `rg --files` works under `F:\reverse-agent`.
+- Harness `samplereverse_prefix_boundary_diagnostics_emitfix_20260502` completed with 1 executed case, 0 errors.
+- `prefix_boundary_diagnostics`: present, 16 entries.
+- `exact2_basin_smt`: present in SMT result.
+- Runtime best did not improve: exact2 remains `78d540b49c59077041414141414141`, exact2 / distance5 246.
+- Case `selected_flag` was `flag{` in this run, from model/candidate scoring; do not treat that as compare-aware runtime improvement.
 
 ## Commands
 
 | command | result |
 |---|---|
+| `rg --version` | `ripgrep 15.0.0` |
+| `rg --files \| Select-Object -First 10` | passed |
 | `python -m pytest -q tests/test_compare_aware_search_strategy.py -k "smt or exact2 or boundary or frontier"` | `26 passed, 31 deselected` |
 | `python -m pytest -q tests/test_compare_aware_search_strategy.py` | `57 passed` |
 | `python -m pytest -q` | `139 passed` |
-
-No full harness was run, per plan.
+| `python -m reverse_agent.harness ... --run-name samplereverse_prefix_boundary_diagnostics_emitfix_20260502 --no-resume` | completed |
+| `python -m reverse_agent.project_state build --reports-dir solve_reports --sample samplereverse --run-name samplereverse_prefix_boundary_diagnostics_emitfix_20260502` | passed |
+| `python -m reverse_agent.project_state status` | passed; auto classifier needed manual handoff correction |
 
 ## Next Step
 
-Next default direction:
-
-- Run or audit the next compare-aware execution that produces the new `prefix_boundary_diagnostics` and `exact2_basin_smt` payload.
-- If diagnostics show exact2-basin SMT has promising bounded variable positions, implement a real exact2 diagnostic pass without changing timeouts or selection.
-- If diagnostics show no exact2-basin signal, classify as `candidate_quality_insufficient_after_transform_boundary` and defer code changes until a new profile hypothesis exists.
+Implement a real bounded exact2 SMT pass using the diagnostic byte/nibble positions and value pools from `exact2_basin_smt`. Keep the pass bounded and do not expand beam, budget, topN, timeout, or selection rules.

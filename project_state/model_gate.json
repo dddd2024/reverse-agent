@@ -1,9 +1,9 @@
 {
   "context_level": 2,
-  "generated_at": "2026-05-02T14:14:33Z",
+  "generated_at": "2026-05-02T14:59:19Z",
   "missing_evidence": [],
-  "next_local_action": "run_or_audit_new_compare_aware_diagnostics_without_blind_search",
-  "reason": "prefix boundary and exact2 basin SMT diagnostics are implemented; inspect a new diagnostic artifact before behavior changes",
+  "next_local_action": "implement_real_bounded_exact2_smt_pass_without_budget_expansion",
+  "reason": "exact2_basin_smt_diagnostic_has_bounded_positions",
   "recommended_packet": "project_state/task_packet.json",
   "should_call_model": true
 }

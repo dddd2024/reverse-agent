@@ -1,16 +1,20 @@
 {
   "active_strategy": "CompareAwareSearchStrategy",
   "artifact_refs": {
-    "bridge_search_result": "solve_reports\\harness_runs\\samplereverse_second_hop_loop_fix_verify_20260502\\reports\\tool_artifacts\\samplereverse\\bridge\\bridge_search_result.json",
-    "bridge_validation": "solve_reports\\harness_runs\\samplereverse_second_hop_loop_fix_verify_20260502\\reports\\tool_artifacts\\samplereverse\\bridge\\bridge_validation\\bridge_validation.json",
-    "compare_aware_result": "solve_reports\\harness_runs\\samplereverse_second_hop_loop_fix_verify_20260502\\reports\\tool_artifacts\\samplereverse\\frontier_refine_2\\samplereverse_compare_aware_result.json",
-    "frontier_summary": "solve_reports\\harness_runs\\samplereverse_second_hop_loop_fix_verify_20260502\\reports\\tool_artifacts\\samplereverse\\samplereverse_compare_aware_frontier_summary.json",
-    "guided_pool_result": "solve_reports\\harness_runs\\samplereverse_second_hop_loop_fix_verify_20260502\\reports\\tool_artifacts\\samplereverse\\frontier_guided_2_5a3f7f46ddd474d0\\samplereverse_compare_aware_guided_pool_result.json",
-    "guided_pool_validation": "solve_reports\\harness_runs\\samplereverse_second_hop_loop_fix_verify_20260502\\reports\\tool_artifacts\\samplereverse\\frontier_guided_2_5a3f7f46ddd474d0\\guided_pool_validation\\samplereverse_compare_aware_guided_pool_validation.json",
-    "pairscan_summary": "solve_reports\\harness_runs\\samplereverse_second_hop_loop_fix_verify_20260502\\reports\\tool_artifacts\\samplereverse\\bridge\\pairscan_summary.json",
-    "run_manifest": "solve_reports\\harness_runs\\samplereverse_second_hop_loop_fix_verify_20260502\\run_manifest.json",
-    "strata_summary": "solve_reports\\harness_runs\\samplereverse_second_hop_loop_fix_verify_20260502\\reports\\tool_artifacts\\samplereverse\\samplereverse_compare_aware_strata_summary.json",
-    "summary": "solve_reports\\harness_runs\\samplereverse_second_hop_loop_fix_verify_20260502\\summary.json"
+    "bridge_search_result": "solve_reports\\harness_runs\\samplereverse_prefix_boundary_diagnostics_emitfix_20260502\\reports\\tool_artifacts\\samplereverse\\bridge\\bridge_search_result.json",
+    "bridge_validation": "solve_reports\\harness_runs\\samplereverse_prefix_boundary_diagnostics_emitfix_20260502\\reports\\tool_artifacts\\samplereverse\\bridge\\bridge_validation\\bridge_validation.json",
+    "checkpoint": "solve_reports\\tool_artifacts\\samplereverse_optimizer_smoke\\samplereverse_search_checkpoint.json",
+    "compare_aware_result": "solve_reports\\harness_runs\\samplereverse_prefix_boundary_diagnostics_emitfix_20260502\\reports\\tool_artifacts\\samplereverse\\frontier_refine_2\\samplereverse_compare_aware_result.json",
+    "compare_probe": "solve_reports\\harness_runs\\samplereverse_prefix_boundary_diagnostics_emitfix_20260502\\reports\\tool_artifacts\\samplereverse\\samplereverse_compare_probe.json",
+    "compare_probe_log": "solve_reports\\harness_runs\\samplereverse_prefix_boundary_diagnostics_emitfix_20260502\\reports\\tool_artifacts\\samplereverse\\samplereverse_compare_probe.log",
+    "frontier_summary": "solve_reports\\harness_runs\\samplereverse_prefix_boundary_diagnostics_emitfix_20260502\\reports\\tool_artifacts\\samplereverse\\samplereverse_compare_aware_frontier_summary.json",
+    "guided_pool_result": "solve_reports\\harness_runs\\samplereverse_prefix_boundary_diagnostics_emitfix_20260502\\reports\\tool_artifacts\\samplereverse\\frontier_guided_2_5a3f7f46ddd474d0\\samplereverse_compare_aware_guided_pool_result.json",
+    "guided_pool_validation": "solve_reports\\harness_runs\\samplereverse_prefix_boundary_diagnostics_emitfix_20260502\\reports\\tool_artifacts\\samplereverse\\frontier_guided_2_5a3f7f46ddd474d0\\guided_pool_validation\\samplereverse_compare_aware_guided_pool_validation.json",
+    "pairscan_summary": "solve_reports\\harness_runs\\samplereverse_prefix_boundary_diagnostics_emitfix_20260502\\reports\\tool_artifacts\\samplereverse\\bridge\\pairscan_summary.json",
+    "run_manifest": "solve_reports\\harness_runs\\samplereverse_prefix_boundary_diagnostics_emitfix_20260502\\run_manifest.json",
+    "smt_result": "solve_reports\\harness_runs\\samplereverse_prefix_boundary_diagnostics_emitfix_20260502\\reports\\tool_artifacts\\samplereverse\\smt\\samplereverse_compare_aware_smt_result.json",
+    "strata_summary": "solve_reports\\harness_runs\\samplereverse_prefix_boundary_diagnostics_emitfix_20260502\\reports\\tool_artifacts\\samplereverse\\samplereverse_compare_aware_strata_summary.json",
+    "summary": "solve_reports\\harness_runs\\samplereverse_prefix_boundary_diagnostics_emitfix_20260502\\summary.json"
   },
   "best_candidates": {
     "exact1": {
@@ -19,34 +23,41 @@
       "candidate_prefix": "5a3e7f46ddd474d0",
       "compare_semantics_agree": true,
       "frontier_role": "exact1_frontier",
+      "frontier_submode": null,
       "runtime_ci_distance5": 258,
       "runtime_ci_exact_wchars": 1,
       "source": "exact2_seed(78d540b49c590770) -> refine(seed) -> guided(frontier)"
     },
     "exact2": {
+      "anchor_mode": "",
       "candidate_hex": "78d540b49c59077041414141414141",
       "candidate_prefix": "78d540b49c590770",
       "compare_semantics_agree": true,
+      "frontier_role": "",
+      "frontier_submode": null,
       "runtime_ci_distance5": 246,
       "runtime_ci_exact_wchars": 2,
-      "source": "profile_seed -> bridge_pairscan -> seed_guided -> final_refine"
+      "source": "pairscan"
     },
-    "projected_preserve_second_hop": {
-      "candidate_hex": "5a3f7f46ddd474d041414141414141",
-      "candidate_prefix": "5a3f7f46ddd474d0",
+    "frontier": {
+      "anchor_mode": "frontier",
+      "candidate_hex": "5a3e7f46ddd474d041414141414141",
+      "candidate_prefix": "5a3e7f46ddd474d0",
       "compare_semantics_agree": true,
-      "runtime_ci_distance5": 740,
-      "runtime_ci_exact_wchars": 0,
-      "status": "downgraded_validated_no_runtime_gain"
+      "frontier_role": "exact1_frontier",
+      "frontier_submode": null,
+      "runtime_ci_distance5": 258,
+      "runtime_ci_exact_wchars": 1,
+      "source": "exact2_seed(78d540b49c590770) -> refine(seed) -> guided(frontier)"
     }
   },
   "current_bottleneck": {
     "confidence": "high",
-    "reason": "diagnostics_added_for_transform_profile_boundary_and_exact2_basin_smt",
-    "stage": "transform_profile_boundary"
+    "reason": "exact2_basin_smt_diagnostic_has_bounded_positions",
+    "stage": "smt_exact2_basin_diagnostic"
   },
   "current_mainline": "L15(prefix8)",
-  "generated_at": "2026-05-02T14:14:33Z",
+  "generated_at": "2026-05-02T14:59:19Z",
   "known_transform": [
     "input",
     "UTF-16LE",
@@ -55,30 +66,49 @@
     "compare flag{ prefix"
   ],
   "latest_audit": {
-    "classification": "transform_profile_boundary_diagnostics_added",
+    "classification": "diagnostics_show_promising_exact2_basin_smt",
     "code_fix_recommended": false,
-    "harness_run": "samplereverse_second_hop_loop_fix_verify_20260502",
-    "projected_preserve_status": "downgraded",
-    "source_bug_found": false
+    "harness_run": "samplereverse_prefix_boundary_diagnostics_emitfix_20260502",
+    "metadata_fix_applied": "exact2_basin_smt_payload_written_to_smt_result",
+    "prefix_boundary_diagnostics_count": 16,
+    "exact2_basin_smt": {
+      "attempted": false,
+      "recommended": true,
+      "base_anchor": "78d540b49c590770",
+      "primary_base_anchor": "5a3e7f46ddd474d0",
+      "variable_byte_positions": [
+        1,
+        2,
+        3,
+        0,
+        4
+      ],
+      "variable_nibble_positions": [
+        2,
+        3,
+        0,
+        1,
+        4
+      ],
+      "runtime_ci_exact_wchars": 2,
+      "runtime_ci_distance5": 246
+    },
+    "runtime_best_improved": false,
+    "selected_flag_note": "case selected_flag was model-scored flag{, but compare-aware runtime best remains exact2 78d540b49c59077041414141414141"
   },
   "latest_code_change": {
-    "behavior_change": "diagnostic_metadata_only",
-    "new_metadata": [
-      "prefix_boundary",
-      "prefix_boundary_diagnostics",
-      "exact2_basin_smt"
+    "behavior_change": "metadata_emission_only",
+    "files": [
+      "reverse_agent/strategies/compare_aware_search.py",
+      "tests/test_compare_aware_search_strategy.py"
     ],
-    "tests": [
-      "python -m pytest -q tests/test_compare_aware_search_strategy.py -k \"smt or exact2 or boundary or frontier\"",
-      "python -m pytest -q tests/test_compare_aware_search_strategy.py",
-      "python -m pytest -q"
-    ]
+    "rg_fix": "copied verified ripgrep 15.0.0 executable to user PATH at C:\\Users\\wjc27\\AppData\\Local\\OpenAI\\Codex\\bin\\rg.exe"
   },
-  "next_local_action": "run_or_audit_new_compare_aware_diagnostics_without_blind_search",
+  "next_local_action": "implement_real_bounded_exact2_smt_pass_without_budget_expansion",
   "profile": "samplereverse",
   "sample": "samplereverse",
   "uncertainty": [
-    "whether exact2_basin_smt diagnostic positions justify a real bounded exact2 SMT pass",
-    "whether prefix boundary diagnostics reveal a transform/profile scoring signal beyond candidate quality"
+    "whether a real bounded exact2 SMT pass over the diagnostic byte/nibble positions can produce exact3+",
+    "whether model final selection should be guarded from choosing bare flag{ when compare-aware evidence has stronger runtime candidates"
   ]
 }

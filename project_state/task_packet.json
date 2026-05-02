@@ -1,104 +1,146 @@
 {
   "active_strategy": "CompareAwareSearchStrategy",
   "artifact_refs": {
-    "bridge_search_result": "solve_reports\\harness_runs\\samplereverse_second_hop_loop_fix_verify_20260502\\reports\\tool_artifacts\\samplereverse\\bridge\\bridge_search_result.json",
-    "bridge_validation": "solve_reports\\harness_runs\\samplereverse_second_hop_loop_fix_verify_20260502\\reports\\tool_artifacts\\samplereverse\\bridge\\bridge_validation\\bridge_validation.json",
-    "compare_aware_result": "solve_reports\\harness_runs\\samplereverse_second_hop_loop_fix_verify_20260502\\reports\\tool_artifacts\\samplereverse\\frontier_refine_2\\samplereverse_compare_aware_result.json",
-    "frontier_summary": "solve_reports\\harness_runs\\samplereverse_second_hop_loop_fix_verify_20260502\\reports\\tool_artifacts\\samplereverse\\samplereverse_compare_aware_frontier_summary.json",
-    "guided_pool_result": "solve_reports\\harness_runs\\samplereverse_second_hop_loop_fix_verify_20260502\\reports\\tool_artifacts\\samplereverse\\frontier_guided_2_5a3f7f46ddd474d0\\samplereverse_compare_aware_guided_pool_result.json",
-    "guided_pool_validation": "solve_reports\\harness_runs\\samplereverse_second_hop_loop_fix_verify_20260502\\reports\\tool_artifacts\\samplereverse\\frontier_guided_2_5a3f7f46ddd474d0\\guided_pool_validation\\samplereverse_compare_aware_guided_pool_validation.json",
-    "pairscan_summary": "solve_reports\\harness_runs\\samplereverse_second_hop_loop_fix_verify_20260502\\reports\\tool_artifacts\\samplereverse\\bridge\\pairscan_summary.json",
-    "summary": "solve_reports\\harness_runs\\samplereverse_second_hop_loop_fix_verify_20260502\\summary.json"
+    "bridge_search_result": "solve_reports\\harness_runs\\samplereverse_prefix_boundary_diagnostics_emitfix_20260502\\reports\\tool_artifacts\\samplereverse\\bridge\\bridge_search_result.json",
+    "bridge_validation": "solve_reports\\harness_runs\\samplereverse_prefix_boundary_diagnostics_emitfix_20260502\\reports\\tool_artifacts\\samplereverse\\bridge\\bridge_validation\\bridge_validation.json",
+    "checkpoint": "solve_reports\\tool_artifacts\\samplereverse_optimizer_smoke\\samplereverse_search_checkpoint.json",
+    "compare_aware_result": "solve_reports\\harness_runs\\samplereverse_prefix_boundary_diagnostics_emitfix_20260502\\reports\\tool_artifacts\\samplereverse\\frontier_refine_2\\samplereverse_compare_aware_result.json",
+    "compare_probe": "solve_reports\\harness_runs\\samplereverse_prefix_boundary_diagnostics_emitfix_20260502\\reports\\tool_artifacts\\samplereverse\\samplereverse_compare_probe.json",
+    "compare_probe_log": "solve_reports\\harness_runs\\samplereverse_prefix_boundary_diagnostics_emitfix_20260502\\reports\\tool_artifacts\\samplereverse\\samplereverse_compare_probe.log",
+    "frontier_summary": "solve_reports\\harness_runs\\samplereverse_prefix_boundary_diagnostics_emitfix_20260502\\reports\\tool_artifacts\\samplereverse\\samplereverse_compare_aware_frontier_summary.json",
+    "guided_pool_result": "solve_reports\\harness_runs\\samplereverse_prefix_boundary_diagnostics_emitfix_20260502\\reports\\tool_artifacts\\samplereverse\\frontier_guided_2_5a3f7f46ddd474d0\\samplereverse_compare_aware_guided_pool_result.json",
+    "guided_pool_validation": "solve_reports\\harness_runs\\samplereverse_prefix_boundary_diagnostics_emitfix_20260502\\reports\\tool_artifacts\\samplereverse\\frontier_guided_2_5a3f7f46ddd474d0\\guided_pool_validation\\samplereverse_compare_aware_guided_pool_validation.json",
+    "pairscan_summary": "solve_reports\\harness_runs\\samplereverse_prefix_boundary_diagnostics_emitfix_20260502\\reports\\tool_artifacts\\samplereverse\\bridge\\pairscan_summary.json",
+    "run_manifest": "solve_reports\\harness_runs\\samplereverse_prefix_boundary_diagnostics_emitfix_20260502\\run_manifest.json",
+    "smt_result": "solve_reports\\harness_runs\\samplereverse_prefix_boundary_diagnostics_emitfix_20260502\\reports\\tool_artifacts\\samplereverse\\smt\\samplereverse_compare_aware_smt_result.json",
+    "strata_summary": "solve_reports\\harness_runs\\samplereverse_prefix_boundary_diagnostics_emitfix_20260502\\reports\\tool_artifacts\\samplereverse\\samplereverse_compare_aware_strata_summary.json",
+    "summary": "solve_reports\\harness_runs\\samplereverse_prefix_boundary_diagnostics_emitfix_20260502\\summary.json"
   },
   "current_best": {
     "exact1": {
+      "anchor_mode": "frontier",
       "candidate_hex": "5a3e7f46ddd474d041414141414141",
       "candidate_prefix": "5a3e7f46ddd474d0",
       "compare_semantics_agree": true,
+      "frontier_role": "exact1_frontier",
+      "frontier_submode": null,
       "runtime_ci_distance5": 258,
       "runtime_ci_exact_wchars": 1,
       "source": "exact2_seed(78d540b49c590770) -> refine(seed) -> guided(frontier)"
     },
     "exact2": {
+      "anchor_mode": "",
       "candidate_hex": "78d540b49c59077041414141414141",
       "candidate_prefix": "78d540b49c590770",
       "compare_semantics_agree": true,
+      "frontier_role": "",
+      "frontier_submode": null,
       "runtime_ci_distance5": 246,
       "runtime_ci_exact_wchars": 2,
-      "source": "profile_seed -> bridge_pairscan -> seed_guided -> final_refine"
+      "source": "pairscan"
+    },
+    "frontier": {
+      "anchor_mode": "frontier",
+      "candidate_hex": "5a3e7f46ddd474d041414141414141",
+      "candidate_prefix": "5a3e7f46ddd474d0",
+      "compare_semantics_agree": true,
+      "frontier_role": "exact1_frontier",
+      "frontier_submode": null,
+      "runtime_ci_distance5": 258,
+      "runtime_ci_exact_wchars": 1,
+      "source": "exact2_seed(78d540b49c590770) -> refine(seed) -> guided(frontier)"
     }
   },
   "current_bottleneck": {
     "confidence": "high",
-    "reason": "diagnostics_added_for_transform_profile_boundary_and_exact2_basin_smt",
-    "stage": "transform_profile_boundary"
+    "reason": "exact2_basin_smt_diagnostic_has_bounded_positions",
+    "stage": "smt_exact2_basin_diagnostic"
   },
   "do_not_do": [
     "do not return to old sample_solver blind search",
     "do not only increase beam or budget",
     "do not use compare_semantics_agree=false candidates as primary frontier",
     "do not commit full solve_reports directory",
-    "do not continue projected preserve source by expanding budget",
-    "do not promote 5a3f7f46ddd474d0 to final or best",
-    "do not change final selection based only on diagnostic metadata"
+    "do not scan entire solve_reports unless explicitly needed",
+    "do not promote 5a3f7f46ddd474d0, 5a3f7fc2ddd474d0, or 343f7f46ddd474d0",
+    "do not treat model-selected bare flag{ as runtime improvement",
+    "do not expand beam, budget, topN, timeout, or frontier iteration limit"
   ],
   "expected_gpt_output": "project_state/decision_packet.md",
-  "generated_at": "2026-05-02T14:14:33Z",
+  "generated_at": "2026-05-02T14:59:19Z",
   "included": [
     "current state",
     "best candidates",
-    "diagnostic metadata implementation",
-    "test results",
-    "next recommended action",
-    "artifact references"
+    "stall reason",
+    "negative results",
+    "artifact references",
+    "prefix boundary diagnostics",
+    "exact2 basin SMT diagnostic",
+    "rg toolchain fix"
   ],
   "latest_audit_result": {
+    "classification": "diagnostics_show_promising_exact2_basin_smt",
     "code_fix_recommended": false,
-    "key_findings": [
-      "prefix_boundary diagnostics now break each candidate prefix into UTF-16 wchar deltas against flag{",
-      "runtime validations now carry prefix_boundary metadata",
-      "frontier/refine artifacts and strategy metadata now include prefix_boundary_diagnostics",
-      "primary SMT payload now records prefix_boundary for the chosen base",
-      "when primary SMT chooses an exact1 frontier while a compare-agree exact2 exists, exact2_basin_smt records a diagnostic-only exact2 basin plan",
-      "no candidate selection behavior was changed"
-    ],
-    "projected_preserve_status": "downgraded_validated_no_runtime_gain",
-    "source_bug_found": false
+    "metadata_fix_applied": "exact2_basin_smt_payload_written_to_smt_result",
+    "new_harness_run": "samplereverse_prefix_boundary_diagnostics_emitfix_20260502",
+    "prefix_boundary_diagnostics_count": 16,
+    "exact2_basin_smt": {
+      "attempted": false,
+      "recommended": true,
+      "base_anchor": "78d540b49c590770",
+      "primary_base_anchor": "5a3e7f46ddd474d0",
+      "variable_byte_positions": [
+        1,
+        2,
+        3,
+        0,
+        4
+      ],
+      "variable_nibble_positions": [
+        2,
+        3,
+        0,
+        1,
+        4
+      ],
+      "runtime_ci_exact_wchars": 2,
+      "runtime_ci_distance5": 246
+    },
+    "runtime_best_improved": false
   },
   "model_gate": {
     "context_level": 2,
-    "reason": "diagnostic metadata is implemented; next decision should inspect a new compare-aware diagnostic artifact before behavior changes",
+    "reason": "exact2_basin_smt_diagnostic_has_bounded_positions",
     "should_call_model": true
   },
-  "next_local_action": "run_or_audit_new_compare_aware_diagnostics_without_blind_search",
+  "next_local_action": "implement_real_bounded_exact2_smt_pass_without_budget_expansion",
   "omitted": [
     {
-      "name": "full solve_reports",
-      "reason": "runtime output; indexed artifacts are sufficient"
+      "name": "full PROJECT_PROGRESS_LOG.txt",
+      "reason": "too long; use only for strategic review"
     },
     {
-      "name": "new harness run",
-      "reason": "not run in this diagnostic-only implementation turn"
+      "name": "full solve_reports",
+      "reason": "runtime output; indexed via artifact_index.json"
     }
   ],
   "profile": "samplereverse",
-  "recommended_next_direction": "inspect the next artifacts containing prefix_boundary_diagnostics and exact2_basin_smt; only then decide whether to run a real bounded exact2 SMT pass",
   "relevant_files": [
     "reverse_agent/strategies/compare_aware_search.py",
-    "tests/test_compare_aware_search_strategy.py",
-    "project_state/codex_execution_report.md",
-    "project_state/current_state.json",
-    "project_state/task_packet.json"
+    "tests/test_compare_aware_search_strategy.py"
   ],
+  "rg_tooling": {
+    "status": "fixed",
+    "resolved_command": "C:\\Users\\wjc27\\AppData\\Local\\OpenAI\\Codex\\bin\\rg.exe",
+    "version": "ripgrep 15.0.0"
+  },
   "sample": "samplereverse",
   "sufficiency_check": {
     "has_artifact_refs": true,
     "has_current_best": true,
     "has_negative_results": true,
     "has_runtime_validation": true,
-    "has_stall_stage": true,
-    "has_diagnostic_metadata_plan": true,
-    "has_single_next_direction": true
+    "has_stall_stage": true
   },
-  "task": "run_or_audit_new_compare_aware_diagnostics_without_blind_search"
+  "task": "Generate next decision for real bounded exact2 basin SMT pass"
 }

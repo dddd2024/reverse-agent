@@ -701,6 +701,10 @@ def test_compare_aware_strategy_runs_refine_then_smt_and_uses_promoted_anchors(
     ]
     assert captured["smt_base"] == "78d540b49c590770"
     assert result.metadata["completed_stage"] == "smt"
+    assert result.metadata["smt"]["payload"]["exact2_basin_smt"]["base_anchor"] == "78d540b49c590770"
+    smt_payload = json.loads((tmp_path / "smt_result.json").read_text(encoding="utf-8"))
+    assert smt_payload["exact2_basin_smt"]["base_anchor"] == "78d540b49c590770"
+    assert smt_payload["exact2_basin_smt"]["prefix_boundary"]["ci_exact_wchars"] == 2
     assert any(artifact.tool_name == "CompareAwareSMT" for artifact in result.artifacts)
 
 
