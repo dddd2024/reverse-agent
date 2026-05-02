@@ -2482,3 +2482,48 @@ Reverse Agent 项目进展日志（截至 2026-04-16）
 - 不扩大 beam/budget/topN/timeout/iteration limit。
 - 不运行新 harness，除非先形成 exact2-source hypothesis 或发现小范围 source fix。
 
+## 2026-05-02 exact2 seed source quality audit
+
+1) 执行范围
+- 按计划审计 exact2 seed `78d540b49c590770` 的 source quality。
+- 本轮没有修改 strategy、profile、transform 或测试代码；没有运行新 harness。
+- 更新了 `project_state/codex_execution_report.md`、`project_state/current_state.json`、`project_state/task_packet.json`、`project_state/model_gate.json` 和本日志。
+
+2) 自动化验证
+- `python -m pytest -q tests/test_compare_aware_search_strategy.py -k "exact2 or frontier or pairscan"` -> `23 passed, 32 deselected`
+
+3) 关键审计结果
+- `78d540b49c590770` 是 `SamplereverseProfile` 传入的首位 profile seed anchor。
+- bridge pairscan 围绕该 anchor 运行所有 byte pairs，记录：
+  - `hot_positions = [0, 1]`
+  - 唯一 pairscan top/best 为 `78d540b49c59077041414141414141`
+  - runtime `compare_semantics_agree=true`
+  - `runtime_ci_exact_wchars=2`
+  - `runtime_ci_distance5=246`
+- seed-guided validation 中，未改变的 `78d540b49c590770` 保持 exact2 / distance5 246；周边 guided mutations 立即掉到 exact0。
+- frontier1 从 exact2 seed 产生 `5a3e7f46ddd474d0`，但只到 exact1 / distance5 258。
+- frontier2/projected preserve 二跳只恢复 known exact1 或产生 exact0；最佳新候选仍是 `5a3f7fc2ddd474d0`，exact0 / distance5 419。
+
+4) 代码路径核对
+- `run_compare_aware_bridge()` 没有丢弃更好的 pair/triad/quartet/quint candidate；artifact 中没有更优 source。
+- `_bridge_progress()` 正确没有把 exact2 / distance5 246 当作 early solved，因为只有 exact3+ 或 distance 小于 baseline 才会提前结束。
+- `_diverse_validation_candidates()` / `_frontier_anchor_candidates()` 保留 exact2/exact1/exact0 representatives；没有发现 lane 误分类。
+- `frontier_guided_2` 的 `profile_source_empty` 仍解释为 source quality 不足，不是 pair gate 漏收。
+
+5) 结论
+- 没有发现 exact2 seed source 的可修复问题。
+- 无代码修复建议。
+- 当前 best 未改善：
+  - exact2 仍为 `78d540b49c590770...`，`runtime_ci_exact_wchars=2`，`runtime_ci_distance5=246`
+  - exact1 仍为 `5a3e7f46ddd474d0...`，`runtime_ci_exact_wchars=1`，`runtime_ci_distance5=258`
+  - `5a3f7f46ddd474d0` 继续保持 downgraded，不作为 final/best。
+
+6) 下一轮默认方向
+- 审计 transform/profile boundary for exact2 basin：
+  - 以 `78d540b49c590770` 作为稳定 exact2 reference；
+  - 以 `5a3e7f46ddd474d0` 和 `5a3f7f46ddd474d0` 作为 exact1/projected preserve contrast cases；
+  - 解释为什么当前 compare-aware score 只能维持 `flag{` prefix shape，而无法推进到 exact3+。
+- 不扩大 beam/budget/topN/timeout/iteration limit。
+- 不回 blind search。
+- 不运行新 harness，除非先形成具体 transform/profile hypothesis 或小范围 source fix。
+

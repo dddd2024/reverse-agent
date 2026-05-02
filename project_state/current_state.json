@@ -29,7 +29,7 @@
       "compare_semantics_agree": true,
       "runtime_ci_distance5": 246,
       "runtime_ci_exact_wchars": 2,
-      "source": "pairscan"
+      "source": "profile_seed -> bridge_pairscan -> seed_guided -> final_refine"
     },
     "projected_preserve_second_hop": {
       "candidate_hex": "5a3f7f46ddd474d041414141414141",
@@ -42,11 +42,11 @@
   },
   "current_bottleneck": {
     "confidence": "high",
-    "reason": "candidate_quality_insufficient_after_projected_winner",
+    "reason": "candidate_quality_or_transform_profile_boundary_after_exact2_source_audit",
     "stage": "frontier_exact1"
   },
   "current_mainline": "L15(prefix8)",
-  "generated_at": "2026-05-02T10:10:00Z",
+  "generated_at": "2026-05-02T13:50:23Z",
   "known_transform": [
     "input",
     "UTF-16LE",
@@ -55,17 +55,17 @@
     "compare flag{ prefix"
   ],
   "latest_audit": {
-    "classification": "candidate_quality_insufficient_after_projected_winner",
+    "classification": "exact2_seed_source_quality_audited_no_source_bug",
     "code_fix_recommended": false,
     "harness_run": "samplereverse_second_hop_loop_fix_verify_20260502",
     "projected_preserve_status": "downgraded",
     "source_bug_found": false
   },
-  "next_local_action": "audit_exact2_seed_source_quality_without_blind_search",
+  "next_local_action": "audit_transform_profile_boundary_for_exact2_basin_without_blind_search",
   "profile": "samplereverse",
   "sample": "samplereverse",
   "uncertainty": [
-    "whether exact2 seed source lanes explain the remaining runtime exact2 advantage",
-    "whether transform/profile boundary audit is needed after exact2 source audit"
+    "whether the transform/profile scoring boundary explains why the exact2 basin cannot progress beyond flag{ prefix shape",
+    "whether a small sample-specific profile hypothesis exists before any new harness run"
   ]
 }

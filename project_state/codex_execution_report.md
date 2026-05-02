@@ -2,9 +2,9 @@
 
 ## Summary
 
-本轮按计划完成 second-hop candidate source / projection hypothesis 审计。没有修改 strategy 或测试代码，没有重复运行 harness。
+本轮按计划完成 exact2 seed `78d540b49c590770` 的 source quality 审计。没有修改 strategy、profile、transform 或测试代码；没有运行新 harness。
 
-结论：`frontier_guided_2_5a3f7f46ddd474d0` 的二跳候选源没有发现非预算型 source bug。`profile_source_empty` 不是 pair gate 漏收，而是当前 bad anchor 的 preserve 邻域已经回落到已知 exact1，escape lane 没有可用 profile escape entries。projected values 确实生成并进入 pair/triad pool，但 validated 结果仍只产生已知 exact1 或更差 exact0。因此 `5a3f7f46ddd474d0` 应降级为“已验证但无收益”的局部方向，下一轮单一推荐方向是：回到 exact2 seed `78d540b49c590770` 做候选源审计，不回 blind search。
+结论：`78d540b49c590770` 没有发现可修复的 source metadata 丢失、lane 误分类或 compare-agree 候选被错误排除。它是 profile 传入的首位 seed anchor，并被 bridge/pairscan、seed-guided validation、frontier refine 一致保留为当前 best exact2。后续 guided/frontier 变体一旦偏离该 anchor，质量会快速退化到 exact1/exact0。因此当前卡点仍是候选质量/假设边界，不是 gate、loop、validation ordering 或 artifact emission。
 
 ## Pre-Audit Checks
 
@@ -12,75 +12,57 @@
 |---|---|
 | initial git status | clean |
 | latest indexed run | `samplereverse_second_hop_loop_fix_verify_20260502` |
-| latest guided artifact | `frontier_guided_2_5a3f7f46ddd474d0` present |
-| current bottleneck | `frontier_exact1 / candidate_quality_insufficient_after_projected_winner` |
-| previous gate/drop audit | no pair gate, refine selection, or final selection bug found |
+| latest harness summary | `error_cases=0`, `candidate_quality=1.0`, `evidence_coverage=1.0` |
+| current best exact2 | `78d540b49c59077041414141414141`, runtime exact2 / distance5 246 |
+| projected preserve status | `5a3f7f46ddd474d0` downgraded, runtime exact0 / distance5 740 |
 
-## Source Quality Summary
+## Exact2 Source Quality Table
 
-| source | generated count | validated count | compare-agree count | best exact | best distance5 | dominant failure reason | conclusion |
-|---|---:|---:|---:|---:|---:|---|---|
-| `top_entries` | 16 | 8 | 8 | 1 | 258 | best is existing exact1 | no improvement over known exact1/exact2 |
-| `validation_candidates` | 8 | 8 | 8 | 1 | 258 | validated set has no better candidate | sufficient negative evidence |
-| `pair_frontier_pool` | 8 | 1 | 1 | 1 | 258 | only validated agree candidate is `5a3e7f46ddd474d0` | pair source collapses to known exact1 |
-| `triad_frontier_pool` | 8 | 6 | 6 | 0 | 419 | triads are compare-agree but runtime exact0 | quality insufficient, not gate loss |
-| `pair_escape_source` | 0 effective entries | 0 | 0 | n/a | n/a | `profile_source_empty`; no local/hard escape entries reached gate | no source to repair without changing hypothesis |
-| projected value source | 24 projected values generated; 6 reached pair pool | validated through pair/triad/top entries | compare-agree validations only | 0 for new values | 419 | 14 distance-explosive, 5 local-compatible ranked out, 6 reached pool but did not improve | ranking behaved as designed; no better source was ranked out |
+| stage | candidate | role / lane | runtime exact | distance5 | source implication |
+|---|---|---|---:|---:|---|
+| profile seed | `78d540b49c590770` | first configured anchor | n/a | n/a | intentional bounded seed, not discovered by blind expansion this run |
+| bridge pairscan | `78d540b49c590770` | `pairscan`, positions `0,1` | exact2 | 246 | pairscan agrees with base anchor and finds no better pair/triad/quartet/quint candidate |
+| bridge validation | `78d540b49c590770` | top1 | exact2 | 246 | offline and runtime metrics agree; compare semantics agree |
+| seed guided validation | `78d540b49c590770` | `exact2_seed`, source `78d...` | exact2 | 246 | base anchor survives guided pool unchanged; nearby guided mutations drop to exact0 |
+| frontier1 guided | `5a3e7f46ddd474d0` | `exact1_frontier`, source `78d...` | exact1 | 258 | best frontier output improves local shape but loses one exact wchar versus exact2 seed |
+| frontier2 guided | `5a3e7f46ddd474d0` | second-hop output from projected preserve | exact1 | 258 | second-hop mostly recovers known exact1; new variants remain exact0 |
+| final refine2 | `78d540b49c590770` | retained global best | exact2 | 246 | refine keeps exact2 seed above all exact1/exact0 alternatives |
 
-Important projection details:
+## Exact2 vs Projected Preserve
 
-- Projected winners were selected for pairs `0,1`, `0,2`, and `0,3`; examples include value `92` at position `0`, value `62` at position `1`, and value `128` at position `2`.
-- `projected_generated_but_distance_explosive` is supported by single-byte quality scoring; it is not just a diagnostic label.
-- Values that reached pair pool still failed runtime quality: best new compare-agree triad was `5a3f7fc2ddd474d0`, exact0 / distance5 419.
-- `pair_escape_source_values` contains far lineage/source-anchor values, but `_exact1_neighbor_value_maps()` only projects local-compatible values into bounded escape maps; the remaining far values are intentionally recorded as too far, not silently discarded.
-
-## Source Transition Comparison
-
-| candidate | role | source path | exact | distance5 | source implication | keep / downgrade / investigate |
-|---|---|---|---:|---:|---|---|
-| `78d540b49c590770` | exact2 best | pairscan / bridge / final refine | 2 | 246 | strongest runtime-consistent candidate; bridge and pairscan both point here | keep and investigate as next source anchor |
-| `5a3e7f46ddd474d0` | exact1 frontier | exact2 seed -> refine -> guided frontier; reappears in second-hop | 1 | 258 | best second-hop output is just known exact1 recovery | keep as reference, not a new direction |
-| `5a3f7f46ddd474d0` | projected preserve handoff / second-hop anchor | exact1 projected preserve lane | 0 | 740 | anchor executed but starts from a runtime-regressed point | downgrade |
-| `5a3f7fc2ddd474d0` | best new second-hop triad | second-hop triad from projected/preserve pool | 0 | 419 | new source improves over bad anchor but not over exact1/exact2 | do not promote |
-| `343f7f46ddd474d0` | guided_pool exact0 | second-hop guided/top entry | 0 | 428 | broad guided mutation remains below exact1 | do not promote |
+| candidate | source path | best validated result | interpretation |
+|---|---|---|---|
+| `78d540b49c590770` | profile seed -> bridge pairscan -> seed guided -> refine | exact2 / distance5 246 | stable local basin; any useful next work must explain this basin rather than mutate around exact1 blindly |
+| `5a3e7f46ddd474d0` | exact2 seed -> guided frontier | exact1 / distance5 258 | useful reference frontier, but not a better source than exact2 |
+| `5a3f7f46ddd474d0` | projected preserve handoff -> second-hop guided | exact0 / distance5 740 as anchor; best second-hop recovery exact1 / 258 | projected preserve is locally unproductive and should stay downgraded |
+| `5a3f7fc2ddd474d0` | second-hop triad | exact0 / distance5 419 | best new second-hop value, still below exact1/exact2 |
 
 ## Source And Code Audit
 
-- `_exact1_neighbor_value_maps()` creates preserve neighbors, local escape neighbors, and bounded projected local values. The artifact shows these were generated and recorded; there is no evidence of missing metadata or a dropped compare-agree winner.
-- `_diverse_pair_frontier_pool()` reports `profile_source_empty` when `pair_profile_escape_entries` is empty. In this run, preserve entries exist and the best preserve entry is the known exact1 `5a3e7f46ddd474d0`; no effective escape entries survive as profile candidates.
-- `_triad_frontier_pool()` composes triads from the pair pool and position profiles. It produced 8 candidates, 6 validated compare-agree, all exact0. The best new candidate was distance5 419.
-- `frontier_refine_2` retained exact2 `78d540b49c590770` and exact1 `5a3e7f46ddd474d0`; no higher-quality second-hop candidate was available.
-- No code fix is recommended. There is no evidence that a legal compare-agree source was misclassified, prematurely ranked out, or excluded from second-hop pool.
+- `SamplereverseProfile` passes `78d540b49c590770` as the first configured anchor. This is expected sample-specific profile state, not a generic strategy bug.
+- `run_compare_aware_bridge()` evaluates all byte pairs around the base anchor, records `hot_positions=[0,1]`, and validates the single pairscan winner. It does not discard a better bridge candidate; triad/quartet/quint stages had no higher-quality candidate in the artifact.
+- `_bridge_progress()` correctly does not treat exact2 / distance5 246 as solved, because it only stops early on runtime exact3+ or distance below the baseline. This preserves the exact2 seed while still allowing downstream frontier/refine work.
+- `_diverse_validation_candidates()` and `_frontier_anchor_candidates()` keep exact2/exact1/exact0 representatives. Existing tests cover this representative selection; no lane classification bug was found.
+- `frontier_guided_1` had real local escape candidates and kept exact1. `frontier_guided_2` reports `profile_source_empty` for escape lanes and only recovers exact1 through preserve behavior, so the second-hop failure is source quality, not gate loss.
 
-## Hypothesis Ranking
+## Classification
 
-| hypothesis | evidence for | evidence against | expected next evidence | risk | recommendation |
-|---|---|---|---|---|---|
-| continue projected preserve source with source-quality fix | projected values are generated and some reach pool | validated outputs are exact1 fallback or exact0; no source bug found | would need a specific misclassified source, currently absent | high chance of repeating local noise | do not continue now |
-| return to exact2 seed source audit, without blind search | exact2 `78d540b49c590770` remains best runtime candidate and bridge/pairscan agree | previous exact1 frontier work has not improved it | source-quality table around exact2 seed, especially positions/pair sources that led to exact2 | low; bounded and evidence-driven | recommended next |
-| profile escape source definition insufficient | second-hop reports `profile_source_empty` for `0,1`, `0,2`, `0,3` | source values exist but are far/projected; no local/hard escape candidate shows runtime promise | compare exact2 source profile against exact1/projected preserve source profile | medium; could become profile-specific | investigate only through exact2 seed audit |
-| transform/profile boundary assumption needs audit | projected preserve collapses despite compare-agree semantics | current known transform still agrees at compare/runtime level | boundary audit only if exact2 source audit cannot explain candidate quality | medium; broader blast radius | defer |
-| candidate quality insufficient and no code change should be made | all second-hop validations agree but fail to beat exact1/exact2 | none | updated state and next action | low | accepted classification |
+Classification: `exact2_seed_source_quality_audited_no_source_bug`.
+
+No code fix is recommended. The evidence supports “candidate quality / transform-profile hypothesis boundary” rather than an implementation defect in pairscan, bridge validation, frontier selection, or second-hop emission.
 
 ## Commands
 
 | command | result |
 |---|---|
-| `python -m pytest -q tests/test_compare_aware_search_strategy.py -k "second_hop_composition or validated_projected_preserve_handoff or second_frontier_guided_round"` | `5 passed, 50 deselected` |
-| `python -m pytest -q tests/test_compare_aware_search_strategy.py` | `55 passed` |
+| `python -m pytest -q tests/test_compare_aware_search_strategy.py -k "exact2 or frontier or pairscan"` | `23 passed, 32 deselected` |
 
 No full harness was run, per plan.
 
-## Classification And Next Step
-
-Classification: `candidate_quality_insufficient_after_projected_winner`.
-
-Projected preserve status: downgraded to a validated but locally unproductive direction.
+## Next Step
 
 Next default direction:
 
-- Audit exact2 seed source quality for `78d540b49c590770`, using existing bridge/pairscan/frontier artifacts first.
-- Compare exact2 seed source lanes against the projected preserve lane to identify why exact2 preserves runtime exact2 while projected preserve collapses.
-- Do not expand beam, budget, topN, timeout, or frontier iteration limit.
-- Do not return to blind search.
-- Do not run a new harness until an exact2-source hypothesis or small source fix is identified.
+- Audit the transform/profile boundary for the exact2 basin, using `78d540b49c590770` as the stable reference and `5a3e7f46ddd474d0` / `5a3f7f46ddd474d0` as contrast cases.
+- Focus on why the current compare-aware score preserves only the `flag{` prefix shape but cannot progress beyond exact2, rather than expanding search budgets.
+- Do not promote `5a3f7f46ddd474d0`; do not return to blind search; do not run a new harness until a concrete transform/profile hypothesis or small source fix is identified.

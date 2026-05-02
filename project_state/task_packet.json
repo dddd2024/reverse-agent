@@ -25,12 +25,12 @@
       "compare_semantics_agree": true,
       "runtime_ci_distance5": 246,
       "runtime_ci_exact_wchars": 2,
-      "source": "pairscan"
+      "source": "profile_seed -> bridge_pairscan -> seed_guided -> final_refine"
     }
   },
   "current_bottleneck": {
     "confidence": "high",
-    "reason": "candidate_quality_insufficient_after_projected_winner",
+    "reason": "candidate_quality_or_transform_profile_boundary_after_exact2_source_audit",
     "stage": "frontier_exact1"
   },
   "do_not_do": [
@@ -40,14 +40,14 @@
     "do not commit full solve_reports directory",
     "do not continue projected preserve source by expanding budget",
     "do not promote 5a3f7f46ddd474d0 to final or best",
-    "do not rerun the same second-hop loop-fix harness before forming a new exact2-source hypothesis"
+    "do not rerun the same second-hop loop-fix harness before forming a transform/profile hypothesis or small source fix"
   ],
   "expected_gpt_output": "project_state/decision_packet.md",
-  "generated_at": "2026-05-02T10:10:00Z",
+  "generated_at": "2026-05-02T13:50:23Z",
   "included": [
     "current state",
     "best candidates",
-    "candidate source audit result",
+    "exact2 source quality audit result",
     "projected preserve downgrade",
     "next recommended action",
     "artifact references"
@@ -55,22 +55,22 @@
   "latest_audit_result": {
     "code_fix_recommended": false,
     "key_findings": [
-      "frontier_guided_2 generated 16 top entries, 8 validation candidates, 8 pair entries, and 8 triad entries",
-      "all 8 validated candidates were compare-agree",
-      "only 5a3e7f46ddd474d0 retained exact1; all new second-hop candidates were exact0",
-      "best new second-hop candidate was 5a3f7fc2ddd474d0 with distance5 419",
-      "pair_escape_source_statuses were profile_source_empty because no effective profile escape entries reached gate",
-      "no legal compare-agree better source was misclassified, ranked out, or omitted"
+      "78d540b49c590770 is the profile first seed anchor and remains the best exact2 candidate across bridge, seed-guided validation, and final refine",
+      "bridge pairscan records hot_positions 0,1 and validates only 78d540b49c590770 as exact2 distance5 246",
+      "seed-guided mutations around 78d540b49c590770 drop to exact0, while the unchanged base anchor stays exact2",
+      "frontier1 recovers exact1 5a3e7f46ddd474d0 distance5 258 but does not improve exact2",
+      "frontier2/projected preserve mostly recovers the same exact1 or exact0 variants; no legal better compare-agree source was omitted",
+      "no source metadata loss, lane misclassification, or validation candidate exclusion was found"
     ],
     "projected_preserve_status": "downgraded_validated_no_runtime_gain",
     "source_bug_found": false
   },
   "model_gate": {
     "context_level": 2,
-    "reason": "exact2_seed_source_audit_needs_next_decision_packet",
+    "reason": "exact2 seed source audit found no source bug; next decision needs transform/profile boundary hypothesis",
     "should_call_model": true
   },
-  "next_local_action": "audit_exact2_seed_source_quality_without_blind_search",
+  "next_local_action": "audit_transform_profile_boundary_for_exact2_basin_without_blind_search",
   "omitted": [
     {
       "name": "full solve_reports",
@@ -82,10 +82,11 @@
     }
   ],
   "profile": "samplereverse",
-  "recommended_next_direction": "audit exact2 seed source quality for 78d540b49c590770 without blind search",
+  "recommended_next_direction": "audit transform/profile boundary for the exact2 basin using 78d540b49c590770 as stable reference, without blind search or budget expansion",
   "relevant_files": [
     "reverse_agent/strategies/compare_aware_search.py",
-    "tests/test_compare_aware_search_strategy.py",
+    "reverse_agent/profiles/samplereverse.py",
+    "reverse_agent/transforms/samplereverse.py",
     "project_state/codex_execution_report.md",
     "project_state/current_state.json",
     "project_state/task_packet.json"
@@ -100,5 +101,5 @@
     "has_candidate_source_hypothesis": true,
     "has_single_next_direction": true
   },
-  "task": "audit_exact2_seed_source_quality_without_blind_search"
+  "task": "audit_transform_profile_boundary_for_exact2_basin_without_blind_search"
 }

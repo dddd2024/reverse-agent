@@ -1,9 +1,9 @@
 {
   "context_level": 2,
-  "generated_at": "2026-05-02T10:10:00Z",
+  "generated_at": "2026-05-02T13:50:23Z",
   "missing_evidence": [],
-  "next_local_action": "audit_exact2_seed_source_quality_without_blind_search",
-  "reason": "projected preserve source was downgraded after candidate-source audit; exact2 seed source audit is the next bounded direction",
+  "next_local_action": "audit_transform_profile_boundary_for_exact2_basin_without_blind_search",
+  "reason": "exact2 seed source audit found no source metadata bug or lane classification bug; next bounded direction is transform/profile boundary hypothesis",
   "recommended_packet": "project_state/task_packet.json",
   "should_call_model": true
 }
