@@ -2403,3 +2403,42 @@ Reverse Agent 项目进展日志（截至 2026-04-16）
   - 重点看 `pair_gate_after_projected_winner` 和二跳 candidate quality；
   - 不扩大 beam/budget/topN/timeout，不回到 blind search。
 
+## 2026-05-02 second-hop pair/pool quality audit
+
+1) 执行范围
+- 按计划审计 `frontier_guided_2_5a3f7f46ddd474d0` 的二跳 pair/pool 输出。
+- 本轮没有修改 strategy 或测试代码；没有重复运行 harness。
+- 更新了 `project_state/codex_execution_report.md` 和 compact state。
+
+2) 自动化验证
+- `python -m pytest -q tests/test_compare_aware_search_strategy.py -k "second_hop_composition or validated_projected_preserve_handoff or second_frontier_guided_round"` -> `5 passed, 50 deselected`
+- `python -m pytest -q tests/test_compare_aware_search_strategy.py` -> `55 passed`
+
+3) 关键审计结果
+- 二跳 guided pool:
+  - `top_entries = 16`
+  - `validation_candidates = 8`
+  - `pair_frontier_pool = 8`
+  - `triad_frontier_pool = 8`
+- 二跳 validation:
+  - `compare_semantics_agree=true` 为 8 个；
+  - `compare_semantics_agree=false` 为 0 个；
+  - 只有 `5a3e7f46ddd474d0` 保持 exact1，`runtime_ci_distance5=258`；
+  - 其余 7 个都是 exact0，最佳 distance5 为 419。
+- 未发现任何未验证或被过滤的候选优于 existing exact1 `5a3e7f46ddd474d0`。
+- `pair_gate_kept_escape = 0`、`pair_gate_failed_escape = 0`、`pair_drop_reasons = {}`：
+  - 这不是 gate 错误丢弃候选；
+  - 二跳 escape source 状态是 `profile_source_empty`，没有 local/hard escape candidate 到达 gate。
+- `frontier_refine_2` 继续保留：
+  - exact2 best `78d540b49c590770...`，`runtime_ci_exact_wchars=2`，`runtime_ci_distance5=246`
+  - exact1 best `5a3e7f46ddd474d0...`，`runtime_ci_exact_wchars=1`，`runtime_ci_distance5=258`
+
+4) 结论
+- 当前瓶颈从疑似 `pair_gate_after_projected_winner` 收敛为：
+  - `candidate_quality_insufficient_after_projected_winner`
+- 不应修改 pair gate/refine selection。
+- 不应扩大 beam/budget/topN/timeout/iteration limit。
+- 下一轮默认方向：
+  - 单独决策 second-hop candidate source / projection hypothesis；
+  - 或审计 transform/profile 假设，解释为什么 projected preserve 二跳退化为 exact1 邻域噪声。
+

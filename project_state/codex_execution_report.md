@@ -2,33 +2,63 @@
 
 ## Summary
 
-本轮按计划修复 frontier second-hop loop stop condition。根因确认：`_frontier_continuation_candidates()` 已经把 `5a3f7f46ddd474d0` 作为 `validated_projected_preserve_second_hop` 返回 `"continue"`，但主循环随后在“无 improved frontier candidate”时把 `"continue"` 覆盖回 `"distance_not_improved"`，导致记录了 continuation，却没有实际进入第二轮 guided run。
+本轮按计划完成 second-hop pair/pool quality 审计，没有修改 strategy 代码，也没有重复运行 harness。
 
-本轮做了最小通用修复：当 `used_second_hop=True` 时保留 `"continue"`，不再把它归一化为 `distance_not_improved`。没有扩大 `FRONTIER_MAX_ITERATIONS`、beam、budget、topN、timeout；没有改变 candidate generation、metadata gate、model path、GUI、pipeline 或 harness 总控。
+结论：`frontier_guided_2_5a3f7f46ddd474d0` 已真实执行，但二跳 pool 没有产生任何优于现有 exact1 `5a3e7f46ddd474d0` 或 exact2 best `78d540b49c590770` 的候选。未发现 compare-agree 且 runtime 更优的候选被 pair gate、refine selection 或 final best selection 错误丢弃。因此本轮不应修 `compare_aware_search.py`，瓶颈应从疑似 `pair_gate_after_projected_winner` 收敛为 `candidate_quality_insufficient_after_projected_winner`。
 
-真实 harness 已验证修复生效：新 run 生成了 `frontier_guided_2_5a3f7f46ddd474d0`，第二轮 role 为 `validated_projected_preserve_second_hop`。二跳执行后仍未改善 runtime best，下一轮瓶颈应转为 second-hop candidate quality / pair gate after projected winner。
+## Pre-Audit Checks
 
-## Files Changed
+| check | result |
+|---|---|
+| initial git status | clean |
+| latest indexed run | `samplereverse_second_hop_loop_fix_verify_20260502` |
+| `frontier_guided_2_5a3f7f46ddd474d0` indexed | yes |
+| `frontier_refine_2` indexed | yes |
+| prior bottleneck | `frontier_exact1 / pair_gate_after_projected_winner` |
 
-- `reverse_agent/strategies/compare_aware_search.py`
-- `tests/test_compare_aware_search_strategy.py`
-- `project_state/codex_execution_report.md`
-- `project_state/artifact_index.json`
-- `project_state/current_state.json`
-- `project_state/model_gate.json`
-- `project_state/task_packet.json`
-- `PROJECT_PROGRESS_LOG.txt`
+## Second-Hop Pool Summary
 
-## Implementation
+| source/role | count | compare agree count | validated count | best runtime exact | best distance5 | conclusion |
+|---|---:|---:|---:|---:|---:|---|
+| `top_entries` / `validated_projected_preserve_second_hop` | 16 | 8 validated agree | 8 | 1 | 258 | best is existing `5a3e7f46ddd474d0`, no improvement |
+| `validation_candidates` / `validated_projected_preserve_second_hop` | 8 | 8 | 8 | 1 | 258 | all compare-agree, none beats exact1 or exact2 |
+| `pair_frontier_pool` / preserve neighbors | 8 | 1 validated agree | 1 | 1 | 258 | only validated entry is existing exact1 |
+| `triad_frontier_pool` / generated triads | 8 | 6 validated agree | 6 | 0 | 419 | all are worse than exact1 |
 
-- 在 frontier loop 中保留 second-hop continuation 的 `"continue"` 状态：
-  - 修复前：无 improved candidate 时会把 `"continue"` 改回 `"distance_not_improved"`。
-  - 修复后：只有非 second-hop continuation 才执行该归一化。
-- 新增 strategy-level 回归测试：
-  - 第一轮 frontier 无 runtime improvement；
-  - 生成 metadata-gated `validated_projected_preserve_second_hop` continuation；
-  - 断言第二轮 guided pool 以 `5a3f7f46ddd474d0` 为 anchor 运行；
-  - 断言第一轮 `used_second_hop_frontier_candidates=true` 且 `frontier_converged_reason=continue`。
+Validation distribution for second-hop: 8 compare-agree, 0 compare-disagree. Runtime exact counts: one exact1 candidate at distance5 258, seven exact0 candidates at distance5 419, 428, 432, 452, 480, 486, and 529.
+
+## Pair Gate Diagnosis
+
+| gate/checkpoint | evidence source | pass count | reject/drop count | main reject reason | candidate examples |
+|---|---|---:|---:|---|---|
+| second-hop pair escape gate | guided pool `pair_gate_kept_escape`, `pair_gate_failed_escape` | 0 | 0 | no local/hard escape candidates reached the gate | none |
+| pair escape source status | guided pool `pair_escape_source_statuses` | 0 | 3 pair lanes | `profile_source_empty` for `0,1`, `0,2`, `0,3` | no escape candidates emitted |
+| projected source filtering | guided pool `pair_escape_source_reject_reasons` | 4 projected values reached pair pool, others ranked out or distance explosive | multiple projected values | ranked out or `projected_generated_but_distance_explosive` | values like `88`, `91`, `125`, `126`, `68`, `72` |
+| selected pair set | guided pool `pair_set_comparison_summary` | primary selected | alternate not selected | both sets had 0 gate-kept, 0 near, 0 wide, 0 borderline escape candidates | primary pairs `0,1`, `0,2`, `0,3` |
+| refine selection | `frontier_refine_2` result | exact2 and exact1 retained | no better second-hop candidate found | no compare-agree better candidate available to select | `78d540...` remains exact2 best |
+
+This is not a gate/drop bug. The second-hop pair stage produced preserve-neighbor and triad candidates, but no escape lane candidate reached the pair gate. The best generated/validated candidate was the already-known exact1 `5a3e7f46ddd474d0`.
+
+## Candidate Comparison
+
+| candidate | source stage | role | compare agree | runtime exact | distance5 | selected for refine? | reason |
+|---|---|---|---:|---:|---:|---:|---|
+| `78d540b49c590770` | pairscan / final refine | `best_overall` | true | 2 | 246 | yes | retained as exact2 best and selected candidate |
+| `5a3e7f46ddd474d0` | frontier guided 1, second-hop validation, `frontier_refine_2` | `exact1_frontier` | true | 1 | 258 | yes | remains best exact1, reappears as second-hop best |
+| `5a3f7f46ddd474d0` | projected preserve handoff anchor | `validated_projected_preserve_second_hop` | true in prior validation | 0 | 740 | anchor only | used to launch second-hop, not present as improved output |
+| `5a3f7fc2ddd474d0` | second-hop triad/top entry | `validated_projected_preserve_second_hop` | true | 0 | 419 | validation only | best new exact0, still worse than exact1 |
+| `343f7f46ddd474d0` | second-hop triad/top entry | `validated_projected_preserve_second_hop` | true | 0 | 428 | validation only | worse than exact1 |
+
+No unvalidated `top_entries`, `pair_frontier_pool`, or `triad_frontier_pool` candidate beats exact1. No second-hop candidate beats exact2.
+
+## Code Audit
+
+Reviewed the narrow strategy path only:
+
+- `_validated_projected_preserve_second_hop_candidates()` keeps the metadata-gated, compare-agree handoff rule and does not admit compare-disagree candidates.
+- `_frontier_continuation_candidates()` correctly allows second-hop continuation only when the first frontier converges with `distance_not_improved` and iteration budget remains.
+- The pair pool path records `pair_stage_stats`, `pair_drop_reasons`, escape lane diagnostics, and pair-set comparison data. In this run, `pair_drop_reasons` is empty because no gate candidate was produced, not because a candidate was dropped.
+- `frontier_refine_2` retained `78d540b49c590770` and `5a3e7f46ddd474d0`; no higher-quality second-hop candidate was available for selection.
 
 ## Commands
 
@@ -36,44 +66,16 @@
 |---|---|
 | `python -m pytest -q tests/test_compare_aware_search_strategy.py -k "second_hop_composition or validated_projected_preserve_handoff or second_frontier_guided_round"` | `5 passed, 50 deselected` |
 | `python -m pytest -q tests/test_compare_aware_search_strategy.py` | `55 passed` |
-| `python -m pytest -q` | `137 passed` |
-| `python -m reverse_agent.harness --dataset .\samplereverse_exact1_projected_vs_neighbor_20260424.json --run-name samplereverse_second_hop_loop_fix_verify_20260502 --reports-dir solve_reports --analysis-mode "Auto" --model-type "Copilot CLI" --copilot-timeout-seconds 300 --ctf-skill-profile compact --case-id samplereverse-exact1-projected-vs-neighbor --no-resume` | completed, `error_cases=0`, no Copilot quota `402` |
-| `python -m reverse_agent.project_state build --reports-dir solve_reports --sample samplereverse --run-name samplereverse_second_hop_loop_fix_verify_20260502` | completed |
-| `python -m reverse_agent.project_state status` | latest run indexed, `missing=[]` |
 
-## Harness Result
+No full harness was run, per plan.
 
-- Run: `solve_reports\harness_runs\samplereverse_second_hop_loop_fix_verify_20260502`
-- Summary: `executed_cases=1`, `completed_without_expected=1`, `error_cases=0`, `candidate_quality=1.0`, `evidence_coverage=1.0`
-- Case result: `status=completed_no_expected`
-- Selected flag/candidate: `78d540b49c59077041414141414141`
-- Copilot quota: 本轮没有出现 `402 You have no quota`
-- Artifacts: complete; `project_state/artifact_index.json` rebuilt with `missing=[]`
+## Classification And Next Step
 
-## Artifact Answers
+Classification: `candidate_quality_insufficient_after_projected_winner`.
 
-| question | answer |
-|---|---|
-| 是否出现 `frontier_guided_2_5a3f7f46ddd474d0` | 是 |
-| `frontier_guided_runs` 数量 | 2 |
-| 第二轮 anchor | `5a3f7f46ddd474d0` |
-| 第二轮 role | `validated_projected_preserve_second_hop` |
-| 第一轮是否记录 used second-hop | 是，`used_second_hop_frontier_candidates=true` |
-| 第一轮 converge reason | `continue` |
-| 总体 converge reason | `iteration_limit` |
-| exact2 best 是否保留 | 是，最终 selected candidate 仍为 `78d540b49c59077041414141414141` |
-| 二跳后 best 是否改善 | 否；exact1 仍为 `5a3e7f46ddd474d0`，exact2 仍为 `78d540b49c590770` |
+Next default direction:
 
-## Candidate Table
-
-| candidate | source stage | frontier role | compare agree | runtime exact | distance5 | second-hop eligible | actually used in second-hop | result |
-|---|---|---|---:|---:|---:|---:|---:|---|
-| `78d540b49c590770` | pairscan / guided pool / final validation | `exact2_seed` / `best_overall` | true | 2 | 246 | no | no | retained as best overall / selected candidate |
-| `5a3e7f46ddd474d0` | frontier guided iteration 1 and second-hop validation result | `exact1_frontier` / second-hop validation entry | true | 1 | 258 | no | no | remains best exact1 frontier |
-| `5a3f7f46ddd474d0` | projected preserve handoff -> second-hop guided anchor | `validated_projected_preserve_second_hop` | true | 0 | 740 | yes | yes | second-hop artifact emitted, but no runtime gain |
-
-## Classification
-
-本轮修复成功解决了 frontier loop stop condition / artifact emission 问题：second-hop continuation 现在能实际进入第二轮 guided run。
-
-新的瓶颈不是 plumbing，而是候选质量：`5a3f7f46ddd474d0` 触发二跳后，第二轮 guided/refine 没有产生优于 `5a3e7f46ddd474d0` 或 exact2 best 的候选。下一轮默认方向应分析 `frontier_guided_2_5a3f7f46ddd474d0` 的 pair/pool 输出，重点看 projected winner 后的 pair gate / candidate quality，不要扩大 beam/budget，也不要回到 blind search。
+- Do not modify pair gate or refine selection based on this audit.
+- Do not expand beam, budget, topN, timeout, or frontier iteration limit.
+- Do not return to blind search.
+- Next useful work is a separate decision on candidate-source quality: either improve the second-hop value source/projection hypothesis, or audit the transform/profile assumptions that make projected preserve candidates collapse back to exact1 noise.

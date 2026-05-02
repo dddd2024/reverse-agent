@@ -52,8 +52,8 @@
     }
   },
   "current_bottleneck": {
-    "confidence": "medium",
-    "reason": "pair_gate_after_projected_winner",
+    "confidence": "high",
+    "reason": "candidate_quality_insufficient_after_projected_winner",
     "stage": "frontier_exact1"
   },
   "do_not_do": [
@@ -77,16 +77,11 @@
   ],
   "model_gate": {
     "context_level": 2,
-    "reason": "pair_gate_after_projected_winner",
+    "reason": "candidate_quality_insufficient_after_projected_winner",
     "should_call_model": true
   },
-  "missing_evidence": [
-    "second-hop pool role/source distribution",
-    "second-hop compare-agree versus compare-disagree candidate distribution",
-    "precise pair gate rejection/drop reasons after projected winner",
-    "whether a compare-agree better candidate was incorrectly filtered before refine/final validation"
-  ],
-  "next_local_action": "audit_frontier_guided_2_pair_pool_quality_and_pair_gate_after_projected_winner",
+  "missing_evidence": [],
+  "next_local_action": "decide_second_hop_candidate_source_or_transform_hypothesis",
   "omitted": [
     {
       "name": "full PROJECT_PROGRESS_LOG.txt",
@@ -98,7 +93,7 @@
     }
   ],
   "profile": "samplereverse",
-  "reason": "frontier_guided_2 was emitted after loop fix, but second-hop produced no runtime improvement over exact1/exact2 best",
+  "reason": "second-hop pool audit found no compare-agree runtime-better candidate and no pair gate/refine drop bug; current bottleneck is candidate quality",
   "relevant_files": [
     "reverse_agent/strategies/compare_aware_search.py",
     "tests/test_compare_aware_search_strategy.py",
@@ -113,7 +108,7 @@
     "has_runtime_validation": true,
     "has_stall_stage": true,
     "has_frontier_guided_2_artifact": true,
-    "has_second_hop_quality_diagnosis": false
+    "has_second_hop_quality_diagnosis": true
   },
-  "task": "audit_second_hop_pair_pool_quality_and_pair_gate_after_projected_winner"
+  "task": "decide_second_hop_candidate_source_or_transform_hypothesis"
 }

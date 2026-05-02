@@ -2,8 +2,8 @@
   "context_level": 2,
   "generated_at": "2026-05-02T08:10:44Z",
   "missing_evidence": [],
-  "next_local_action": "",
-  "reason": "pair_gate_after_projected_winner",
+  "next_local_action": "decide_second_hop_candidate_source_or_transform_hypothesis",
+  "reason": "candidate_quality_insufficient_after_projected_winner",
   "recommended_packet": "project_state/task_packet.json",
   "should_call_model": true
 }

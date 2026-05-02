@@ -52,8 +52,8 @@
     }
   },
   "current_bottleneck": {
-    "confidence": "medium",
-    "reason": "pair_gate_after_projected_winner",
+    "confidence": "high",
+    "reason": "candidate_quality_insufficient_after_projected_winner",
     "stage": "frontier_exact1"
   },
   "current_mainline": "L15(prefix8)",
