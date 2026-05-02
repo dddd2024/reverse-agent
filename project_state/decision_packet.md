@@ -2,23 +2,30 @@
 
 ## 1. Goal
 
-本轮目标是审计 **second-hop candidate quality / pair gate after projected winner**。
+本轮目标是审计 **second-hop candidate source / projection hypothesis**。
 
-上一轮已经完成并验证：
-
-```text
-frontier loop stop condition 已修复
-frontier_guided_2_5a3f7f46ddd474d0 已真实生成
-role = validated_projected_preserve_second_hop
-```
-
-因此本轮不要继续查 loop plumbing，也不要继续查 artifact emission。当前要回答的新问题是：
+上一轮已经完成 pair/pool quality 审计，结论是：
 
 ```text
-为什么 5a3f7f46ddd474d0 作为 second-hop anchor 进入 frontier_guided_2 后，仍然没有产生优于 5a3e7f46ddd474d0 或 exact2 best 78d540b49c590770 的候选？
+frontier_guided_2_5a3f7f46ddd474d0 已真实执行；
+second-hop pool 没有产生任何优于 exact1 5a3e7f46ddd474d0 或 exact2 best 78d540b49c590770 的 compare-agree 候选；
+没有发现 compare-agree 且 runtime 更优的候选被 pair gate、refine selection 或 final best selection 错误丢弃。
 ```
 
-本轮默认是审计任务，不直接改代码。只有在 artifacts 和代码共同证明存在明确的小断点时，才允许最小修复。
+因此本轮不要继续修 pair gate，也不要继续查 loop plumbing。当前要回答的问题是：
+
+```text
+为什么 projected preserve second-hop anchor 5a3f7f46ddd474d0 只能产生回落到已知 exact1 或更差 exact0 的候选？
+```
+
+本轮应判断：
+
+1. 当前 second-hop value source / projection source 是否质量不足。
+2. projected preserve 假设是否已经失效或进入局部噪声区。
+3. 现有 artifacts 是否足以提出一个更窄的候选源修正方向。
+4. 是否需要转向 transform/profile 假设审计，而不是继续在同一候选源上迭代。
+
+默认只审计，不改代码。只有证据证明存在小范围、非预算型、非 blind-search 的候选源 bug，才允许最小修复。
 
 ---
 
@@ -26,86 +33,90 @@ role = validated_projected_preserve_second_hop
 
 事实来源是当前 `project_state`，不要用记忆替代文件。
 
-### 已经做了什么
+### 已完成事项
 
-上一轮 Codex 已按计划修复 frontier second-hop loop stop condition。根因已经确认：
-
-```text
-_frontier_continuation_candidates() 已经把 5a3f7f46ddd474d0 作为 validated_projected_preserve_second_hop 返回 "continue"，
-但主循环在“无 improved frontier candidate”时把 "continue" 覆盖回 "distance_not_improved"，
-导致记录了 continuation，却没有实际进入第二轮 guided run。
-```
-
-已做最小修复：
+1. second-hop continuation loop 已修复并通过真实 harness 验证。
+2. 最新 indexed run：
 
 ```text
-当 used_second_hop=True 时保留 "continue"，不再归一化为 distance_not_improved。
+solve_reports\harness_runs\samplereverse_second_hop_loop_fix_verify_20260502
 ```
 
-没有扩大：
+3. 最新 artifact index 中已经存在：
 
 ```text
-FRONTIER_MAX_ITERATIONS
-beam
-budget
-topN
-timeout
-blind search
-model path
-GUI
-pipeline
-harness 总控
+frontier_guided_2_5a3f7f46ddd474d0
+frontier_refine_2
 ```
+
+4. Codex 已完成 second-hop pair/pool quality 审计，没有修改 strategy，也没有重复运行 harness。
 
 ### 测试结果
+
+上一轮审计阶段运行：
 
 ```powershell
 python -m pytest -q tests/test_compare_aware_search_strategy.py -k "second_hop_composition or validated_projected_preserve_handoff or second_frontier_guided_round"  # 5 passed, 50 deselected
 python -m pytest -q tests/test_compare_aware_search_strategy.py                                                                # 55 passed
-python -m pytest -q                                                                                                           # 137 passed
 ```
 
-### 最新 harness
+loop 修复轮运行过：
+
+```powershell
+python -m pytest -q tests/test_compare_aware_search_strategy.py  # 55 passed
+python -m pytest -q                                             # 137 passed
+```
+
+### 最新候选状态
+
+| candidate | source stage | role | compare agree | runtime exact | distance5 | result |
+|---|---|---|---:|---:|---:|---|
+| `78d540b49c590770` | pairscan / final refine | `best_overall` | true | 2 | 246 | retained as exact2 best and selected candidate |
+| `5a3e7f46ddd474d0` | frontier guided 1, second-hop validation, `frontier_refine_2` | `exact1_frontier` | true | 1 | 258 | remains best exact1; reappears as second-hop best |
+| `5a3f7f46ddd474d0` | projected preserve handoff anchor | `validated_projected_preserve_second_hop` | true in prior validation | 0 | 740 | used to launch second-hop, but not improved output |
+| `5a3f7fc2ddd474d0` | second-hop triad/top entry | `validated_projected_preserve_second_hop` | true | 0 | 419 | best new exact0, still worse than exact1 |
+| `343f7f46ddd474d0` | second-hop triad/top entry | `validated_projected_preserve_second_hop` | true | 0 | 428 | worse than exact1 |
+
+### Second-hop pool audit conclusion
+
+| source/role | count | compare agree count | validated count | best runtime exact | best distance5 | conclusion |
+|---|---:|---:|---:|---:|---:|---|
+| `top_entries` / `validated_projected_preserve_second_hop` | 16 | 8 validated agree | 8 | 1 | 258 | best is existing `5a3e7f46ddd474d0`, no improvement |
+| `validation_candidates` / `validated_projected_preserve_second_hop` | 8 | 8 | 8 | 1 | 258 | all compare-agree, none beats exact1 or exact2 |
+| `pair_frontier_pool` / preserve neighbors | 8 | 1 validated agree | 1 | 1 | 258 | only validated entry is existing exact1 |
+| `triad_frontier_pool` / generated triads | 8 | 6 validated agree | 6 | 0 | 419 | all are worse than exact1 |
+
+Validation distribution:
 
 ```text
-run = solve_reports\harness_runs\samplereverse_second_hop_loop_fix_verify_20260502
-executed_cases = 1
-completed_without_expected = 1
-error_cases = 0
-candidate_quality = 1.0
-evidence_coverage = 1.0
-selected candidate = 78d540b49c59077041414141414141
-Copilot quota 402 = not observed
-project_state missing = []
+compare-agree = 8
+compare-disagree = 0
+runtime exact1 = 1 candidate, distance5 258
+runtime exact0 = 7 candidates, distance5 419, 428, 432, 452, 480, 486, 529
 ```
 
-### 最新 artifact 结论
+Pair gate diagnosis from Codex:
 
-| question | answer |
-|---|---|
-| 是否出现 `frontier_guided_2_5a3f7f46ddd474d0` | 是 |
-| `frontier_guided_runs` 数量 | 2 |
-| 第二轮 anchor | `5a3f7f46ddd474d0` |
-| 第二轮 role | `validated_projected_preserve_second_hop` |
-| 第一轮 converge reason | `continue` |
-| 总体 converge reason | `iteration_limit` |
-| exact2 best 是否保留 | 是，最终 selected candidate 仍为 `78d540b49c59077041414141414141` |
-| 二跳后 best 是否改善 | 否；exact1 仍为 `5a3e7f46ddd474d0`，exact2 仍为 `78d540b49c590770` |
-
-### 当前候选表
-
-| candidate | source stage | frontier role | compare agree | runtime exact | distance5 | second-hop eligible | actually used in second-hop | result |
-|---|---|---|---:|---:|---:|---:|---:|---|
-| `78d540b49c590770` | pairscan / guided pool / final validation | `exact2_seed` / `best_overall` | true | 2 | 246 | no | no | retained as best overall / selected candidate |
-| `5a3e7f46ddd474d0` | frontier guided iteration 1 and second-hop validation result | `exact1_frontier` / second-hop validation entry | true | 1 | 258 | no | no | remains best exact1 frontier |
-| `5a3f7f46ddd474d0` | projected preserve handoff -> second-hop guided anchor | `validated_projected_preserve_second_hop` | true | 0 | 740 | yes | yes | second-hop artifact emitted, but no runtime gain |
+```text
+No gate/drop bug was found.
+No compare-agree runtime-better candidate was incorrectly filtered.
+No second-hop candidate beats exact1.
+No second-hop candidate beats exact2.
+The bottleneck is candidate_quality_insufficient_after_projected_winner.
+```
 
 ### Current bottleneck
 
 ```text
 stage = frontier_exact1
-reason = pair_gate_after_projected_winner
-confidence = medium
+reason = candidate_quality_insufficient_after_projected_winner
+confidence = high
+```
+
+Known transform chain remains:
+
+```text
+input -> UTF-16LE -> Base64 -> RC4 -> compare flag{ prefix
 ```
 
 ---
@@ -115,16 +126,17 @@ confidence = medium
 严格禁止以下方向：
 
 1. 不要回退到旧 `sample_solver` blind search。
-2. 不要只增加 beam、budget、topN、timeout 或扩大搜索空间。
+2. 不要只增加 beam、budget、topN、timeout、frontier iteration limit 或扩大搜索空间。
 3. 不要把 `compare_semantics_agree=false` 的候选作为主突破点。
 4. 不要提交完整 `solve_reports` 目录。
 5. 不要默认扫描完整 `solve_reports`。
-6. 不要继续修 frontier loop stop condition；上一轮已修复且 harness 已验证 `frontier_guided_2` 生成。
-7. 不要继续争论 validation ordering；候选已经进入 validation 和第二轮 guided。
+6. 不要继续修 frontier loop stop condition；`frontier_guided_2` 已生成。
+7. 不要继续修 pair gate / refine selection；上一轮已审计没有 gate/drop bug。
 8. 不要重新跑同一个 `samplereverse_second_hop_loop_fix_verify_20260502` 来碰运气。
 9. 不要把 `5a3f7f46ddd474d0` 当作最终答案或无条件提升为 best。
 10. 不要修改 GUI、模型调用路径、pipeline 总控、harness 总控。
-11. 不要以“二跳没有收益”为理由直接扩大搜索预算；先分析二跳 pair/pool 输出质量。
+11. 不要为了“试试看”直接引入第三跳；如认为需要第三跳，必须先用 artifacts 证明二跳候选源为什么不足。
+12. 不要默认读取完整 `PROJECT_PROGRESS_LOG.txt`；只有本轮 artifacts 无法解释候选源假设时才允许请求战略复盘。
 
 ---
 
@@ -141,33 +153,48 @@ project_state/codex_execution_report.md
 project_state/decision_packet.md
 ```
 
-代码审计优先范围：
+优先审计的代码范围：
 
 ```text
 reverse_agent/strategies/compare_aware_search.py
 tests/test_compare_aware_search_strategy.py
 ```
 
-只读以下最新 run 中的必要 artifacts，不读取完整 `solve_reports`：
+在 `compare_aware_search.py` 中只聚焦候选源相关逻辑，重点查找：
 
 ```text
-solve_reports\harness_runs\samplereverse_second_hop_loop_fix_verify_20260502\summary.json
-solve_reports\harness_runs\samplereverse_second_hop_loop_fix_verify_20260502\run_manifest.json
-solve_reports\harness_runs\samplereverse_second_hop_loop_fix_verify_20260502\case_results\samplereverse-exact1-projected-vs-neighbor.json
+projected preserve source generation
+projected winner source selection
+pair escape source
+triad frontier pool generation
+pair_frontier_pool generation
+value ranking / source ranking
+candidate metadata construction
+source reject reasons
+projected_generated_but_distance_explosive
+profile_source_empty
+```
+
+只读最新 run 的必要 artifacts，不读取完整 `solve_reports`：
+
+```text
 solve_reports\harness_runs\samplereverse_second_hop_loop_fix_verify_20260502\reports\tool_artifacts\samplereverse\frontier_guided_2_5a3f7f46ddd474d0\samplereverse_compare_aware_guided_pool_result.json
 solve_reports\harness_runs\samplereverse_second_hop_loop_fix_verify_20260502\reports\tool_artifacts\samplereverse\frontier_guided_2_5a3f7f46ddd474d0\guided_pool_validation\samplereverse_compare_aware_guided_pool_validation.json
 solve_reports\harness_runs\samplereverse_second_hop_loop_fix_verify_20260502\reports\tool_artifacts\samplereverse\frontier_refine_2\samplereverse_compare_aware_result.json
 solve_reports\harness_runs\samplereverse_second_hop_loop_fix_verify_20260502\reports\tool_artifacts\samplereverse\samplereverse_compare_aware_frontier_summary.json
 solve_reports\harness_runs\samplereverse_second_hop_loop_fix_verify_20260502\reports\tool_artifacts\samplereverse\samplereverse_compare_aware_strata_summary.json
+solve_reports\harness_runs\samplereverse_second_hop_loop_fix_verify_20260502\reports\tool_artifacts\samplereverse\bridge\bridge_search_result.json
+solve_reports\harness_runs\samplereverse_second_hop_loop_fix_verify_20260502\reports\tool_artifacts\samplereverse\bridge\pairscan_summary.json
+solve_reports\harness_runs\samplereverse_second_hop_loop_fix_verify_20260502\reports\tool_artifacts\samplereverse\samplereverse_compare_probe.json
 ```
 
-如果这些 artifacts 不能解释 pair gate 断点，才允许搜索同名 helper 或 pair gate 相关调用点。不要全文扫描 `solve_reports`。
+只有当这些文件无法解释候选源质量时，才允许搜索同名 helper 或 profile/transform 相关调用点。
 
 ---
 
 ## 5. Required Audit
 
-Codex 本轮必须先输出审计结果，再决定是否修改代码。
+Codex 本轮必须先输出审计发现，再决定是否修改代码。
 
 ### A. Pre-audit checks
 
@@ -178,87 +205,89 @@ Codex 本轮必须先输出审计结果，再决定是否修改代码。
 samplereverse_second_hop_loop_fix_verify_20260502
 ```
 
-3. 确认 artifact index 中存在：
+3. 确认当前瓶颈是：
 
 ```text
-frontier_guided_2_5a3f7f46ddd474d0
-frontier_refine_2
+frontier_exact1 / candidate_quality_insufficient_after_projected_winner
 ```
 
-4. 确认当前瓶颈是：
+4. 确认上一轮 pair/pool 审计结论没有发现 gate/drop bug。
 
-```text
-stage = frontier_exact1
-reason = pair_gate_after_projected_winner
-```
-
-### B. Second-hop pair/pool quality audit
+### B. Candidate source / projection hypothesis audit
 
 必须回答：
 
-1. `frontier_guided_2_5a3f7f46ddd474d0` 的 guided pool 中候选数量、来源分布、role 分布是什么？
-2. 第二轮 generated candidates 中有多少：
-   - `compare_semantics_agree=true`
-   - `compare_semantics_agree=false`
-   - 未验证 / 被过滤 / 被 pair gate 拦截
-3. 第二轮 validation top candidates 的 runtime exact / distance5 分布是什么？
-4. 是否存在比 `5a3f7f46ddd474d0` 更接近、但没有进入 refine 或 final validation 的候选？
-5. `frontier_refine_2` 为什么没有产生更优 exact1 或 exact2？
-6. `pair_gate_after_projected_winner` 的具体 gate 条件是什么？它拦截的是：
-   - pair source 生成阶段；
-   - projected winner boundary；
-   - pair candidate ranking；
-   - validation slot；
-   - refine seed selection；
-   - 还是 final best selection。
-7. `5a3f7f46ddd474d0` 与 `5a3e7f46ddd474d0` 的差异是否被二跳组合有效利用，还是只生成了等价邻域噪声？
-8. `78d540b49c590770` 为什么仍是 exact2 best；是否存在被二跳错误覆盖或被 pair gate 排除的 exact2-adjacent 候选？
-9. second-hop iteration limit 是否正常命中；是否需要第三跳，还是当前二跳 pool 本身质量不足？注意：不要直接扩大 iteration limit，先给证据。
+1. `5a3f7f46ddd474d0` 作为 second-hop anchor 时，候选值来源分别是什么：preserve neighbor、triad、projected source、pair escape source、其他 source。
+2. 哪些 source 为空，哪些 source 产生候选但质量不足。必须解释：
+
+```text
+profile_source_empty
+projected_generated_but_distance_explosive
+ranked out
+```
+
+3. `5a3f7f46ddd474d0` 与 `5a3e7f46ddd474d0` 的差异是否被候选源有效利用，还是二跳生成只回到已知 exact1 邻域。
+4. 为什么 `triad_frontier_pool` 的最佳新候选只有 exact0 / distance5 419，不能靠近 exact1 / exact2。
+5. 为什么 `pair_frontier_pool` 中唯一 validated agree 的有效结果是已知 exact1 `5a3e7f46ddd474d0`。
+6. `pair_escape_source_statuses` 为 `profile_source_empty` 是否说明 profile 的 escape source 定义不足，还是说明当前 transform 假设下没有可用 escape。
+7. `bridge_search_result` / `pairscan_summary` 中的 exact2 `78d540b49c590770` 是否提示应回到 exact2 seed 的候选源，而不是继续 projected preserve anchor。
+8. 当前 projected preserve hypothesis 是否仍然值得继续，还是应降级为已验证但收益不足的局部方向。
+9. 是否存在非预算型修复点，例如：source metadata 误分类、projected value source 过早 rank out、合法 source 未进入二跳 pool。若没有，明确写出“无代码修复建议”。
+10. 是否需要转向 transform/profile 假设审计：例如 compare prefix、RC4/base64/UTF-16LE 解释、boundary role、pair positions 是否存在错误假设。注意：不要默认推翻已知 transform，只能基于 artifacts 提出需要验证的具体假设。
 
 ### C. Required evidence tables
 
-报告中必须给出以下表格。
+#### Table 1: source quality summary
 
-#### Table 1: second-hop pool summary
+| source | generated count | validated count | compare-agree count | best exact | best distance5 | dominant failure reason | conclusion |
+|---|---:|---:|---:|---:|---:|---|---|
 
-| source/role | count | compare agree count | validated count | best runtime exact | best distance5 | conclusion |
-|---|---:|---:|---:|---:|---:|---|
+#### Table 2: source transition comparison
 
-#### Table 2: pair gate diagnosis
+比较 first-hop anchor、second-hop anchor、best known exact1/exact2：
 
-| gate/checkpoint | evidence source | pass count | reject/drop count | main reject reason | candidate examples |
-|---|---|---:|---:|---|---|
+| candidate | role | source path | exact | distance5 | source implication | keep / downgrade / investigate |
+|---|---|---|---:|---:|---|---|
 
-#### Table 3: candidate comparison
-
-| candidate | source stage | role | compare agree | runtime exact | distance5 | selected for refine? | reason |
-|---|---|---|---:|---:|---:|---:|---|
-
-至少包含：
+必须至少包含：
 
 ```text
 78d540b49c590770
 5a3e7f46ddd474d0
 5a3f7f46ddd474d0
+5a3f7fc2ddd474d0
+343f7f46ddd474d0
 ```
 
-如果 artifacts 中出现更接近但被过滤的候选，也必须加入表格。
+#### Table 3: next hypothesis ranking
+
+| hypothesis | evidence for | evidence against | expected next evidence | risk | recommendation |
+|---|---|---|---|---|---|
+
+候选 hypothesis 至少包括：
+
+```text
+continue projected preserve source with source-quality fix
+return to exact2 seed source audit, without blind search
+profile escape source definition insufficient
+transform/profile boundary assumption needs audit
+candidate quality is insufficient and no code change should be made
+```
 
 ---
 
 ## 6. Implementation Scope
 
-默认本轮只做审计，不改代码。
+默认本轮不改代码。
 
 只有满足以下条件，才允许最小修改：
 
-1. artifacts 证明 second-hop pool 中存在 compare-agree 且更优的候选，但被错误 gate/drop。
-2. 断点能具体定位到 `compare_aware_search.py` 中的一个函数、分支或 metadata 条件。
+1. artifacts 证明存在非预算型、非 blind-search 的候选源 bug。
+2. 断点能具体定位到 `compare_aware_search.py` 中某个 source generation、metadata、ranking 或 source inclusion 分支。
 3. 修复不扩大 beam、budget、topN、timeout、iteration limit。
-4. 修复不引入 blind search。
-5. 修复不使用 compare-disagree 候选作为主线。
+4. 修复不使用 compare-disagree 候选作为主线。
+5. 修复不改变 harness、pipeline、GUI、模型调用路径。
 6. 修复不破坏 exact2 best `78d540b49c590770` 的保留。
-7. 修复不把 `5a3f7f46ddd474d0` 直接提升为最终答案。
 
 允许修改：
 
@@ -273,7 +302,7 @@ project_state/model_gate.json
 PROJECT_PROGRESS_LOG.txt
 ```
 
-如果问题只是 artifact/reporting 不足以解释 pair gate，应优先补充 project_state/reporting 的证据采集，而不是改 strategy。
+如果问题只是 evidence 不足，允许补充 project_state/reporting 证据采集；但不得修改完整 solve_reports 或提交 runtime output。
 
 不允许修改：
 
@@ -286,12 +315,12 @@ GUI 相关文件
 完整 solve_reports 目录
 ```
 
-允许的最小实现方向，仅在审计证明后使用：
+允许的最小修复方向，仅在审计证明后使用：
 
 ```text
-如果 pair_gate_after_projected_winner 错误丢弃了 compare-agree、runtime 更优、且 metadata 合法的 second-hop candidates，
-则修正该 gate 的 metadata 条件或 refine selection 条件；
-不得通过扩大搜索预算绕过 gate。
+如果合法 compare-agree source 被误标记、过早 rank out、或未进入 second-hop pool，
+则修正 source metadata / ranking / inclusion 条件，
+但不得通过扩大预算绕过候选源质量问题。
 ```
 
 ---
@@ -305,15 +334,19 @@ python -m pytest -q tests/test_compare_aware_search_strategy.py -k "second_hop_c
 python -m pytest -q tests/test_compare_aware_search_strategy.py
 ```
 
-如果不改代码，不要重复跑 harness；直接更新 `codex_execution_report.md` 和必要的 project_state。
-
-如果改了 pair gate / refine selection，必须新增或更新测试，语义至少覆盖：
+如果不改代码，不要重复运行 harness。直接更新：
 
 ```text
-test_second_hop_pair_gate_keeps_compare_agree_improving_candidate
-test_second_hop_pair_gate_rejects_compare_disagree_candidate
-test_second_hop_pair_gate_does_not_expand_budget
-test_second_hop_pair_gate_preserves_exact2_best_candidate
+project_state/codex_execution_report.md
+```
+
+如果改候选源 / ranking / metadata inclusion，必须补充单元测试，语义至少覆盖：
+
+```text
+test_second_hop_source_quality_includes_legitimate_compare_agree_source
+test_second_hop_source_quality_does_not_admit_compare_disagree_source
+test_second_hop_source_quality_does_not_expand_budget
+test_second_hop_source_quality_preserves_exact2_best_candidate
 ```
 
 代码修改后必须跑：
@@ -323,29 +356,22 @@ python -m pytest -q tests/test_compare_aware_search_strategy.py
 python -m pytest -q
 ```
 
-如需 harness 验证，使用新 run name，不覆盖旧 run：
+只有在代码修改后需要 runtime 验证，才运行新 harness，且必须使用新 run name：
 
 ```powershell
-python -m reverse_agent.harness --dataset .\samplereverse_exact1_projected_vs_neighbor_20260424.json --run-name samplereverse_second_hop_pair_gate_audit_20260502 --reports-dir solve_reports --analysis-mode "Auto" --model-type "Copilot CLI" --copilot-timeout-seconds 300 --ctf-skill-profile compact --case-id samplereverse-exact1-projected-vs-neighbor --no-resume
-python -m reverse_agent.project_state build --reports-dir solve_reports --sample samplereverse --run-name samplereverse_second_hop_pair_gate_audit_20260502
+python -m reverse_agent.harness --dataset .\samplereverse_exact1_projected_vs_neighbor_20260424.json --run-name samplereverse_candidate_source_hypothesis_20260502 --reports-dir solve_reports --analysis-mode "Auto" --model-type "Copilot CLI" --copilot-timeout-seconds 300 --ctf-skill-profile compact --case-id samplereverse-exact1-projected-vs-neighbor --no-resume
+python -m reverse_agent.project_state build --reports-dir solve_reports --sample samplereverse --run-name samplereverse_candidate_source_hypothesis_20260502
 python -m reverse_agent.project_state status
 ```
 
-最终必须更新：
+最终报告必须包含：
 
-```text
-project_state/codex_execution_report.md
-```
-
-报告必须包含：
-
-1. second-hop pool 的来源、role、compare-agree、validation 分布。
-2. pair gate after projected winner 的具体断点。
-3. 是否有更优候选被错误过滤。
-4. 是否改代码；若改，改动函数和分支是什么。
-5. 测试结果。
-6. 是否运行新 harness；若运行，run name 和关键结果是什么。
-7. 下一轮应继续 pair gate、candidate quality，还是转向 transform/model 假设。
+1. 候选源质量结论。
+2. projected preserve hypothesis 是否保留、降级或暂停。
+3. 是否应回到 exact2 seed source audit。
+4. 是否需要 transform/profile 假设审计。
+5. 是否改代码；如果改，改动函数和测试结果。
+6. 下一轮的单一推荐方向。
 
 ---
 
@@ -353,38 +379,39 @@ project_state/codex_execution_report.md
 
 出现以下情况立即停止并报告：
 
-1. second-hop pool 中没有任何 compare-agree 且 runtime 更优的候选。
-   - 不改 strategy。
-   - 把瓶颈分类为 candidate quality insufficient。
+1. 所有 second-hop source 都没有 compare-agree 更优候选，且没有 source bug。
+   - 不改代码。
+   - 推荐转向 exact2 seed source audit 或 transform/profile hypothesis audit。
 
-2. 更优候选只存在于 compare-disagree 集合。
-   - 不作为主线。
-   - 记录到 negative_results。
+2. projected preserve source 只产生 exact1 回落或 exact0 噪声。
+   - 将 projected preserve 方向降级为局部无收益方向。
+   - 不继续在同一 source 上扩大预算。
 
-3. 发现 compare-agree 更优候选被 pair gate / refine selection 错误丢弃。
-   - 只做最小 gate/selection 修复。
+3. 发现合法 compare-agree source 被误分类、rank out 或未进入 pool。
+   - 只做最小 source/ranking/inclusion 修复。
    - 补单元测试。
 
-4. 发现 exact2 best `78d540b49c590770` 会被修复影响而丢失或降级。
-   - 立即回退该修复。
+4. 需要第三跳或更大预算才能继续。
+   - 不直接改预算。
+   - 先提出单独决策，附 artifact 证据。
 
-5. 判断需要第三跳或更大预算。
-   - 不直接修改预算。
-   - 先在报告中用 artifacts 证明二跳 pool 为什么不足，并提出单独决策请求。
-
-6. 需要读取完整 `solve_reports` 或完整 `PROJECT_PROGRESS_LOG.txt` 才能继续。
+5. 需要读取完整 `solve_reports` 或完整 `PROJECT_PROGRESS_LOG.txt` 才能继续。
    - 停止。
-   - 先补 artifact_index 或 reporting 索引能力。
+   - 先补 artifact_index 或要求 project_state/reporting 产出更精确索引。
 
-7. Copilot CLI 出现 quota `402`。
-   - 不切换模型路径。
-   - 不把它当 strategy 失败。
-   - 基于 quota 前 artifacts 重建 project_state 并报告证据是否足够。
+6. 唯一可行方向依赖 `compare_semantics_agree=false`。
+   - 不作为主线。
+   - 记录到 negative_results。
 
 ---
 
 ## GPT Decision Summary
 
-当前已经完成从“二跳候选生成”到“二跳实际执行”的验证闭环：`frontier_guided_2_5a3f7f46ddd474d0` 已经生成，说明上一轮控制流问题已解决。
+当前已经排除两个旧方向：
 
-下一步不应继续修 loop，也不应扩大搜索预算。新的瓶颈是：二跳执行后没有产生更优候选。因此 Codex 应审计 `frontier_guided_2` 的 pair/pool 输出、validation 分布和 `pair_gate_after_projected_winner` 的 gate 条件，判断是候选质量不足，还是存在 compare-agree 更优候选被错误过滤。
+```text
+1. second-hop 没有执行：已修复，frontier_guided_2 已生成。
+2. pair gate/refine 错误过滤更优候选：已审计，未发现。
+```
+
+新的瓶颈是候选源质量：二跳源只生成了已知 exact1 或更差 exact0 候选。下一轮应审计 projected preserve source、pair/triad/projected value source、profile escape source 和 transform/profile boundary 假设，判断是继续修候选源，还是转向 exact2 seed source 或 transform/profile 假设审计。
