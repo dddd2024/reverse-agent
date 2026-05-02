@@ -3,16 +3,12 @@
   "artifact_refs": {
     "bridge_search_result": "solve_reports\\harness_runs\\samplereverse_second_hop_loop_fix_verify_20260502\\reports\\tool_artifacts\\samplereverse\\bridge\\bridge_search_result.json",
     "bridge_validation": "solve_reports\\harness_runs\\samplereverse_second_hop_loop_fix_verify_20260502\\reports\\tool_artifacts\\samplereverse\\bridge\\bridge_validation\\bridge_validation.json",
-    "checkpoint": "solve_reports\\tool_artifacts\\samplereverse_optimizer_smoke\\samplereverse_search_checkpoint.json",
     "compare_aware_result": "solve_reports\\harness_runs\\samplereverse_second_hop_loop_fix_verify_20260502\\reports\\tool_artifacts\\samplereverse\\frontier_refine_2\\samplereverse_compare_aware_result.json",
-    "compare_probe": "solve_reports\\harness_runs\\samplereverse_second_hop_loop_fix_verify_20260502\\reports\\tool_artifacts\\samplereverse\\samplereverse_compare_probe.json",
-    "compare_probe_log": "solve_reports\\harness_runs\\samplereverse_second_hop_loop_fix_verify_20260502\\reports\\tool_artifacts\\samplereverse\\samplereverse_compare_probe.log",
     "frontier_summary": "solve_reports\\harness_runs\\samplereverse_second_hop_loop_fix_verify_20260502\\reports\\tool_artifacts\\samplereverse\\samplereverse_compare_aware_frontier_summary.json",
     "guided_pool_result": "solve_reports\\harness_runs\\samplereverse_second_hop_loop_fix_verify_20260502\\reports\\tool_artifacts\\samplereverse\\frontier_guided_2_5a3f7f46ddd474d0\\samplereverse_compare_aware_guided_pool_result.json",
     "guided_pool_validation": "solve_reports\\harness_runs\\samplereverse_second_hop_loop_fix_verify_20260502\\reports\\tool_artifacts\\samplereverse\\frontier_guided_2_5a3f7f46ddd474d0\\guided_pool_validation\\samplereverse_compare_aware_guided_pool_validation.json",
     "pairscan_summary": "solve_reports\\harness_runs\\samplereverse_second_hop_loop_fix_verify_20260502\\reports\\tool_artifacts\\samplereverse\\bridge\\pairscan_summary.json",
     "run_manifest": "solve_reports\\harness_runs\\samplereverse_second_hop_loop_fix_verify_20260502\\run_manifest.json",
-    "smt_result": "solve_reports\\harness_runs\\samplereverse_second_hop_loop_fix_verify_20260502\\reports\\tool_artifacts\\samplereverse\\smt\\samplereverse_compare_aware_smt_result.json",
     "strata_summary": "solve_reports\\harness_runs\\samplereverse_second_hop_loop_fix_verify_20260502\\reports\\tool_artifacts\\samplereverse\\samplereverse_compare_aware_strata_summary.json",
     "summary": "solve_reports\\harness_runs\\samplereverse_second_hop_loop_fix_verify_20260502\\summary.json"
   },
@@ -23,32 +19,25 @@
       "candidate_prefix": "5a3e7f46ddd474d0",
       "compare_semantics_agree": true,
       "frontier_role": "exact1_frontier",
-      "frontier_submode": null,
       "runtime_ci_distance5": 258,
       "runtime_ci_exact_wchars": 1,
       "source": "exact2_seed(78d540b49c590770) -> refine(seed) -> guided(frontier)"
     },
     "exact2": {
-      "anchor_mode": "",
       "candidate_hex": "78d540b49c59077041414141414141",
       "candidate_prefix": "78d540b49c590770",
       "compare_semantics_agree": true,
-      "frontier_role": "",
-      "frontier_submode": null,
       "runtime_ci_distance5": 246,
       "runtime_ci_exact_wchars": 2,
       "source": "pairscan"
     },
-    "frontier": {
-      "anchor_mode": "frontier",
-      "candidate_hex": "5a3e7f46ddd474d041414141414141",
-      "candidate_prefix": "5a3e7f46ddd474d0",
+    "projected_preserve_second_hop": {
+      "candidate_hex": "5a3f7f46ddd474d041414141414141",
+      "candidate_prefix": "5a3f7f46ddd474d0",
       "compare_semantics_agree": true,
-      "frontier_role": "exact1_frontier",
-      "frontier_submode": null,
-      "runtime_ci_distance5": 258,
-      "runtime_ci_exact_wchars": 1,
-      "source": "exact2_seed(78d540b49c590770) -> refine(seed) -> guided(frontier)"
+      "runtime_ci_distance5": 740,
+      "runtime_ci_exact_wchars": 0,
+      "status": "downgraded_validated_no_runtime_gain"
     }
   },
   "current_bottleneck": {
@@ -57,7 +46,7 @@
     "stage": "frontier_exact1"
   },
   "current_mainline": "L15(prefix8)",
-  "generated_at": "2026-05-02T08:10:44Z",
+  "generated_at": "2026-05-02T10:10:00Z",
   "known_transform": [
     "input",
     "UTF-16LE",
@@ -65,7 +54,18 @@
     "RC4",
     "compare flag{ prefix"
   ],
+  "latest_audit": {
+    "classification": "candidate_quality_insufficient_after_projected_winner",
+    "code_fix_recommended": false,
+    "harness_run": "samplereverse_second_hop_loop_fix_verify_20260502",
+    "projected_preserve_status": "downgraded",
+    "source_bug_found": false
+  },
+  "next_local_action": "audit_exact2_seed_source_quality_without_blind_search",
   "profile": "samplereverse",
   "sample": "samplereverse",
-  "uncertainty": []
+  "uncertainty": [
+    "whether exact2 seed source lanes explain the remaining runtime exact2 advantage",
+    "whether transform/profile boundary audit is needed after exact2 source audit"
+  ]
 }

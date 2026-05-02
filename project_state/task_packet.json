@@ -3,52 +3,29 @@
   "artifact_refs": {
     "bridge_search_result": "solve_reports\\harness_runs\\samplereverse_second_hop_loop_fix_verify_20260502\\reports\\tool_artifacts\\samplereverse\\bridge\\bridge_search_result.json",
     "bridge_validation": "solve_reports\\harness_runs\\samplereverse_second_hop_loop_fix_verify_20260502\\reports\\tool_artifacts\\samplereverse\\bridge\\bridge_validation\\bridge_validation.json",
-    "checkpoint": "solve_reports\\tool_artifacts\\samplereverse_optimizer_smoke\\samplereverse_search_checkpoint.json",
     "compare_aware_result": "solve_reports\\harness_runs\\samplereverse_second_hop_loop_fix_verify_20260502\\reports\\tool_artifacts\\samplereverse\\frontier_refine_2\\samplereverse_compare_aware_result.json",
-    "compare_probe": "solve_reports\\harness_runs\\samplereverse_second_hop_loop_fix_verify_20260502\\reports\\tool_artifacts\\samplereverse\\samplereverse_compare_probe.json",
-    "compare_probe_log": "solve_reports\\harness_runs\\samplereverse_second_hop_loop_fix_verify_20260502\\reports\\tool_artifacts\\samplereverse\\samplereverse_compare_probe.log",
     "frontier_summary": "solve_reports\\harness_runs\\samplereverse_second_hop_loop_fix_verify_20260502\\reports\\tool_artifacts\\samplereverse\\samplereverse_compare_aware_frontier_summary.json",
     "guided_pool_result": "solve_reports\\harness_runs\\samplereverse_second_hop_loop_fix_verify_20260502\\reports\\tool_artifacts\\samplereverse\\frontier_guided_2_5a3f7f46ddd474d0\\samplereverse_compare_aware_guided_pool_result.json",
     "guided_pool_validation": "solve_reports\\harness_runs\\samplereverse_second_hop_loop_fix_verify_20260502\\reports\\tool_artifacts\\samplereverse\\frontier_guided_2_5a3f7f46ddd474d0\\guided_pool_validation\\samplereverse_compare_aware_guided_pool_validation.json",
     "pairscan_summary": "solve_reports\\harness_runs\\samplereverse_second_hop_loop_fix_verify_20260502\\reports\\tool_artifacts\\samplereverse\\bridge\\pairscan_summary.json",
-    "run_manifest": "solve_reports\\harness_runs\\samplereverse_second_hop_loop_fix_verify_20260502\\run_manifest.json",
-    "smt_result": "solve_reports\\harness_runs\\samplereverse_second_hop_loop_fix_verify_20260502\\reports\\tool_artifacts\\samplereverse\\smt\\samplereverse_compare_aware_smt_result.json",
-    "strata_summary": "solve_reports\\harness_runs\\samplereverse_second_hop_loop_fix_verify_20260502\\reports\\tool_artifacts\\samplereverse\\samplereverse_compare_aware_strata_summary.json",
     "summary": "solve_reports\\harness_runs\\samplereverse_second_hop_loop_fix_verify_20260502\\summary.json"
   },
   "current_best": {
     "exact1": {
-      "anchor_mode": "frontier",
       "candidate_hex": "5a3e7f46ddd474d041414141414141",
       "candidate_prefix": "5a3e7f46ddd474d0",
       "compare_semantics_agree": true,
-      "frontier_role": "exact1_frontier",
-      "frontier_submode": null,
       "runtime_ci_distance5": 258,
       "runtime_ci_exact_wchars": 1,
       "source": "exact2_seed(78d540b49c590770) -> refine(seed) -> guided(frontier)"
     },
     "exact2": {
-      "anchor_mode": "",
       "candidate_hex": "78d540b49c59077041414141414141",
       "candidate_prefix": "78d540b49c590770",
       "compare_semantics_agree": true,
-      "frontier_role": "",
-      "frontier_submode": null,
       "runtime_ci_distance5": 246,
       "runtime_ci_exact_wchars": 2,
       "source": "pairscan"
-    },
-    "frontier": {
-      "anchor_mode": "frontier",
-      "candidate_hex": "5a3e7f46ddd474d041414141414141",
-      "candidate_prefix": "5a3e7f46ddd474d0",
-      "compare_semantics_agree": true,
-      "frontier_role": "exact1_frontier",
-      "frontier_submode": null,
-      "runtime_ci_distance5": 258,
-      "runtime_ci_exact_wchars": 1,
-      "source": "exact2_seed(78d540b49c590770) -> refine(seed) -> guided(frontier)"
     }
   },
   "current_bottleneck": {
@@ -61,51 +38,57 @@
     "do not only increase beam or budget",
     "do not use compare_semantics_agree=false candidates as primary frontier",
     "do not commit full solve_reports directory",
-    "do not scan entire solve_reports unless explicitly needed",
-    "do not continue fixing frontier loop stop condition; frontier_guided_2 has already been emitted",
-    "do not continue fixing pair gate/refine selection unless new evidence shows a source bug",
-    "do not rerun the same loop-fix harness before auditing candidate source/projection hypothesis"
+    "do not continue projected preserve source by expanding budget",
+    "do not promote 5a3f7f46ddd474d0 to final or best",
+    "do not rerun the same second-hop loop-fix harness before forming a new exact2-source hypothesis"
   ],
   "expected_gpt_output": "project_state/decision_packet.md",
-  "generated_at": "2026-05-02T09:00:00Z",
+  "generated_at": "2026-05-02T10:10:00Z",
   "included": [
     "current state",
     "best candidates",
-    "stall reason",
-    "candidate quality diagnosis",
-    "second-hop guided artifact evidence",
-    "negative results",
+    "candidate source audit result",
+    "projected preserve downgrade",
+    "next recommended action",
     "artifact references"
   ],
+  "latest_audit_result": {
+    "code_fix_recommended": false,
+    "key_findings": [
+      "frontier_guided_2 generated 16 top entries, 8 validation candidates, 8 pair entries, and 8 triad entries",
+      "all 8 validated candidates were compare-agree",
+      "only 5a3e7f46ddd474d0 retained exact1; all new second-hop candidates were exact0",
+      "best new second-hop candidate was 5a3f7fc2ddd474d0 with distance5 419",
+      "pair_escape_source_statuses were profile_source_empty because no effective profile escape entries reached gate",
+      "no legal compare-agree better source was misclassified, ranked out, or omitted"
+    ],
+    "projected_preserve_status": "downgraded_validated_no_runtime_gain",
+    "source_bug_found": false
+  },
   "model_gate": {
     "context_level": 2,
-    "reason": "candidate_quality_insufficient_after_projected_winner",
+    "reason": "exact2_seed_source_audit_needs_next_decision_packet",
     "should_call_model": true
   },
-  "missing_evidence": [
-    "source quality summary for preserve neighbor, triad, projected source, pair escape source",
-    "why profile_source_empty occurs for pair escape lanes",
-    "whether projected preserve source should be downgraded",
-    "whether exact2 seed source or transform/profile hypothesis should become next mainline"
-  ],
-  "next_local_action": "audit_second_hop_candidate_source_and_projection_hypothesis",
+  "next_local_action": "audit_exact2_seed_source_quality_without_blind_search",
   "omitted": [
     {
-      "name": "full PROJECT_PROGRESS_LOG.txt",
-      "reason": "too long; use only for strategic review"
+      "name": "full solve_reports",
+      "reason": "runtime output; indexed artifacts are sufficient"
     },
     {
-      "name": "full solve_reports",
-      "reason": "runtime output; indexed via artifact_index.json"
+      "name": "full PROJECT_PROGRESS_LOG.txt",
+      "reason": "tail and compact state are sufficient"
     }
   ],
   "profile": "samplereverse",
-  "reason": "second-hop pool audit found no gate/drop bug and no compare-agree runtime-better candidate; next decision must target candidate source quality or transform/profile hypothesis",
+  "recommended_next_direction": "audit exact2 seed source quality for 78d540b49c590770 without blind search",
   "relevant_files": [
     "reverse_agent/strategies/compare_aware_search.py",
     "tests/test_compare_aware_search_strategy.py",
     "project_state/codex_execution_report.md",
-    "project_state/artifact_index.json"
+    "project_state/current_state.json",
+    "project_state/task_packet.json"
   ],
   "sample": "samplereverse",
   "sufficiency_check": {
@@ -114,9 +97,8 @@
     "has_negative_results": true,
     "has_runtime_validation": true,
     "has_stall_stage": true,
-    "has_frontier_guided_2_artifact": true,
-    "has_second_hop_quality_diagnosis": true,
-    "has_candidate_source_hypothesis": false
+    "has_candidate_source_hypothesis": true,
+    "has_single_next_direction": true
   },
-  "task": "audit_second_hop_candidate_source_and_projection_hypothesis"
+  "task": "audit_exact2_seed_source_quality_without_blind_search"
 }

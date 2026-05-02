@@ -2442,3 +2442,43 @@ Reverse Agent 项目进展日志（截至 2026-04-16）
   - 单独决策 second-hop candidate source / projection hypothesis；
   - 或审计 transform/profile 假设，解释为什么 projected preserve 二跳退化为 exact1 邻域噪声。
 
+## 2026-05-02 second-hop candidate source / projection hypothesis audit
+
+1) 执行范围
+- 按计划审计 `frontier_guided_2_5a3f7f46ddd474d0` 的 candidate source / projection hypothesis。
+- 本轮没有修改 strategy 或测试代码；没有重复运行 harness。
+- 更新了 `project_state/codex_execution_report.md`、`project_state/current_state.json`、`project_state/task_packet.json`、`project_state/model_gate.json` 和本日志。
+
+2) 自动化验证
+- `python -m pytest -q tests/test_compare_aware_search_strategy.py -k "second_hop_composition or validated_projected_preserve_handoff or second_frontier_guided_round"` -> `5 passed, 50 deselected`
+- `python -m pytest -q tests/test_compare_aware_search_strategy.py` -> `55 passed`
+
+3) 关键审计结果
+- 二跳 source quality:
+  - `top_entries = 16`，validated 8，compare-agree 8，best 仍是已知 exact1 `5a3e7f46ddd474d0`。
+  - `pair_frontier_pool = 8`，唯一 validated agree 仍是 `5a3e7f46ddd474d0`。
+  - `triad_frontier_pool = 8`，6 个 validated agree，但全部 exact0；最佳新候选是 `5a3f7fc2ddd474d0`，`runtime_ci_distance5=419`。
+  - `pair_escape_source_statuses = profile_source_empty` 覆盖 `0,1`、`0,2`、`0,3`。
+- `profile_source_empty` 的含义已澄清：
+  - 不是 pair gate 漏收；
+  - 当前 bad anchor 的 preserve 邻域已经回落到 known exact1；
+  - 没有有效 local/hard escape profile entries 到达 gate。
+- projected source 证据：
+  - projected values 确实生成，并有 6 个 reached pair pool；
+  - 但 validated 后仍未超过 exact1/exact2；
+  - `projected_generated_but_distance_explosive` 和 ranked out 不是误分类 evidence。
+
+4) 结论
+- 没有发现合法 compare-agree source 被误分类、过早 rank out 或未进入二跳 pool。
+- 无代码修复建议。
+- `5a3f7f46ddd474d0` 降级为：validated but no runtime gain / local unproductive projected preserve direction。
+- 当前 best 未改善：
+  - exact2 仍为 `78d540b49c590770...`，`runtime_ci_exact_wchars=2`，`runtime_ci_distance5=246`
+  - exact1 仍为 `5a3e7f46ddd474d0...`，`runtime_ci_exact_wchars=1`，`runtime_ci_distance5=258`
+
+5) 下一轮默认方向
+- 单一推荐方向：审计 exact2 seed `78d540b49c590770` 的 source quality，不回 blind search。
+- 重点比较 exact2 seed source lanes 与 projected preserve lane，解释为什么 exact2 仍保持 runtime exact2，而 projected preserve 二跳退化为 exact1/exact0。
+- 不扩大 beam/budget/topN/timeout/iteration limit。
+- 不运行新 harness，除非先形成 exact2-source hypothesis 或发现小范围 source fix。
+
