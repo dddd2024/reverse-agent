@@ -42,11 +42,11 @@
   },
   "current_bottleneck": {
     "confidence": "high",
-    "reason": "candidate_quality_or_transform_profile_boundary_after_exact2_source_audit",
-    "stage": "frontier_exact1"
+    "reason": "diagnostics_added_for_transform_profile_boundary_and_exact2_basin_smt",
+    "stage": "transform_profile_boundary"
   },
   "current_mainline": "L15(prefix8)",
-  "generated_at": "2026-05-02T13:50:23Z",
+  "generated_at": "2026-05-02T14:14:33Z",
   "known_transform": [
     "input",
     "UTF-16LE",
@@ -55,17 +55,30 @@
     "compare flag{ prefix"
   ],
   "latest_audit": {
-    "classification": "exact2_seed_source_quality_audited_no_source_bug",
+    "classification": "transform_profile_boundary_diagnostics_added",
     "code_fix_recommended": false,
     "harness_run": "samplereverse_second_hop_loop_fix_verify_20260502",
     "projected_preserve_status": "downgraded",
     "source_bug_found": false
   },
-  "next_local_action": "audit_transform_profile_boundary_for_exact2_basin_without_blind_search",
+  "latest_code_change": {
+    "behavior_change": "diagnostic_metadata_only",
+    "new_metadata": [
+      "prefix_boundary",
+      "prefix_boundary_diagnostics",
+      "exact2_basin_smt"
+    ],
+    "tests": [
+      "python -m pytest -q tests/test_compare_aware_search_strategy.py -k \"smt or exact2 or boundary or frontier\"",
+      "python -m pytest -q tests/test_compare_aware_search_strategy.py",
+      "python -m pytest -q"
+    ]
+  },
+  "next_local_action": "run_or_audit_new_compare_aware_diagnostics_without_blind_search",
   "profile": "samplereverse",
   "sample": "samplereverse",
   "uncertainty": [
-    "whether the transform/profile scoring boundary explains why the exact2 basin cannot progress beyond flag{ prefix shape",
-    "whether a small sample-specific profile hypothesis exists before any new harness run"
+    "whether exact2_basin_smt diagnostic positions justify a real bounded exact2 SMT pass",
+    "whether prefix boundary diagnostics reveal a transform/profile scoring signal beyond candidate quality"
   ]
 }

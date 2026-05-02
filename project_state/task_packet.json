@@ -30,8 +30,8 @@
   },
   "current_bottleneck": {
     "confidence": "high",
-    "reason": "candidate_quality_or_transform_profile_boundary_after_exact2_source_audit",
-    "stage": "frontier_exact1"
+    "reason": "diagnostics_added_for_transform_profile_boundary_and_exact2_basin_smt",
+    "stage": "transform_profile_boundary"
   },
   "do_not_do": [
     "do not return to old sample_solver blind search",
@@ -40,53 +40,52 @@
     "do not commit full solve_reports directory",
     "do not continue projected preserve source by expanding budget",
     "do not promote 5a3f7f46ddd474d0 to final or best",
-    "do not rerun the same second-hop loop-fix harness before forming a transform/profile hypothesis or small source fix"
+    "do not change final selection based only on diagnostic metadata"
   ],
   "expected_gpt_output": "project_state/decision_packet.md",
-  "generated_at": "2026-05-02T13:50:23Z",
+  "generated_at": "2026-05-02T14:14:33Z",
   "included": [
     "current state",
     "best candidates",
-    "exact2 source quality audit result",
-    "projected preserve downgrade",
+    "diagnostic metadata implementation",
+    "test results",
     "next recommended action",
     "artifact references"
   ],
   "latest_audit_result": {
     "code_fix_recommended": false,
     "key_findings": [
-      "78d540b49c590770 is the profile first seed anchor and remains the best exact2 candidate across bridge, seed-guided validation, and final refine",
-      "bridge pairscan records hot_positions 0,1 and validates only 78d540b49c590770 as exact2 distance5 246",
-      "seed-guided mutations around 78d540b49c590770 drop to exact0, while the unchanged base anchor stays exact2",
-      "frontier1 recovers exact1 5a3e7f46ddd474d0 distance5 258 but does not improve exact2",
-      "frontier2/projected preserve mostly recovers the same exact1 or exact0 variants; no legal better compare-agree source was omitted",
-      "no source metadata loss, lane misclassification, or validation candidate exclusion was found"
+      "prefix_boundary diagnostics now break each candidate prefix into UTF-16 wchar deltas against flag{",
+      "runtime validations now carry prefix_boundary metadata",
+      "frontier/refine artifacts and strategy metadata now include prefix_boundary_diagnostics",
+      "primary SMT payload now records prefix_boundary for the chosen base",
+      "when primary SMT chooses an exact1 frontier while a compare-agree exact2 exists, exact2_basin_smt records a diagnostic-only exact2 basin plan",
+      "no candidate selection behavior was changed"
     ],
     "projected_preserve_status": "downgraded_validated_no_runtime_gain",
     "source_bug_found": false
   },
   "model_gate": {
     "context_level": 2,
-    "reason": "exact2 seed source audit found no source bug; next decision needs transform/profile boundary hypothesis",
+    "reason": "diagnostic metadata is implemented; next decision should inspect a new compare-aware diagnostic artifact before behavior changes",
     "should_call_model": true
   },
-  "next_local_action": "audit_transform_profile_boundary_for_exact2_basin_without_blind_search",
+  "next_local_action": "run_or_audit_new_compare_aware_diagnostics_without_blind_search",
   "omitted": [
     {
       "name": "full solve_reports",
       "reason": "runtime output; indexed artifacts are sufficient"
     },
     {
-      "name": "full PROJECT_PROGRESS_LOG.txt",
-      "reason": "tail and compact state are sufficient"
+      "name": "new harness run",
+      "reason": "not run in this diagnostic-only implementation turn"
     }
   ],
   "profile": "samplereverse",
-  "recommended_next_direction": "audit transform/profile boundary for the exact2 basin using 78d540b49c590770 as stable reference, without blind search or budget expansion",
+  "recommended_next_direction": "inspect the next artifacts containing prefix_boundary_diagnostics and exact2_basin_smt; only then decide whether to run a real bounded exact2 SMT pass",
   "relevant_files": [
     "reverse_agent/strategies/compare_aware_search.py",
-    "reverse_agent/profiles/samplereverse.py",
-    "reverse_agent/transforms/samplereverse.py",
+    "tests/test_compare_aware_search_strategy.py",
     "project_state/codex_execution_report.md",
     "project_state/current_state.json",
     "project_state/task_packet.json"
@@ -98,8 +97,8 @@
     "has_negative_results": true,
     "has_runtime_validation": true,
     "has_stall_stage": true,
-    "has_candidate_source_hypothesis": true,
+    "has_diagnostic_metadata_plan": true,
     "has_single_next_direction": true
   },
-  "task": "audit_transform_profile_boundary_for_exact2_basin_without_blind_search"
+  "task": "run_or_audit_new_compare_aware_diagnostics_without_blind_search"
 }

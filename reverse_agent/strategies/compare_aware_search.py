@@ -178,6 +178,156 @@ def _bridge_metrics_from_raw_prefix(raw_prefix: bytes) -> dict[str, int | str]:
     }
 
 
+def _prefix_boundary_breakdown_from_prefix(
+    raw_prefix: bytes,
+    *,
+    candidate_hex: str = "",
+    label: str = "",
+    source: str = "",
+    transform_model: SamplereverseTransformModel | None = None,
+) -> dict[str, object]:
+    model = transform_model or SamplereverseTransformModel()
+    raw = bytes(raw_prefix[: len(TARGET_PREFIX)])
+    metrics = model.score_prefix(raw_prefix)
+    wchar_deltas: list[dict[str, object]] = []
+    for idx in range(len(TARGET_PREFIX) // 2):
+        raw_low = raw[idx * 2] if idx * 2 < len(raw) else 0x100
+        raw_high = raw[idx * 2 + 1] if idx * 2 + 1 < len(raw) else 0x100
+        target_low = TARGET_PREFIX[idx * 2]
+        target_high = TARGET_PREFIX[idx * 2 + 1]
+        low_distance = abs(_lower_ascii(int(raw_low)) - _lower_ascii(int(target_low)))
+        high_distance = abs(int(raw_high) - int(target_high))
+        exact_ci = (
+            idx * 2 + 1 < len(raw)
+            and int(raw_high) == int(target_high)
+            and _lower_ascii(int(raw_low)) == _lower_ascii(int(target_low))
+        )
+        wchar_deltas.append(
+            {
+                "index": idx,
+                "raw_pair_hex": (
+                    f"{int(raw_low) & 0xFF:02x}{int(raw_high) & 0xFF:02x}"
+                    if raw_low <= 0xFF and raw_high <= 0xFF
+                    else ""
+                ),
+                "target_pair_hex": f"{target_low:02x}{target_high:02x}",
+                "raw_low": int(raw_low),
+                "raw_high": int(raw_high),
+                "target_low": int(target_low),
+                "target_high": int(target_high),
+                "low_distance_ci": int(low_distance),
+                "high_distance": int(high_distance),
+                "distance": int(low_distance + high_distance),
+                "exact_ci": bool(exact_ci),
+                "contiguous_exact": idx < int(metrics.get("ci_exact_wchars", 0) or 0),
+            }
+        )
+    candidate = str(candidate_hex).strip().lower()
+    return {
+        "label": str(label),
+        "source": str(source),
+        "candidate_hex": candidate,
+        "cand8_hex": candidate[:16],
+        "raw_prefix_hex_10": raw.hex(),
+        "ci_exact_wchars": int(metrics.get("ci_exact_wchars", 0) or 0),
+        "ci_distance5": int(metrics.get("ci_distance5", 1 << 30) or (1 << 30)),
+        "raw_distance10": int(metrics.get("raw_distance10", 1 << 30) or (1 << 30)),
+        "wide_ascii_contiguous_16": int(metrics.get("wide_ascii_contiguous_16", 0) or 0),
+        "wide_ascii_total_16": int(metrics.get("wide_ascii_total_16", 0) or 0),
+        "wide_zero_high_pairs_16": int(metrics.get("wide_zero_high_pairs_16", 0) or 0),
+        "flaglike_tail_pairs_16": int(metrics.get("flaglike_tail_pairs_16", 0) or 0),
+        "wchar_deltas": wchar_deltas,
+    }
+
+
+def _prefix_boundary_breakdown_from_entry(
+    entry: dict[str, object],
+    *,
+    transform_model: SamplereverseTransformModel,
+    label: str = "",
+    source: str = "",
+) -> dict[str, object]:
+    prefix_hex = (
+        str(entry.get("runtime_lhs_prefix_hex_10", "")).strip().lower()
+        or str(entry.get("offline_raw_prefix_hex", "")).strip().lower()
+        or str(entry.get("raw_prefix_hex", "")).strip().lower()
+    )
+    if not prefix_hex:
+        prefix_hex = _entry_long_prefix_bytes(entry)[: len(TARGET_PREFIX)].hex()
+    try:
+        raw_prefix = bytes.fromhex(prefix_hex[: len(TARGET_PREFIX) * 2])
+    except ValueError:
+        raw_prefix = b""
+    candidate_hex = _candidate_hex_from_entry(entry)
+    diagnostic = _prefix_boundary_breakdown_from_prefix(
+        raw_prefix,
+        candidate_hex=candidate_hex,
+        label=label or str(entry.get("label", "")),
+        source=source,
+        transform_model=transform_model,
+    )
+    diagnostic.update(
+        {
+            "frontier_role": str(entry.get("frontier_role", "")),
+            "source_anchor": str(entry.get("source_anchor", "")).strip().lower(),
+            "anchor_mode": str(entry.get("anchor_mode", "")),
+            "compare_semantics_agree": bool(entry.get("compare_semantics_agree"))
+            if "compare_semantics_agree" in entry
+            else None,
+            "runtime_ci_exact_wchars": int(
+                entry.get("runtime_ci_exact_wchars", diagnostic["ci_exact_wchars"]) or 0
+            ),
+            "runtime_ci_distance5": int(
+                entry.get("runtime_ci_distance5", diagnostic["ci_distance5"]) or 0
+            ),
+        }
+    )
+    return diagnostic
+
+
+def _prefix_boundary_diagnostics(
+    entries: Sequence[dict[str, object]],
+    *,
+    transform_model: SamplereverseTransformModel,
+    limit: int = 16,
+) -> list[dict[str, object]]:
+    ranked = sorted(
+        (entry for entry in entries if _candidate_hex_from_entry(entry)),
+        key=lambda entry: (
+            0
+            if str(entry.get("frontier_role", ""))
+            in {"projected_preserve_handoff", PROJECTED_PRESERVE_SECOND_HOP_ROLE}
+            else 1,
+            _runtime_validation_sort_key(entry)
+            if "runtime_ci_exact_wchars" in entry
+            else (
+                -int(entry.get("ci_exact_wchars", 0) or 0),
+                int(entry.get("ci_distance5", 1 << 30) or (1 << 30)),
+                int(entry.get("raw_distance10", 1 << 30) or (1 << 30)),
+                0,
+                _candidate_hex_from_entry(entry),
+            ),
+        ),
+    )
+    diagnostics: list[dict[str, object]] = []
+    seen: set[str] = set()
+    for entry in ranked:
+        candidate_hex = _candidate_hex_from_entry(entry)
+        if not candidate_hex or candidate_hex in seen:
+            continue
+        diagnostics.append(
+            _prefix_boundary_breakdown_from_entry(
+                entry,
+                transform_model=transform_model,
+                source="runtime_validation" if "runtime_ci_exact_wchars" in entry else "offline_entry",
+            )
+        )
+        seen.add(candidate_hex)
+        if len(diagnostics) >= limit:
+            break
+    return diagnostics
+
+
 def _offline_raw_prefix(candidate_hex: str, prefix_bytes: int = LONG_PREFIX_BYTES) -> bytes:
     return _decrypt_prefix(_candidate_text_from_hex(candidate_hex), prefix_bytes)
 
@@ -2458,6 +2608,13 @@ def validate_compare_aware_results(
                     "matched_target_prefix": runtime_ci_exact_wchars >= 5,
                 }
             )
+            record["prefix_boundary"] = _prefix_boundary_breakdown_from_prefix(
+                bytes.fromhex(runtime_lhs_prefix_hex_10[: len(TARGET_PREFIX) * 2]),
+                candidate_hex=candidate_hex,
+                label=str(record.get("label", f"top{idx}")),
+                source="runtime_compare",
+                transform_model=transform_model,
+            )
         else:
             record.update(
                 {
@@ -2471,6 +2628,11 @@ def validate_compare_aware_results(
                     "compare_semantics_agree": False,
                     "matched_target_prefix": False,
                 }
+            )
+            record["prefix_boundary"] = _prefix_boundary_breakdown_from_entry(
+                record,
+                transform_model=transform_model,
+                source="offline_entry",
             )
         summary["validations"].append(record)
 
@@ -5997,6 +6159,83 @@ def _smt_feedback_value_pools(
     return pools
 
 
+def _exact2_basin_smt_diagnostic_payload(
+    *,
+    best_exact2_entry: dict[str, object] | None,
+    primary_smt_entry: dict[str, object],
+    comparison_entries: Sequence[dict[str, object]],
+    lineage_entries: Sequence[dict[str, object]],
+    transform_model: SamplereverseTransformModel,
+) -> dict[str, object]:
+    if not best_exact2_entry:
+        return {
+            "attempted": False,
+            "recommended": False,
+            "reason": "no_compare_agree_exact2_entry",
+        }
+    exact2_anchor = (
+        str(best_exact2_entry.get("cand8_hex", "")).strip().lower()
+        or str(best_exact2_entry.get("candidate_hex", ""))[:16].strip().lower()
+    )
+    primary_anchor = (
+        str(primary_smt_entry.get("cand8_hex", "")).strip().lower()
+        or str(primary_smt_entry.get("candidate_hex", ""))[:16].strip().lower()
+    )
+    if len(exact2_anchor) != 16:
+        return {
+            "attempted": False,
+            "recommended": False,
+            "reason": "invalid_exact2_anchor",
+            "base_anchor": exact2_anchor,
+            "primary_base_anchor": primary_anchor,
+        }
+    exact2_entry = {
+        "candidate_hex": str(best_exact2_entry.get("candidate_hex", "")) or f"{exact2_anchor}{DEFAULT_FIXED_SUFFIX_HEX}",
+        "cand8_hex": exact2_anchor,
+        "ci_exact_wchars": int(best_exact2_entry.get("runtime_ci_exact_wchars", 0) or 0),
+        "ci_distance5": int(best_exact2_entry.get("runtime_ci_distance5", 1 << 30) or (1 << 30)),
+        "raw_distance10": int(best_exact2_entry.get("offline_raw_distance10", 1 << 30) or (1 << 30)),
+        "runtime_lhs_prefix_hex_10": str(best_exact2_entry.get("runtime_lhs_prefix_hex_10", "")),
+        "frontier_role": str(best_exact2_entry.get("frontier_role", "")) or "exact2_seed",
+        "anchor_mode": EXACT2_ANCHOR_MODE,
+    }
+    variable_bytes, variable_nibbles = _variable_positions_from_entries(
+        comparison_entries,
+        base_anchor=exact2_anchor,
+    )
+    feedback_value_pools = _smt_feedback_value_pools(
+        base_anchor=exact2_anchor,
+        variable_byte_positions=variable_bytes,
+        comparison_entries=comparison_entries,
+        preferred_entries=[],
+    )
+    return {
+        "attempted": False,
+        "recommended": primary_anchor != exact2_anchor,
+        "reason": (
+            "primary_smt_base_is_frontier; exact2_basin_diagnostic_only"
+            if primary_anchor != exact2_anchor
+            else "primary_smt_base_already_exact2"
+        ),
+        "base_anchor": exact2_anchor,
+        "primary_base_anchor": primary_anchor,
+        "anchor_mode": EXACT2_ANCHOR_MODE,
+        "variable_byte_positions": variable_bytes,
+        "variable_nibble_positions": variable_nibbles,
+        "feedback_value_pools": {
+            str(key): list(values[:GUIDED_POOL_TOP_VALUES])
+            for key, values in feedback_value_pools.items()
+        },
+        "prefix_boundary": _prefix_boundary_breakdown_from_entry(
+            exact2_entry,
+            transform_model=transform_model,
+            source="exact2_basin_smt_diagnostic",
+        ),
+        "comparison_entry_count": len(comparison_entries),
+        "lineage_entry_count": len(lineage_entries),
+    }
+
+
 def _exact1_projected_winner_smt_entries(
     *,
     base_anchor: str,
@@ -6187,6 +6426,11 @@ def run_compare_aware_smt(
         "feedback_value_pools": {
             str(key): list(values[:GUIDED_POOL_TOP_VALUES]) for key, values in feedback_value_pools.items()
         },
+        "prefix_boundary": _prefix_boundary_breakdown_from_entry(
+            base_entry,
+            transform_model=transform_model,
+            source="smt_base",
+        ),
         "attempted": z3_result.attempted,
         "summary": z3_result.summary,
         "evidence": z3_result.evidence or [],
@@ -6878,6 +7122,16 @@ class CompareAwareSearchStrategy(SolverStrategy):
             [*bridge_validations, *guided_validations, *frontier_guided_validations, *final_validations],
             context_entries=[*final_top_entries, *frontier_guided_entries, *guided_entries, *bridge_entries],
         )
+        all_runtime_validations = [
+            *bridge_validations,
+            *guided_validations,
+            *frontier_guided_validations,
+            *final_validations,
+        ]
+        prefix_boundary_diagnostics = _prefix_boundary_diagnostics(
+            all_runtime_validations,
+            transform_model=transform_model,
+        )
         _write_json(
             frontier_summary_path,
             {
@@ -6908,6 +7162,7 @@ class CompareAwareSearchStrategy(SolverStrategy):
                 "frontier_stall_stage": frontier_stall_stage,
                 "frontier_exact1_stall_reason": frontier_exact1_stall_reason,
                 "frontier_exact0_stall_reason": frontier_exact0_stall_reason,
+                "prefix_boundary_diagnostics": prefix_boundary_diagnostics,
                 "exact1_pair_set_winner": next(
                     (
                         str(run.get("pair_set_mode", ""))
@@ -7044,6 +7299,7 @@ class CompareAwareSearchStrategy(SolverStrategy):
             "frontier_exact1_stall_reason": frontier_exact1_stall_reason,
             "frontier_exact0_stall_reason": frontier_exact0_stall_reason,
             "frontier_stall_stage": frontier_stall_stage,
+            "prefix_boundary_diagnostics": prefix_boundary_diagnostics,
             "exact1_pair_set_winner": next(
                 (
                     str(run.get("pair_set_mode", ""))
@@ -7150,6 +7406,7 @@ class CompareAwareSearchStrategy(SolverStrategy):
                 "frontier_iterations": frontier_iterations,
                 "frontier_converged_reason": frontier_converged_reason,
                 "frontier_stall_stage": frontier_stall_stage,
+                "prefix_boundary_diagnostics": prefix_boundary_diagnostics,
             },
             derived_entries=final_top_entries,
         )
@@ -7238,8 +7495,30 @@ class CompareAwareSearchStrategy(SolverStrategy):
                 per_probe_timeout=per_probe_timeout,
                 log=log,
             )
+            exact2_basin_smt = _exact2_basin_smt_diagnostic_payload(
+                best_exact2_entry=best_exact2_validation,
+                primary_smt_entry=best_smt_entry,
+                comparison_entries=comparison_entries,
+                lineage_entries=[
+                    *final_top_entries,
+                    *final_validations,
+                    *frontier_guided_entries,
+                    *frontier_guided_validations,
+                    *current_frontier_candidates,
+                ],
+                transform_model=transform_model,
+            )
+            smt_run["exact2_basin_smt"] = exact2_basin_smt
+            smt_run["payload"] = {
+                **dict(smt_run.get("payload", {})),
+                "exact2_basin_smt": exact2_basin_smt,
+            }
             if not frontier_stall_stage:
-                frontier_stall_stage = "frontier_smt"
+                frontier_stall_stage = (
+                    "smt_exact2_basin_diagnostic"
+                    if exact2_basin_smt.get("recommended")
+                    else "frontier_smt"
+                )
             smt_payload = dict(smt_run["payload"])
             smt_artifact = _make_search_artifact(
                 tool_name="CompareAwareSMT",
@@ -7301,6 +7580,7 @@ class CompareAwareSearchStrategy(SolverStrategy):
                 "top_entries": final_top_entries,
                 "validations": final_validations,
                 "smt": smt_run or {},
+                "prefix_boundary_diagnostics": prefix_boundary_diagnostics,
                 "frontier_converged_reason": frontier_converged_reason,
                 "frontier_stall_stage": frontier_stall_stage,
                 "completed_stage": "smt" if smt_run else "refine",

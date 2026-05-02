@@ -1,9 +1,9 @@
 {
   "context_level": 2,
-  "generated_at": "2026-05-02T13:50:23Z",
+  "generated_at": "2026-05-02T14:14:33Z",
   "missing_evidence": [],
-  "next_local_action": "audit_transform_profile_boundary_for_exact2_basin_without_blind_search",
-  "reason": "exact2 seed source audit found no source metadata bug or lane classification bug; next bounded direction is transform/profile boundary hypothesis",
+  "next_local_action": "run_or_audit_new_compare_aware_diagnostics_without_blind_search",
+  "reason": "prefix boundary and exact2 basin SMT diagnostics are implemented; inspect a new diagnostic artifact before behavior changes",
   "recommended_packet": "project_state/task_packet.json",
   "should_call_model": true
 }

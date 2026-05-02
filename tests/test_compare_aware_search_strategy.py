@@ -33,6 +33,8 @@ from reverse_agent.strategies.compare_aware_search import (
     _guided_pool_beam_entries,
     _improved_frontier_candidates,
     _mine_exact1_lineage_value_sources,
+    _exact2_basin_smt_diagnostic_payload,
+    _prefix_boundary_breakdown_from_prefix,
     _refine_anchor_plan,
     _select_smt_base_entry,
     _validated_projected_preserve_second_hop_candidates,
@@ -47,6 +49,30 @@ from reverse_agent.transforms.samplereverse import SamplereverseTransformModel, 
 def test_score_compare_prefix_counts_known_exact2_basins() -> None:
     assert score_compare_prefix(bytes.fromhex("66006c0038ac00000000"))["ci_exact_wchars"] == 2
     assert score_compare_prefix(bytes.fromhex("46004c007e4000000000"))["ci_exact_wchars"] == 2
+
+
+def test_prefix_boundary_breakdown_explains_exact2_exact1_and_projected() -> None:
+    exact2 = _prefix_boundary_breakdown_from_prefix(
+        bytes.fromhex("46006c004464830d311c"),
+        candidate_hex="78d540b49c59077041414141414141",
+    )
+    exact1 = _prefix_boundary_breakdown_from_prefix(
+        bytes.fromhex("460061357f0b8c688502"),
+        candidate_hex="5a3e7f46ddd474d041414141414141",
+    )
+    projected = _prefix_boundary_breakdown_from_prefix(
+        bytes.fromhex("74934b156ba69ef3370f"),
+        candidate_hex="5a3f7f46ddd474d041414141414141",
+    )
+
+    assert exact2["ci_exact_wchars"] == 2
+    assert [item["exact_ci"] for item in exact2["wchar_deltas"][:3]] == [True, True, False]
+    assert exact2["wchar_deltas"][2]["raw_pair_hex"] == "4464"
+    assert exact2["wchar_deltas"][2]["target_pair_hex"] == "6100"
+    assert exact1["ci_exact_wchars"] == 1
+    assert [item["exact_ci"] for item in exact1["wchar_deltas"][:2]] == [True, False]
+    assert projected["ci_exact_wchars"] == 0
+    assert projected["wchar_deltas"][0]["raw_pair_hex"] == "7493"
 
 
 def test_score_prefix_exposes_long_window_structure_metrics() -> None:
@@ -2610,6 +2636,46 @@ def test_select_smt_base_entry_prefers_exact1_frontier_over_exact0_distance_basi
     assert selected["frontier_submode"] == FRONTIER_EXACT1_SUBMODE
 
 
+def test_exact2_basin_smt_diagnostic_does_not_replace_primary_frontier_base() -> None:
+    diagnostic = _exact2_basin_smt_diagnostic_payload(
+        best_exact2_entry={
+            "candidate_hex": "78d540b49c59077041414141414141",
+            "cand8_hex": "78d540b49c590770",
+            "runtime_lhs_prefix_hex_10": "46006c004464830d311c",
+            "runtime_ci_exact_wchars": 2,
+            "runtime_ci_distance5": 246,
+            "offline_raw_distance10": 304,
+            "compare_semantics_agree": True,
+        },
+        primary_smt_entry={
+            "candidate_hex": "5a3e7f46ddd474d041414141414141",
+            "cand8_hex": "5a3e7f46ddd474d0",
+            "frontier_submode": FRONTIER_EXACT1_SUBMODE,
+        },
+        comparison_entries=[
+            {
+                "candidate_hex": "5a3e7f46ddd474d041414141414141",
+                "cand8_hex": "5a3e7f46ddd474d0",
+                "improvement_gate_passed": True,
+            },
+            {
+                "candidate_hex": "5a3f7f46ddd474d041414141414141",
+                "cand8_hex": "5a3f7f46ddd474d0",
+                "improvement_gate_passed": False,
+            },
+        ],
+        lineage_entries=[],
+        transform_model=SamplereverseTransformModel(),
+    )
+
+    assert diagnostic["attempted"] is False
+    assert diagnostic["recommended"] is True
+    assert diagnostic["base_anchor"] == "78d540b49c590770"
+    assert diagnostic["primary_base_anchor"] == "5a3e7f46ddd474d0"
+    assert diagnostic["prefix_boundary"]["ci_exact_wchars"] == 2
+    assert diagnostic["variable_byte_positions"]
+
+
 def test_run_compare_aware_smt_records_feedback_value_pools_from_improved_frontier_entries(
     tmp_path: Path,
     monkeypatch,
@@ -2761,6 +2827,8 @@ def test_run_compare_aware_smt_records_feedback_value_pools_from_improved_fronti
     assert 0x41 in result["payload"]["feedback_value_pools"]["0"]
     assert 0x43 in result["payload"]["feedback_value_pools"]["2"]
     assert 0x57 not in result["payload"]["feedback_value_pools"]["1"]
+    assert result["payload"]["prefix_boundary"]["cand8_hex"] == "5a3e7f46ddd474d0"
+    assert result["payload"]["prefix_boundary"]["ci_exact_wchars"] == 1
 
 
 def test_compare_aware_strategy_runs_second_frontier_guided_round_on_improved_frontier(
