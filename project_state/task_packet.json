@@ -53,25 +53,31 @@
   },
   "current_bottleneck": {
     "confidence": "medium",
-    "reason": "projected_winner_reached_pair_gate",
-    "stage": "frontier_refine"
+    "reason": "second_hop_patch_needs_runtime_artifact_validation",
+    "stage": "second_hop_validation"
   },
   "do_not_do": [
     "do not return to old sample_solver blind search",
     "do not only increase beam or budget",
     "do not use compare_semantics_agree=false candidates as primary frontier",
     "do not commit full solve_reports directory",
-    "do not scan entire solve_reports unless explicitly needed"
+    "do not scan entire solve_reports unless explicitly needed",
+    "do not reimplement the already-tested second-hop composition patch unless tests or artifacts prove it is missing",
+    "do not treat Copilot CLI quota 402 as a strategy failure"
   ],
   "expected_gpt_output": "project_state/decision_packet.md",
-  "generated_at": "2026-04-30T14:24:23Z",
+  "generated_at": "2026-05-02T00:00:00Z",
   "included": [
     "artifact references",
-    "missing evidence",
-    "model gate reason"
+    "current best candidates",
+    "second-hop validation objective",
+    "model quota handling",
+    "stop conditions"
   ],
-  "missing_evidence": [],
-  "next_local_action": "inspect_failed_case_result",
+  "missing_evidence": [
+    "fresh harness/runtime artifact proving whether validated_projected_preserve_second_hop triggers frontier_guided_2 or equivalent second-hop guided run"
+  ],
+  "next_local_action": "run_second_hop_composition_verify_harness_or_rebuild_project_state_from_generated_artifacts",
   "omitted": [
     {
       "name": "full PROJECT_PROGRESS_LOG.txt",
@@ -83,18 +89,21 @@
     }
   ],
   "profile": "samplereverse",
-  "reason": "latest harness case has errors",
+  "reason": "second-hop composition patch has unit-test evidence but still lacks fresh runtime artifact evidence",
   "relevant_files": [
     "reverse_agent/strategies/compare_aware_search.py",
-    "tests/test_compare_aware_search_strategy.py"
+    "tests/test_compare_aware_search_strategy.py",
+    "project_state/decision_packet.md",
+    "project_state/codex_execution_report.md"
   ],
   "sample": "samplereverse",
   "sufficiency_check": {
     "has_artifact_refs": true,
     "has_current_best": true,
     "has_negative_results": true,
-    "has_runtime_validation": true,
-    "has_stall_stage": true
+    "has_runtime_validation": false,
+    "has_stall_stage": true,
+    "has_second_hop_patch_test_evidence": true
   },
-  "task": "collect_missing_evidence"
+  "task": "validate_second_hop_composition_runtime_artifacts"
 }
