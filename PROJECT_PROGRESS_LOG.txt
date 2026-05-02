@@ -2347,3 +2347,59 @@ Reverse Agent 项目进展日志（截至 2026-04-16）
   - 重点检查 loop stop condition 和 artifact emission；
   - 不扩大 beam/budget/topN/timeout，不回到 blind search，不重新争论 validation ordering。
 
+## 2026-05-02 second-hop loop stop-condition fix + harness verification
+
+1) 代码改动
+- 在 `reverse_agent/strategies/compare_aware_search.py` 中修复 frontier loop stop condition：
+  - `_frontier_continuation_candidates()` 返回 `used_second_hop=True` 且 reason 为 `continue` 时，不再被后续 “无 improved candidate” 归一化逻辑覆盖成 `distance_not_improved`。
+  - 未扩大 `FRONTIER_MAX_ITERATIONS`、beam、budget、topN、timeout。
+  - 未改 candidate generation、metadata gate、model path、GUI、pipeline 或 harness 总控。
+- 在 `tests/test_compare_aware_search_strategy.py` 新增 strategy-level 回归：
+  - 第一轮 frontier 无 runtime improvement；
+  - 产生 `validated_projected_preserve_second_hop` continuation；
+  - 断言第二轮 guided pool 以 `5a3f7f46ddd474d0` 为 anchor 运行；
+  - 断言第一轮 `used_second_hop_frontier_candidates=true` 且 converge reason 保持 `continue`。
+
+2) 自动化验证
+- `python -m pytest -q tests/test_compare_aware_search_strategy.py -k "second_hop_composition or validated_projected_preserve_handoff or second_frontier_guided_round"` -> `5 passed, 50 deselected`
+- `python -m pytest -q tests/test_compare_aware_search_strategy.py` -> `55 passed`
+- `python -m pytest -q` -> `137 passed`
+
+3) 真实样本回归
+- 新 run:
+  - `solve_reports\\harness_runs\\samplereverse_second_hop_loop_fix_verify_20260502`
+- 数据集：
+  - `samplereverse_exact1_projected_vs_neighbor_20260424.json`
+- 结果：
+  - `error_cases = 0`
+  - `completed_without_expected = 1`
+  - `candidate_quality = 1.0`
+  - `evidence_coverage = 1.0`
+  - 本轮没有出现 Copilot CLI quota `402`。
+
+4) 关键结果
+- 新 artifacts 已生成二跳 guided 目录：
+  - `frontier_guided_2_5a3f7f46ddd474d0`
+- `samplereverse_compare_aware_frontier_summary.json` 显示：
+  - `frontier_guided_runs` 数量为 2；
+  - 第 1 轮 `used_second_hop_frontier_candidates = true`；
+  - 第 1 轮 `frontier_converged_reason = continue`；
+  - 第 2 轮 anchor 为 `5a3f7f46ddd474d0`；
+  - 第 2 轮 role 为 `validated_projected_preserve_second_hop`；
+  - 总体 `frontier_converged_reason = iteration_limit`。
+- 当前 best 未改善：
+  - exact2 仍为 `78d540b49c590770...`，`runtime_ci_exact_wchars=2`，`runtime_ci_distance5=246`
+  - exact1 仍为 `5a3e7f46ddd474d0...`，`runtime_ci_exact_wchars=1`，`runtime_ci_distance5=258`
+  - `5a3f7f46ddd474d0` 已实际作为 second-hop anchor 使用，但没有产生 runtime gain。
+
+5) 结论
+- loop stop condition / artifact emission 问题已修复并通过真实 harness 验证。
+- 当前瓶颈推进为 second-hop candidate quality / projected winner 后 pair gate：
+  - plumbing 已通；
+  - 二跳已跑；
+  - 但二跳未产生优于 existing exact1/exact2 的候选。
+- 下一轮默认方向：
+  - 审计 `frontier_guided_2_5a3f7f46ddd474d0` 的 pair/pool 输出；
+  - 重点看 `pair_gate_after_projected_winner` 和二跳 candidate quality；
+  - 不扩大 beam/budget/topN/timeout，不回到 blind search。
+

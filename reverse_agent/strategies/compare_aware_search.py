@@ -6791,7 +6791,7 @@ class CompareAwareSearchStrategy(SolverStrategy):
                 int(run.get("pair_stage_stats", {}).get("pair_gate_kept_escape", 0) or 0)
                 for run in iteration_runs
             )
-            if not improved_frontier_candidates and frontier_converged_reason == "continue":
+            if not improved_frontier_candidates and frontier_converged_reason == "continue" and not used_second_hop:
                 frontier_converged_reason = "distance_not_improved"
             if frontier_converged_reason == "distance_not_improved":
                 if improved_pair_count <= 0 and near_pair_count <= 0 and kept_escape_count <= 0:

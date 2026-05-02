@@ -2981,6 +2981,259 @@ def test_compare_aware_strategy_runs_second_frontier_guided_round_on_improved_fr
     assert result.metadata["frontier_converged_reason"] == "iteration_limit"
 
 
+def test_compare_aware_strategy_runs_second_frontier_guided_round_on_second_hop_candidate(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    target = tmp_path / "samplereverse.exe"
+    target.write_bytes(b"MZ")
+    guided_calls: list[str] = []
+    refine_calls: list[str] = []
+
+    monkeypatch.setattr(
+        compare_aware_search,
+        "run_compare_aware_bridge",
+        lambda **kwargs: {
+            "pairscan_path": str(tmp_path / "pairscan_summary.json"),
+            "bridge_result_path": str(tmp_path / BRIDGE_RESULT_FILE_NAME),
+            "bridge_validation_path": str(tmp_path / "bridge_validation.json"),
+            "bridge_entries": [],
+            "bridge_validations": [],
+            "hot_positions": [0, 1, 2],
+            "hot_nibbles": [0, 1, 2, 3, 4],
+        },
+    )
+
+    def fake_guided_pool(**kwargs):
+        base_anchor = kwargs["base_anchor"]
+        guided_calls.append(base_anchor)
+        entry = {
+            "stage": "guided_pool",
+            "base_anchor": base_anchor,
+            "positions_or_nibbles": [1, 2, 3],
+            "candidate_hex": f"{base_anchor}41414141414141",
+            "cand8_hex": base_anchor,
+            "raw_prefix_hex": "460061357f0b8c688502",
+            "raw_prefix_hex_64": "460061357f0b8c688502",
+            "ci_exact_wchars": 1 if base_anchor == "5a3e7f46ddd474d0" else 0,
+            "ci_distance5": 258 if base_anchor == "5a3e7f46ddd474d0" else 740,
+            "raw_distance10": 290 if base_anchor == "5a3e7f46ddd474d0" else 772,
+            "source_anchor": kwargs.get("source_anchor", base_anchor),
+            "frontier_role": kwargs.get("frontier_role", ""),
+            "anchor_mode": "frontier",
+            "anchor_lineage": kwargs.get("anchor_lineage", ""),
+        }
+        guided_entries = [entry]
+        if base_anchor == "5a3e7f46ddd474d0":
+            guided_entries.append(
+                {
+                    "stage": "guided_pool",
+                    "base_anchor": base_anchor,
+                    "positions_or_nibbles": [1, 2, 3],
+                    "candidate_hex": "5a3f7f46ddd474d041414141414141",
+                    "cand8_hex": "5a3f7f46ddd474d0",
+                    "raw_prefix_hex": "74934b156ba69ef3370f",
+                    "raw_prefix_hex_64": "74934b156ba69ef3370f",
+                    "ci_exact_wchars": 0,
+                    "ci_distance5": 740,
+                    "raw_distance10": 772,
+                    "source_anchor": kwargs.get("source_anchor", base_anchor),
+                    "frontier_role": "projected_preserve_handoff",
+                    "anchor_mode": "frontier",
+                    "anchor_lineage": "exact2_seed(78d540b49c590770) -> guided(frontier)",
+                    "pair_candidate_origin": "exact1_projected_preserve_lane",
+                    "pair_projected_boundary_role": "projected_winner_with_base",
+                    "pair_projected_winner_gate_status": "projected_winner_promoted_to_near_local",
+                }
+            )
+        return {
+            "guided_pool_result_path": str(tmp_path / f"{base_anchor}_guided_pool_result.json"),
+            "guided_pool_validation_path": str(tmp_path / f"{base_anchor}_guided_pool_validation.json"),
+            "guided_entries": guided_entries,
+            "guided_validations": [],
+            "positions": [1, 2, 3],
+            "value_pools": {"1": [0x3E, 0x3F]},
+            "beam_limit": 16,
+            "anchor_mode": entry["anchor_mode"],
+            "source_anchor": entry["source_anchor"],
+            "frontier_role": entry["frontier_role"],
+            "anchor_lineage": entry["anchor_lineage"],
+            "pair_frontier_pool": [],
+            "triad_frontier_pool": [],
+            "pair_stage_stats": {},
+            "stage_stats": [],
+        }
+
+    def fake_run_compare_aware_refine(
+        *,
+        artifacts_dir: Path,
+        search_budget: int,
+        seed: int,
+        anchors: list[str],
+        snapshot_interval: int,
+        log,
+    ) -> Path:
+        _ = search_budget, seed, snapshot_interval, log, anchors
+        refine_calls.append(artifacts_dir.name)
+        artifacts_dir.mkdir(parents=True, exist_ok=True)
+        out = artifacts_dir / RESULT_FILE_NAME
+        candidate_hex = (
+            "78d540b49c59077041414141414141"
+            if artifacts_dir.name == "artifacts"
+            else "5a3e7f46ddd474d041414141414141"
+            if artifacts_dir.name == "frontier_refine_1"
+            else "5a3f7f46ddd474d041414141414141"
+        )
+        out.write_text(
+            json.dumps(
+                {
+                    "best": {
+                        "candidate_hex": candidate_hex,
+                        "cand8_hex": candidate_hex[:16],
+                        "raw_prefix_hex": "460061357f0b8c688502",
+                        "ci_exact_wchars": 2 if candidate_hex.startswith("78d540") else 1 if candidate_hex.startswith("5a3e") else 0,
+                        "ci_distance5": 246 if candidate_hex.startswith("78d540") else 258 if candidate_hex.startswith("5a3e") else 740,
+                        "raw_distance10": 304 if candidate_hex.startswith("78d540") else 290 if candidate_hex.startswith("5a3e") else 772,
+                    },
+                    "top_entries": [
+                        {
+                            "candidate_hex": candidate_hex,
+                            "cand8_hex": candidate_hex[:16],
+                            "raw_prefix_hex": "460061357f0b8c688502",
+                            "ci_exact_wchars": 2 if candidate_hex.startswith("78d540") else 1 if candidate_hex.startswith("5a3e") else 0,
+                            "ci_distance5": 246 if candidate_hex.startswith("78d540") else 258 if candidate_hex.startswith("5a3e") else 740,
+                            "raw_distance10": 304 if candidate_hex.startswith("78d540") else 290 if candidate_hex.startswith("5a3e") else 772,
+                        }
+                    ],
+                }
+            ),
+            encoding="utf-8",
+        )
+        return out
+
+    def fake_validate_compare_aware_results(
+        *,
+        target: Path,
+        artifacts_dir: Path,
+        result_path: Path,
+        transform_model: SamplereverseTransformModel,
+        validate_top: int,
+        per_probe_timeout: float,
+        log,
+        output_file_name: str = VALIDATION_FILE_NAME,
+        compare_output_prefix: str = "samplereverse_compare_aware_compare",
+    ) -> tuple[Path, list[dict[str, object]]]:
+        _ = target, result_path, transform_model, validate_top, per_probe_timeout, log, compare_output_prefix
+        out = artifacts_dir / output_file_name
+        out.parent.mkdir(parents=True, exist_ok=True)
+        if artifacts_dir == tmp_path / "artifacts":
+            validations = [
+                {
+                    "candidate_hex": "78d540b49c59077041414141414141",
+                    "cand8_hex": "78d540b49c590770",
+                    "compare_semantics_agree": True,
+                    "runtime_ci_exact_wchars": 2,
+                    "runtime_ci_distance5": 246,
+                    "frontier_role": "exact2_seed",
+                },
+                {
+                    "candidate_hex": "5a3e7f46ddd474d041414141414141",
+                    "cand8_hex": "5a3e7f46ddd474d0",
+                    "compare_semantics_agree": True,
+                    "runtime_ci_exact_wchars": 1,
+                    "runtime_ci_distance5": 258,
+                    "frontier_role": "exact1_frontier",
+                    "source_anchor": "78d540b49c590770",
+                    "anchor_lineage": "exact2_seed(78d540b49c590770) -> guided(frontier)",
+                },
+            ]
+        elif artifacts_dir == tmp_path / "artifacts" / "frontier_refine_1":
+            validations = [
+                {
+                    "candidate_hex": "78d540b49c59077041414141414141",
+                    "cand8_hex": "78d540b49c590770",
+                    "compare_semantics_agree": True,
+                    "runtime_ci_exact_wchars": 2,
+                    "runtime_ci_distance5": 246,
+                    "frontier_role": "exact2_seed",
+                },
+                {
+                    "candidate_hex": "5a3e7f46ddd474d041414141414141",
+                    "cand8_hex": "5a3e7f46ddd474d0",
+                    "compare_semantics_agree": True,
+                    "runtime_ci_exact_wchars": 1,
+                    "runtime_ci_distance5": 258,
+                    "frontier_role": "exact1_frontier",
+                    "source_anchor": "78d540b49c590770",
+                },
+                {
+                    "candidate_hex": "5a3f7f46ddd474d041414141414141",
+                    "cand8_hex": "5a3f7f46ddd474d0",
+                    "compare_semantics_agree": True,
+                    "runtime_ci_exact_wchars": 0,
+                    "runtime_ci_distance5": 740,
+                    "frontier_role": "projected_preserve_handoff",
+                    "source_anchor": "78d540b49c590770",
+                },
+            ]
+        else:
+            validations = [
+                {
+                    "candidate_hex": "78d540b49c59077041414141414141",
+                    "cand8_hex": "78d540b49c590770",
+                    "compare_semantics_agree": True,
+                    "runtime_ci_exact_wchars": 2,
+                    "runtime_ci_distance5": 246,
+                    "frontier_role": "exact2_seed",
+                },
+                {
+                    "candidate_hex": "5a3f7f46ddd474d041414141414141",
+                    "cand8_hex": "5a3f7f46ddd474d0",
+                    "compare_semantics_agree": True,
+                    "runtime_ci_exact_wchars": 0,
+                    "runtime_ci_distance5": 740,
+                    "frontier_role": PROJECTED_PRESERVE_SECOND_HOP_ROLE,
+                    "source_anchor": "78d540b49c590770",
+                },
+            ]
+        out.write_text(json.dumps({"validations": validations}, ensure_ascii=False), encoding="utf-8")
+        return out, validations
+
+    monkeypatch.setattr(compare_aware_search, "run_compare_aware_guided_pool", fake_guided_pool)
+    monkeypatch.setattr(compare_aware_search, "run_compare_aware_refine", fake_run_compare_aware_refine)
+    monkeypatch.setattr(compare_aware_search, "validate_compare_aware_results", fake_validate_compare_aware_results)
+    monkeypatch.setattr(
+        compare_aware_search,
+        "run_compare_aware_smt",
+        lambda **kwargs: {
+            "result_path": str(tmp_path / "smt_result.json"),
+            "validation_path": "",
+            "entry": None,
+            "validations": [],
+            "payload": {"summary": "smt attempted"},
+        },
+    )
+
+    result = CompareAwareSearchStrategy().run(
+        file_path=target,
+        artifacts_dir=tmp_path / "artifacts",
+        log=lambda _: None,
+        transform_model=SamplereverseTransformModel(),
+    )
+
+    assert guided_calls == [
+        "78d540b49c590770",
+        "5a3e7f46ddd474d0",
+        "5a3f7f46ddd474d0",
+    ]
+    assert refine_calls == ["artifacts", "frontier_refine_1", "frontier_refine_2"]
+    assert len(result.metadata["frontier_iterations"]) == 2
+    assert result.metadata["frontier_iterations"][0]["used_second_hop_frontier_candidates"] is True
+    assert result.metadata["frontier_iterations"][0]["frontier_converged_reason"] == "continue"
+    assert result.metadata["frontier_guided_runs"][1]["frontier_role"] == PROJECTED_PRESERVE_SECOND_HOP_ROLE
+    assert result.metadata["frontier_guided_runs"][1]["anchor"] == "5a3f7f46ddd474d0"
+
+
 def test_samplereverse_profile_runs_compare_aware_strategy_when_only_compare_truth_exists(
     tmp_path: Path,
     monkeypatch,
