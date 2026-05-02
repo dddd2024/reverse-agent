@@ -1,20 +1,20 @@
 {
   "active_strategy": "CompareAwareSearchStrategy",
   "artifact_refs": {
-    "bridge_search_result": "solve_reports\\harness_runs\\samplereverse_validation_slot_verify_20260430\\reports\\tool_artifacts\\samplereverse\\bridge\\bridge_search_result.json",
-    "bridge_validation": "solve_reports\\harness_runs\\samplereverse_validation_slot_verify_20260430\\reports\\tool_artifacts\\samplereverse\\bridge\\bridge_validation\\bridge_validation.json",
+    "bridge_search_result": "solve_reports\\harness_runs\\samplereverse_second_hop_composition_verify_20260502\\reports\\tool_artifacts\\samplereverse\\bridge\\bridge_search_result.json",
+    "bridge_validation": "solve_reports\\harness_runs\\samplereverse_second_hop_composition_verify_20260502\\reports\\tool_artifacts\\samplereverse\\bridge\\bridge_validation\\bridge_validation.json",
     "checkpoint": "solve_reports\\tool_artifacts\\samplereverse_optimizer_smoke\\samplereverse_search_checkpoint.json",
-    "compare_aware_result": "solve_reports\\harness_runs\\samplereverse_validation_slot_verify_20260430\\reports\\tool_artifacts\\samplereverse\\frontier_refine_1\\samplereverse_compare_aware_result.json",
-    "compare_probe": "solve_reports\\harness_runs\\samplereverse_validation_slot_verify_20260430\\reports\\tool_artifacts\\samplereverse\\samplereverse_compare_probe.json",
-    "compare_probe_log": "solve_reports\\harness_runs\\samplereverse_validation_slot_verify_20260430\\reports\\tool_artifacts\\samplereverse\\samplereverse_compare_probe.log",
-    "frontier_summary": "solve_reports\\harness_runs\\samplereverse_validation_slot_verify_20260430\\reports\\tool_artifacts\\samplereverse\\samplereverse_compare_aware_frontier_summary.json",
-    "guided_pool_result": "solve_reports\\harness_runs\\samplereverse_validation_slot_verify_20260430\\reports\\tool_artifacts\\samplereverse\\frontier_guided_1_5a3e7f46ddd474d0\\samplereverse_compare_aware_guided_pool_result.json",
-    "guided_pool_validation": "solve_reports\\harness_runs\\samplereverse_validation_slot_verify_20260430\\reports\\tool_artifacts\\samplereverse\\frontier_guided_1_5a3e7f46ddd474d0\\guided_pool_validation\\samplereverse_compare_aware_guided_pool_validation.json",
-    "pairscan_summary": "solve_reports\\harness_runs\\samplereverse_validation_slot_verify_20260430\\reports\\tool_artifacts\\samplereverse\\bridge\\pairscan_summary.json",
-    "run_manifest": "solve_reports\\harness_runs\\samplereverse_validation_slot_verify_20260430\\run_manifest.json",
-    "smt_result": "solve_reports\\harness_runs\\samplereverse_validation_slot_verify_20260430\\reports\\tool_artifacts\\samplereverse\\smt\\samplereverse_compare_aware_smt_result.json",
-    "strata_summary": "solve_reports\\harness_runs\\samplereverse_validation_slot_verify_20260430\\reports\\tool_artifacts\\samplereverse\\samplereverse_compare_aware_strata_summary.json",
-    "summary": "solve_reports\\harness_runs\\samplereverse_validation_slot_verify_20260430\\summary.json"
+    "compare_aware_result": "solve_reports\\harness_runs\\samplereverse_second_hop_composition_verify_20260502\\reports\\tool_artifacts\\samplereverse\\frontier_refine_1\\samplereverse_compare_aware_result.json",
+    "compare_probe": "solve_reports\\harness_runs\\samplereverse_second_hop_composition_verify_20260502\\reports\\tool_artifacts\\samplereverse\\samplereverse_compare_probe.json",
+    "compare_probe_log": "solve_reports\\harness_runs\\samplereverse_second_hop_composition_verify_20260502\\reports\\tool_artifacts\\samplereverse\\samplereverse_compare_probe.log",
+    "frontier_summary": "solve_reports\\harness_runs\\samplereverse_second_hop_composition_verify_20260502\\reports\\tool_artifacts\\samplereverse\\samplereverse_compare_aware_frontier_summary.json",
+    "guided_pool_result": "solve_reports\\harness_runs\\samplereverse_second_hop_composition_verify_20260502\\reports\\tool_artifacts\\samplereverse\\frontier_guided_1_5a3e7f46ddd474d0\\samplereverse_compare_aware_guided_pool_result.json",
+    "guided_pool_validation": "solve_reports\\harness_runs\\samplereverse_second_hop_composition_verify_20260502\\reports\\tool_artifacts\\samplereverse\\frontier_guided_1_5a3e7f46ddd474d0\\guided_pool_validation\\samplereverse_compare_aware_guided_pool_validation.json",
+    "pairscan_summary": "solve_reports\\harness_runs\\samplereverse_second_hop_composition_verify_20260502\\reports\\tool_artifacts\\samplereverse\\bridge\\pairscan_summary.json",
+    "run_manifest": "solve_reports\\harness_runs\\samplereverse_second_hop_composition_verify_20260502\\run_manifest.json",
+    "smt_result": "solve_reports\\harness_runs\\samplereverse_second_hop_composition_verify_20260502\\reports\\tool_artifacts\\samplereverse\\smt\\samplereverse_compare_aware_smt_result.json",
+    "strata_summary": "solve_reports\\harness_runs\\samplereverse_second_hop_composition_verify_20260502\\reports\\tool_artifacts\\samplereverse\\samplereverse_compare_aware_strata_summary.json",
+    "summary": "solve_reports\\harness_runs\\samplereverse_second_hop_composition_verify_20260502\\summary.json"
   },
   "current_best": {
     "exact1": {
@@ -52,9 +52,9 @@
     }
   },
   "current_bottleneck": {
-    "confidence": "medium",
-    "reason": "second_hop_patch_needs_runtime_artifact_validation",
-    "stage": "second_hop_validation"
+    "confidence": "high",
+    "reason": "second_hop_continuation_candidate_recorded_but_no_frontier_guided_2_artifact",
+    "stage": "frontier_loop_stop_condition"
   },
   "do_not_do": [
     "do not return to old sample_solver blind search",
@@ -62,22 +62,23 @@
     "do not use compare_semantics_agree=false candidates as primary frontier",
     "do not commit full solve_reports directory",
     "do not scan entire solve_reports unless explicitly needed",
-    "do not reimplement the already-tested second-hop composition patch unless tests or artifacts prove it is missing",
-    "do not treat Copilot CLI quota 402 as a strategy failure"
+    "do not rerun the same second-hop verification harness before auditing the loop stop condition"
   ],
   "expected_gpt_output": "project_state/decision_packet.md",
-  "generated_at": "2026-05-02T00:00:00Z",
+  "generated_at": "2026-05-02T07:28:27Z",
   "included": [
-    "artifact references",
-    "current best candidates",
-    "second-hop validation objective",
-    "model quota handling",
-    "stop conditions"
+    "current state",
+    "best candidates",
+    "stall reason",
+    "second-hop continuation evidence",
+    "negative results",
+    "artifact references"
   ],
-  "missing_evidence": [
-    "fresh harness/runtime artifact proving whether validated_projected_preserve_second_hop triggers frontier_guided_2 or equivalent second-hop guided run"
-  ],
-  "next_local_action": "run_second_hop_composition_verify_harness_or_rebuild_project_state_from_generated_artifacts",
+  "model_gate": {
+    "context_level": 2,
+    "reason": "second_hop_continuation_candidate_recorded_but_no_frontier_guided_2_artifact",
+    "should_call_model": true
+  },
   "omitted": [
     {
       "name": "full PROJECT_PROGRESS_LOG.txt",
@@ -89,21 +90,17 @@
     }
   ],
   "profile": "samplereverse",
-  "reason": "second-hop composition patch has unit-test evidence but still lacks fresh runtime artifact evidence",
   "relevant_files": [
     "reverse_agent/strategies/compare_aware_search.py",
-    "tests/test_compare_aware_search_strategy.py",
-    "project_state/decision_packet.md",
-    "project_state/codex_execution_report.md"
+    "tests/test_compare_aware_search_strategy.py"
   ],
   "sample": "samplereverse",
   "sufficiency_check": {
     "has_artifact_refs": true,
     "has_current_best": true,
     "has_negative_results": true,
-    "has_runtime_validation": false,
-    "has_stall_stage": true,
-    "has_second_hop_patch_test_evidence": true
+    "has_runtime_validation": true,
+    "has_stall_stage": true
   },
-  "task": "validate_second_hop_composition_runtime_artifacts"
+  "task": "Generate next decision for recorded second-hop continuation without frontier_guided_2 artifact"
 }

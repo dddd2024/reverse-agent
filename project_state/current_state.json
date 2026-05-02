@@ -1,20 +1,20 @@
 {
   "active_strategy": "CompareAwareSearchStrategy",
   "artifact_refs": {
-    "bridge_search_result": "solve_reports\\harness_runs\\samplereverse_validation_slot_verify_20260430\\reports\\tool_artifacts\\samplereverse\\bridge\\bridge_search_result.json",
-    "bridge_validation": "solve_reports\\harness_runs\\samplereverse_validation_slot_verify_20260430\\reports\\tool_artifacts\\samplereverse\\bridge\\bridge_validation\\bridge_validation.json",
+    "bridge_search_result": "solve_reports\\harness_runs\\samplereverse_second_hop_composition_verify_20260502\\reports\\tool_artifacts\\samplereverse\\bridge\\bridge_search_result.json",
+    "bridge_validation": "solve_reports\\harness_runs\\samplereverse_second_hop_composition_verify_20260502\\reports\\tool_artifacts\\samplereverse\\bridge\\bridge_validation\\bridge_validation.json",
     "checkpoint": "solve_reports\\tool_artifacts\\samplereverse_optimizer_smoke\\samplereverse_search_checkpoint.json",
-    "compare_aware_result": "solve_reports\\harness_runs\\samplereverse_validation_slot_verify_20260430\\reports\\tool_artifacts\\samplereverse\\frontier_refine_1\\samplereverse_compare_aware_result.json",
-    "compare_probe": "solve_reports\\harness_runs\\samplereverse_validation_slot_verify_20260430\\reports\\tool_artifacts\\samplereverse\\samplereverse_compare_probe.json",
-    "compare_probe_log": "solve_reports\\harness_runs\\samplereverse_validation_slot_verify_20260430\\reports\\tool_artifacts\\samplereverse\\samplereverse_compare_probe.log",
-    "frontier_summary": "solve_reports\\harness_runs\\samplereverse_validation_slot_verify_20260430\\reports\\tool_artifacts\\samplereverse\\samplereverse_compare_aware_frontier_summary.json",
-    "guided_pool_result": "solve_reports\\harness_runs\\samplereverse_validation_slot_verify_20260430\\reports\\tool_artifacts\\samplereverse\\frontier_guided_1_5a3e7f46ddd474d0\\samplereverse_compare_aware_guided_pool_result.json",
-    "guided_pool_validation": "solve_reports\\harness_runs\\samplereverse_validation_slot_verify_20260430\\reports\\tool_artifacts\\samplereverse\\frontier_guided_1_5a3e7f46ddd474d0\\guided_pool_validation\\samplereverse_compare_aware_guided_pool_validation.json",
-    "pairscan_summary": "solve_reports\\harness_runs\\samplereverse_validation_slot_verify_20260430\\reports\\tool_artifacts\\samplereverse\\bridge\\pairscan_summary.json",
-    "run_manifest": "solve_reports\\harness_runs\\samplereverse_validation_slot_verify_20260430\\run_manifest.json",
-    "smt_result": "solve_reports\\harness_runs\\samplereverse_validation_slot_verify_20260430\\reports\\tool_artifacts\\samplereverse\\smt\\samplereverse_compare_aware_smt_result.json",
-    "strata_summary": "solve_reports\\harness_runs\\samplereverse_validation_slot_verify_20260430\\reports\\tool_artifacts\\samplereverse\\samplereverse_compare_aware_strata_summary.json",
-    "summary": "solve_reports\\harness_runs\\samplereverse_validation_slot_verify_20260430\\summary.json"
+    "compare_aware_result": "solve_reports\\harness_runs\\samplereverse_second_hop_composition_verify_20260502\\reports\\tool_artifacts\\samplereverse\\frontier_refine_1\\samplereverse_compare_aware_result.json",
+    "compare_probe": "solve_reports\\harness_runs\\samplereverse_second_hop_composition_verify_20260502\\reports\\tool_artifacts\\samplereverse\\samplereverse_compare_probe.json",
+    "compare_probe_log": "solve_reports\\harness_runs\\samplereverse_second_hop_composition_verify_20260502\\reports\\tool_artifacts\\samplereverse\\samplereverse_compare_probe.log",
+    "frontier_summary": "solve_reports\\harness_runs\\samplereverse_second_hop_composition_verify_20260502\\reports\\tool_artifacts\\samplereverse\\samplereverse_compare_aware_frontier_summary.json",
+    "guided_pool_result": "solve_reports\\harness_runs\\samplereverse_second_hop_composition_verify_20260502\\reports\\tool_artifacts\\samplereverse\\frontier_guided_1_5a3e7f46ddd474d0\\samplereverse_compare_aware_guided_pool_result.json",
+    "guided_pool_validation": "solve_reports\\harness_runs\\samplereverse_second_hop_composition_verify_20260502\\reports\\tool_artifacts\\samplereverse\\frontier_guided_1_5a3e7f46ddd474d0\\guided_pool_validation\\samplereverse_compare_aware_guided_pool_validation.json",
+    "pairscan_summary": "solve_reports\\harness_runs\\samplereverse_second_hop_composition_verify_20260502\\reports\\tool_artifacts\\samplereverse\\bridge\\pairscan_summary.json",
+    "run_manifest": "solve_reports\\harness_runs\\samplereverse_second_hop_composition_verify_20260502\\run_manifest.json",
+    "smt_result": "solve_reports\\harness_runs\\samplereverse_second_hop_composition_verify_20260502\\reports\\tool_artifacts\\samplereverse\\smt\\samplereverse_compare_aware_smt_result.json",
+    "strata_summary": "solve_reports\\harness_runs\\samplereverse_second_hop_composition_verify_20260502\\reports\\tool_artifacts\\samplereverse\\samplereverse_compare_aware_strata_summary.json",
+    "summary": "solve_reports\\harness_runs\\samplereverse_second_hop_composition_verify_20260502\\summary.json"
   },
   "best_candidates": {
     "exact1": {
@@ -52,12 +52,12 @@
     }
   },
   "current_bottleneck": {
-    "confidence": "medium",
-    "reason": "projected_winner_reached_pair_gate",
-    "stage": "frontier_refine"
+    "confidence": "high",
+    "reason": "second_hop_continuation_candidate_recorded_but_no_frontier_guided_2_artifact",
+    "stage": "frontier_loop_stop_condition"
   },
   "current_mainline": "L15(prefix8)",
-  "generated_at": "2026-04-30T14:24:23Z",
+  "generated_at": "2026-05-02T07:28:27Z",
   "known_transform": [
     "input",
     "UTF-16LE",
