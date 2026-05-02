@@ -2,26 +2,35 @@
 
 ## 1. Goal
 
-本轮目标是从已经确认的 `D. validated_but_no_runtime_gain` 状态出发，做一次 **second-hop composition audit（二跳组合审计）**。
+本轮目标不是继续实现 second-hop composition，而是验证上一轮 Codex 已提交的 metadata-gated second-hop patch 是否真正进入运行链路，并把新的 runtime/artifact 证据重建进 `project_state`。
 
-不要继续验证上一轮 validation-slot patch。上一轮 Codex 报告已经确认：`projected preserve handoff` 候选 `5a3f7f46ddd474d0` 已经进入 `guided_pool_validation`，但 runtime 没有收益。因此当前问题不再是 validation ordering，而是：
+上一轮 Codex 已经完成以下工作：
 
-> 在 preserve-stabilized projected winner 已经被验证但无收益之后，compare-aware pipeline 是否缺少下一跳组合逻辑？
+```text
+validated projected preserve handoff -> validated_projected_preserve_second_hop -> bounded frontier-guided composition
+```
 
-本轮要回答两个问题：
+本轮要回答一个更窄的问题：
 
-1. `5a3f7f46ddd474d0` 这类 handoff candidate 后续是否被正确用于组合下一批候选。
-2. 当前是否错误地把 `63@pos1` 直接混入 current neighbor，而不是先围绕 preserve-stabilized projected winner 做二跳组合。
+```text
+5a3f7f46ddd474d0 这类 validated projected-preserve handoff，是否已经在新 harness 中触发 frontier_guided_2 或等价 second-hop guided run？
+```
 
-默认先审计，不直接改代码。只有审计能定位到明确的 composition gap，才允许做最小实现。
+验收目标：
+
+1. 生成新的 harness run，不覆盖旧 run。
+2. 在 artifacts 中确认是否出现 `frontier_guided_2_5a3f7f46ddd474d0` 或等价的 second-hop guided artifact。
+3. 确认该 second-hop anchor 的 `frontier_role` 为 `validated_projected_preserve_second_hop`，或 artifacts 中存在等价 metadata。
+4. 若仍卡住，基于 second-hop artifacts 重新分类瓶颈，而不是回到 validation-slot 或 blind search。
+5. 更新 `project_state/codex_execution_report.md`，必要时重建 `task_packet/current_state/artifact_index/negative_results`。
 
 ---
 
 ## 2. Current Evidence
 
-当前事实来源是 `project_state`，不要用记忆替代仓库状态。
+事实来源必须以仓库当前 `project_state` 为准，不要用记忆替代文件。
 
-已知状态：
+当前 `task_packet.json` / `current_state.json` 显示：
 
 ```text
 sample = samplereverse
@@ -39,7 +48,7 @@ missing_evidence = []
 input -> UTF-16LE -> Base64 -> RC4 -> compare flag{ prefix
 ```
 
-当前 best candidates：
+当前已知候选：
 
 | role | candidate_prefix | compare agree | runtime exact | distance5 | source |
 |---|---|---:|---:|---:|---|
@@ -47,24 +56,20 @@ input -> UTF-16LE -> Base64 -> RC4 -> compare flag{ prefix
 | exact1/frontier | `5a3e7f46ddd474d0` | true | 1 | 258 | exact2_seed -> refine -> guided(frontier) |
 | projected preserve handoff | `5a3f7f46ddd474d0` | true | 0 | 740 | projected preserve validation |
 
-上一轮 Codex 结论：
+上一轮 `codex_execution_report.md` 的关键结论：
 
-```text
-validation-slot patch 已经生效。
-5a3f7f46ddd474d0 已经从 pair_frontier_pool 进入 validation_candidates。
-该候选 validation 后没有 runtime gain。
-当前失败分类推进为 D. validated_but_no_runtime_gain。
-不要继续修 validation ordering。
+1. 已确认真实 composition gap：`5a3f7f46ddd474d0` 已经被 runtime validation，且 `compare_semantics_agree=true`，但因为没有 runtime distance gain，原逻辑不会把它作为下一轮 anchor。
+2. 已做最小 metadata-gated patch：只有已验证、compare-agree、且带有 projected preserve / projected winner 相关语义的 handoff，才允许作为 `validated_projected_preserve_second_hop` 进入下一轮 bounded frontier-guided composition。
+3. 没有调整 beam、budget、topN、timeout、blind search、pipeline、harness、GUI 或模型路径。
+4. 测试结果：
+
+```powershell
+python -m pytest -q tests/test_compare_aware_search_strategy.py -k "second_hop_composition or validated_projected_preserve_handoff"  # 3 passed, 51 deselected
+python -m pytest -q tests/test_compare_aware_search_strategy.py                                   # 54 passed
+python -m pytest -q                                                                              # 136 passed
 ```
 
-测试历史：
-
-```text
-python -m pytest -q tests/test_compare_aware_search_strategy.py -> 51 passed
-python -m pytest -q -> 133 passed
-```
-
-最新 harness 仍出现 `error_cases=1`，但原因是最终 model call 触发 Copilot CLI quota `402 You have no quota`。该错误不否定 compare-aware artifacts，因为 guided-pool validation、frontier validation、refine validation、SMT artifacts 已在 quota error 前生成。
+5. 上一轮没有运行 harness。下一轮的核心证据应来自新的 harness run 或 quota 失败前生成的 compare-aware artifacts。
 
 ---
 
@@ -77,9 +82,11 @@ python -m pytest -q -> 133 passed
 3. 不要把 `compare_semantics_agree=false` 的候选作为主突破点。
 4. 不要提交完整 `solve_reports` 目录。
 5. 不要默认扫描完整 `solve_reports`。
-6. 不要继续围绕 validation ordering 做重复修复；上一轮证据显示 validation-slot patch 已生效。
-7. 不要为了写报告消耗 Copilot/API quota。先做本地 artifact/code audit。
-8. 不要修改 GUI、harness、pipeline 总控或模型调用路径，除非审计证据证明问题不在 compare-aware strategy。
+6. 不要重复实现上一轮已经完成的 second-hop composition patch。
+7. 不要继续争论 validation ordering；证据已经显示 `5a3f7f46ddd474d0` 进入过 validation。
+8. 不要修改 GUI、harness 总控、pipeline 总控或模型调用路径，除非新 artifacts 明确证明问题不在 strategy，而在 reporting/project_state。
+9. 不要因为 Copilot CLI quota `402` 就判定 strategy 失败；只要 artifacts 生成，就先基于 artifacts 分类。
+10. 不要把 `5a3f7f46ddd474d0` 当作最终答案或无条件提升为 best candidate。
 
 ---
 
@@ -93,141 +100,53 @@ project_state/current_state.json
 project_state/artifact_index.json
 project_state/negative_results.json
 project_state/codex_execution_report.md
+project_state/decision_packet.md
 ```
 
-然后只读 artifact index 指向的必要 artifacts。优先级如下：
-
-```text
-solve_reports\harness_runs\samplereverse_validation_slot_verify_20260430\case_results\samplereverse-exact1-projected-vs-neighbor.json
-solve_reports\harness_runs\samplereverse_validation_slot_verify_20260430\summary.json
-solve_reports\harness_runs\samplereverse_validation_slot_verify_20260430\reports\tool_artifacts\samplereverse\frontier_guided_1_5a3e7f46ddd474d0\guided_pool_validation\samplereverse_compare_aware_guided_pool_validation.json
-solve_reports\harness_runs\samplereverse_validation_slot_verify_20260430\reports\tool_artifacts\samplereverse\frontier_guided_1_5a3e7f46ddd474d0\samplereverse_compare_aware_guided_pool_result.json
-solve_reports\harness_runs\samplereverse_validation_slot_verify_20260430\reports\tool_artifacts\samplereverse\frontier_refine_1\samplereverse_compare_aware_result.json
-solve_reports\harness_runs\samplereverse_validation_slot_verify_20260430\reports\tool_artifacts\samplereverse\samplereverse_compare_aware_frontier_summary.json
-solve_reports\harness_runs\samplereverse_validation_slot_verify_20260430\reports\tool_artifacts\samplereverse\samplereverse_compare_aware_strata_summary.json
-```
-
-代码审计范围：
+代码确认范围：
 
 ```text
 reverse_agent/strategies/compare_aware_search.py
 tests/test_compare_aware_search_strategy.py
 ```
 
-只有在这些文件无法解释 composition 断点时，才允许进一步搜索同名 helper、candidate metadata、frontier/refine composition 相关调用点。不要全文扫描 `solve_reports`。
+需要确认上一轮 patch 是否仍在当前工作区中，重点查找：
+
+```text
+PROJECTED_PRESERVE_SECOND_HOP_ROLE
+_validated_projected_preserve_second_hop_candidates
+_frontier_continuation_candidates
+second_hop_frontier_candidates
+frontier_continuation_candidates
+used_second_hop_frontier_candidates
+validated_projected_preserve_second_hop
+```
+
+运行后只读新 run 目录下的必要 artifacts。优先读：
+
+```text
+solve_reports\harness_runs\samplereverse_second_hop_composition_verify_YYYYMMDD\summary.json
+solve_reports\harness_runs\samplereverse_second_hop_composition_verify_YYYYMMDD\run_manifest.json
+solve_reports\harness_runs\samplereverse_second_hop_composition_verify_YYYYMMDD\case_results\samplereverse-exact1-projected-vs-neighbor.json
+solve_reports\harness_runs\samplereverse_second_hop_composition_verify_YYYYMMDD\reports\tool_artifacts\samplereverse\**\samplereverse_compare_aware_guided_pool_result.json
+solve_reports\harness_runs\samplereverse_second_hop_composition_verify_YYYYMMDD\reports\tool_artifacts\samplereverse\**\guided_pool_validation\*.json
+solve_reports\harness_runs\samplereverse_second_hop_composition_verify_YYYYMMDD\reports\tool_artifacts\samplereverse\**\samplereverse_compare_aware_result.json
+solve_reports\harness_runs\samplereverse_second_hop_composition_verify_YYYYMMDD\reports\tool_artifacts\samplereverse\**\samplereverse_compare_aware_frontier_summary.json
+```
+
+不要读取完整 `solve_reports`。如果 artifact index 不足，先重建 project_state，再按 index 精读。
 
 ---
 
 ## 5. Required Audit
 
-Codex 本轮必须先输出审计发现，再决定是否改代码。
+Codex 本轮必须先完成以下审计，再决定是否需要额外修补。
 
-审计问题清单：
+### A. Pre-run audit
 
-1. 确认工作区初始是否干净。
-2. 确认当前 `project_state` 是否仍指向 `samplereverse_validation_slot_verify_20260430`。
-3. 从 guided-pool validation artifact 中确认以下三个候选的 runtime 结果：
-
-```text
-5a3e7f46ddd474d0
-5a3f7f46ddd474d0
-78d540b49c590770
-```
-
-4. 从 guided-pool result / compare-aware result 中追踪 `5a3f7f46ddd474d0` 的 metadata：
-   - `frontier_role`
-   - `pair_candidate_origin`
-   - `pair_projected_boundary_role`
-   - `pair_projected_winner_gate_status`
-   - 是否被标记为 `projected_preserve_handoff`
-
-5. 审计 `compare_aware_search.py` 中候选组合逻辑：
-   - pair frontier 如何生成；
-   - guided pool 如何从 frontier/near-local/projected candidates 生成；
-   - refine 阶段如何选择下一跳 seed；
-   - validation 后无收益的 candidate 是否仍可作为下一跳组合 anchor；
-   - 是否存在“validated 但无收益后直接丢弃”的路径。
-
-6. 明确回答：
-
-```text
-当前 pipeline 是否支持围绕 5a3f7f46ddd474d0 做 second-hop composition？
-```
-
-7. 如果不支持，指出最小断点位置，必须具体到函数/分支/metadata 条件。
-
-8. 产出一个表格，至少包含：
-
-| candidate | source stage | metadata role | validation result | next-hop eligible? | drop/composition point |
-|---|---|---|---|---|---|
-
----
-
-## 6. Implementation Scope
-
-默认本轮是审计任务，不改代码。
-
-只有满足下面全部条件，才允许实现最小 patch：
-
-1. artifact 证明 `5a3f7f46ddd474d0` 已经 validated but no gain。
-2. 代码审计证明它后续没有进入 second-hop composition。
-3. 断点能在 `compare_aware_search.py` 内通过小范围逻辑修复。
-4. 修复不增加全局预算、不扩大 blind search、不引入 compare_semantics_agree=false 主线。
-
-允许修改：
-
-```text
-reverse_agent/strategies/compare_aware_search.py
-tests/test_compare_aware_search_strategy.py
-project_state/codex_execution_report.md
-project_state/current_state.json
-project_state/task_packet.json
-project_state/artifact_index.json
-project_state/model_gate.json
-```
-
-不允许修改：
-
-```text
-reverse_agent/harness.py
-reverse_agent/pipeline.py
-GUI 相关文件
-模型调用/云端 API 路径
-全局预算配置
-完整 solve_reports 目录
-```
-
-允许的最小实现方向：
-
-```text
-把 compare_semantics_agree=true 且 metadata 显示为 projected_preserve_handoff / projected_winner_promoted_to_near_local 的 validated candidate，作为 second-hop composition anchor 进入下一轮局部组合。
-```
-
-实现时必须保持：
-
-1. 不提高 beam/budget。
-2. 不改变旧 blind search。
-3. 不把失败候选无条件提升为 best。
-4. 不把 `5a3f7f46ddd474d0` 当作最终答案。
-5. 只新增一个受 metadata gate 控制的二跳入口。
-
-如果审计结果显示已有 second-hop composition 逻辑，只是 artifact 没有被正确记录，则不要改 strategy，优先修 project_state/reporting 的证据采集。
-
----
-
-## 7. Tests
-
-审计阶段先跑：
-
-```powershell
-python -m pytest -q tests/test_compare_aware_search_strategy.py
-python -m pytest -q
-python -m reverse_agent.project_state status
-```
-
-如果没有改代码，不要为了重复证明 validation-slot patch 而重跑同一轮 harness。直接输出审计报告即可。
-
-如果实现了最小 second-hop composition patch，必须补单元测试，测试名建议覆盖以下语义：
+1. 确认工作区是否干净。
+2. 确认上一轮 patch 存在于当前代码中。
+3. 确认 tests 中存在以下语义覆盖：
 
 ```text
 test_validated_projected_preserve_handoff_can_seed_second_hop_composition
@@ -235,41 +154,131 @@ test_second_hop_composition_does_not_admit_compare_disagree_candidate
 test_second_hop_composition_does_not_expand_budget
 ```
 
-代码修改后必须跑：
+4. 运行：
+
+```powershell
+python -m pytest -q tests/test_compare_aware_search_strategy.py -k "second_hop_composition or validated_projected_preserve_handoff"
+python -m pytest -q tests/test_compare_aware_search_strategy.py
+```
+
+如果这些测试失败，先停止并报告。不要直接跑 harness。
+
+### B. Harness / artifact validation
+
+如果测试通过，运行新的 harness，使用新 run name：
+
+```powershell
+python -m reverse_agent.harness --dataset .\samplereverse_exact1_projected_vs_neighbor_20260424.json --run-name samplereverse_second_hop_composition_verify_20260502 --reports-dir solve_reports --analysis-mode "Auto" --model-type "Copilot CLI" --copilot-timeout-seconds 300 --ctf-skill-profile compact --case-id samplereverse-exact1-projected-vs-neighbor --no-resume
+```
+
+如果 Copilot quota 仍报 `402 You have no quota`，不要扩大 timeout 或换 blind search。改为：
+
+```powershell
+python -m reverse_agent.project_state build --reports-dir solve_reports --sample samplereverse --run-name samplereverse_second_hop_composition_verify_20260502
+python -m reverse_agent.project_state status
+```
+
+然后基于已生成 artifacts 做分类。
+
+### C. Artifact questions
+
+必须回答：
+
+1. 是否出现 `frontier_guided_2_5a3f7f46ddd474d0` 或等价 second-hop guided artifact？
+2. `second_hop_frontier_candidates` 是否包含 `5a3f7f46ddd474d0`？
+3. `frontier_continuation_candidates` 是否包含它？
+4. `used_second_hop_frontier_candidates` 是否记录它被实际使用？
+5. 它是否保持 `compare_semantics_agree=true`？
+6. 它是否被 metadata gate 限定为 `validated_projected_preserve_second_hop`，而不是普通 blind candidate？
+7. second-hop 之后的最佳候选是否改进：
+   - runtime exact wchars 是否提升；
+   - distance5 是否下降；
+   - compare semantics 是否仍 agree。
+8. exact2 best `78d540b49c590770` 是否仍被保留，没有被错误降级或丢失。
+
+### D. Required table
+
+报告中必须给出表格：
+
+| candidate | source stage | frontier role | compare agree | runtime exact | distance5 | second-hop eligible | actually used in second-hop | result |
+|---|---|---|---:|---:|---:|---:|---:|---|
+
+至少包含：
+
+```text
+78d540b49c590770
+5a3e7f46ddd474d0
+5a3f7f46ddd474d0
+```
+
+如果新 run 产生更优候选，也必须加入表格。
+
+---
+
+## 6. Implementation Scope
+
+默认本轮不实现新策略，只做验证与 project_state 更新。
+
+允许修改：
+
+```text
+project_state/codex_execution_report.md
+project_state/task_packet.json
+project_state/current_state.json
+project_state/artifact_index.json
+project_state/negative_results.json
+project_state/model_gate.json
+PROJECT_PROGRESS_LOG.txt
+```
+
+只有在以下情况才允许改 strategy：
+
+1. 单元测试显示上一轮 second-hop patch 已丢失或没有被合并。
+2. 新 artifacts 证明 metadata-gated candidate 已生成，但由于一个明确的小逻辑分支没有被实际传入 guided pool。
+3. 断点能限定在 `reverse_agent/strategies/compare_aware_search.py` 内。
+4. 修复不扩大预算、不改 blind search、不改 model path、不使用 compare-disagree candidate。
+
+允许的代码修改范围仅限：
+
+```text
+reverse_agent/strategies/compare_aware_search.py
+tests/test_compare_aware_search_strategy.py
+```
+
+若问题只是 artifact/reporting 没有记录 second-hop 使用情况，不要改 strategy；优先修 project_state/reporting 的证据采集，或在 `codex_execution_report.md` 中明确指出证据缺口。
+
+---
+
+## 7. Tests
+
+最低测试序列：
+
+```powershell
+python -m pytest -q tests/test_compare_aware_search_strategy.py -k "second_hop_composition or validated_projected_preserve_handoff"
+python -m pytest -q tests/test_compare_aware_search_strategy.py
+```
+
+如果本轮没有改代码，但跑了 harness，则需要：
+
+```powershell
+python -m reverse_agent.project_state build --reports-dir solve_reports --sample samplereverse --run-name samplereverse_second_hop_composition_verify_20260502
+python -m reverse_agent.project_state status
+```
+
+如果本轮改了代码，必须跑：
 
 ```powershell
 python -m pytest -q tests/test_compare_aware_search_strategy.py
 python -m pytest -q
 ```
 
-如需 harness 验证，使用新的 run name，不覆盖旧 run：
+如运行 harness：
 
 ```powershell
-python -m reverse_agent.harness --dataset .\samplereverse_exact1_projected_vs_neighbor_20260424.json --run-name samplereverse_second_hop_composition_audit_20260430 --reports-dir solve_reports --analysis-mode "Auto" --model-type "Copilot CLI" --copilot-timeout-seconds 300 --ctf-skill-profile compact --case-id samplereverse-exact1-projected-vs-neighbor --no-resume
+python -m reverse_agent.harness --dataset .\samplereverse_exact1_projected_vs_neighbor_20260424.json --run-name samplereverse_second_hop_composition_verify_20260502 --reports-dir solve_reports --analysis-mode "Auto" --model-type "Copilot CLI" --copilot-timeout-seconds 300 --ctf-skill-profile compact --case-id samplereverse-exact1-projected-vs-neighbor --no-resume
 ```
 
-如果 Copilot quota 仍报 `402 You have no quota`，不要把它误判为 strategy 失败。只要 compare-aware artifacts 已生成，就基于已生成 artifacts 重建 project_state：
-
-```powershell
-python -m reverse_agent.project_state build --reports-dir solve_reports --sample samplereverse --run-name samplereverse_second_hop_composition_audit_20260430
-python -m reverse_agent.project_state status
-```
-
-最终必须更新：
-
-```text
-project_state/codex_execution_report.md
-```
-
-报告必须包含：
-
-1. 是否发现 second-hop composition gap。
-2. 如果发现，断点函数和触发条件是什么。
-3. 是否改代码；如果改了，改动范围是什么。
-4. 是否补测试，测试结果是什么。
-5. 是否运行 harness；如果运行，new run name 和关键 runtime 结果是什么。
-6. 是否仍停在 `frontier_refine / projected_winner_reached_pair_gate`。
-7. 下一轮是否应继续 second-hop composition，还是转向 artifact/reporting 修正。
+报告中必须列出每条命令的结果。失败时给出错误摘要，不要扩大任务范围。
 
 ---
 
@@ -277,38 +286,40 @@ project_state/codex_execution_report.md
 
 出现以下情况立即停止并报告：
 
-1. 审计确认 `5a3f7f46ddd474d0` 已支持 second-hop composition，但 artifact 没显示下一跳结果。
+1. second-hop unit tests 失败。
+   - 不跑 harness。
+   - 报告失败测试、失败原因和是否与上一轮 patch 有关。
+
+2. 新 harness 生成了 `frontier_guided_2_5a3f7f46ddd474d0` 或等价 artifact。
    - 停止改 strategy。
-   - 转向 artifact/reporting 审计。
+   - 基于 second-hop 结果更新 project_state。
+   - 如果 second-hop 后仍无收益，下一轮应分析 second-hop candidate quality，而不是 composition plumbing。
 
-2. 审计确认 `5a3f7f46ddd474d0` 不支持 second-hop composition，且断点明确。
-   - 只做最小 metadata-gated patch。
-   - 补单元测试。
-   - 不扩大预算。
+3. 新 harness 没生成 second-hop artifact，但 artifacts 显示 `second_hop_frontier_candidates` 和 `frontier_continuation_candidates` 已正确存在。
+   - 停止改 strategy。
+   - 审计 reporting / artifact emission / loop stop condition。
 
-3. 审计发现唯一可行候选是 `compare_semantics_agree=false`。
+4. 新 harness 没生成 second-hop artifact，且 artifacts 显示 `5a3f7f46ddd474d0` 没进入 continuation candidates。
+   - 只允许做最小 branch-level 修复。
+   - 不扩大 beam/budget。
+
+5. Copilot CLI 报 `402 You have no quota`。
+   - 不改变模型路径。
+   - 不把它当 strategy 失败。
+   - 基于 quota error 前已生成 artifacts 重建 project_state 并报告证据是否足够。
+
+6. 任何候选需要依赖 `compare_semantics_agree=false` 才能继续。
    - 不作为主线。
-   - 记录为负结果。
+   - 记录到 negative_results。
 
-4. 新 patch 导致 `exact2` best candidate `78d540b49c590770` 被丢失或降级。
-   - 立即回退该 patch。
-
-5. 测试失败且原因不在本轮改动范围内。
-   - 不继续扩大修改范围。
-   - 把失败命令、错误摘要、相关文件写入 `codex_execution_report.md`。
-
-6. 需要读取完整 `solve_reports` 或完整 `PROJECT_PROGRESS_LOG.txt` 才能继续。
+7. 为继续判断必须读取完整 `solve_reports` 或完整 `PROJECT_PROGRESS_LOG.txt`。
    - 停止。
-   - 先补充 `artifact_index.json` 或要求重建 project_state。
+   - 先补 artifact_index 或让 project_state build 产出更精确索引。
 
 ---
 
 ## GPT Decision Summary
 
-下一轮 Codex 不应继续问“handoff 有没有进入 validation”，因为已经进入；也不应继续调大搜索预算。当前应该把问题收窄为：
+当前应接受上一轮 Codex 的 second-hop composition patch 为“测试通过但尚未 runtime 验证”的状态。下一步不是继续写策略，而是运行 `samplereverse_second_hop_composition_verify_20260502`，确认 `validated_projected_preserve_second_hop` 是否真的触发二跳 guided composition。
 
-```text
-validated-but-no-gain 的 projected preserve handoff 是否还能作为二跳组合 anchor？
-```
-
-如果不能，做一个受 metadata gate 控制的最小 second-hop composition patch；如果已经能，则不要改 strategy，改查 artifact/reporting 为什么没有反映下一跳。
+如果新 artifacts 证明二跳已经触发但仍无收益，下一轮转向候选质量和 second-hop 生成逻辑分析；如果二跳没有触发，则只修具体 continuation/reporting 断点，仍禁止回退到 blind search 或扩大搜索预算。
