@@ -4,31 +4,39 @@ Generated: 2026-05-02
 
 ## 1. Goal
 
-本轮目标是审计 **transform/profile boundary for the exact2 basin**，核心稳定参考点是当前 best exact2 candidate：
+本轮目标是审计或产出 **new compare-aware diagnostics artifacts**，核心任务是验证上一轮 diagnostic-only 改动是否能为下一步提供可执行证据。
+
+当前任务名：
 
 ```text
-78d540b49c590770
+run_or_audit_new_compare_aware_diagnostics_without_blind_search
 ```
 
-上一轮 Codex 已完成 exact2 seed source quality 审计，结论是：
+上一轮 Codex 已实现 transform/profile boundary 的 diagnostic-only 改动，新增 metadata 包括：
 
 ```text
-78d540b49c590770 是 profile 传入的首位 seed anchor；
-它被 bridge/pairscan、seed-guided validation、frontier refine 一致保留为当前 best exact2；
-没有发现 source metadata 丢失、lane 误分类、validation ordering、candidate exclusion、gate/drop 或 artifact emission 的非预算型 bug；
-后续 guided/frontier 变体一旦偏离该 anchor，质量会快速退化到 exact1 或 exact0。
+prefix_boundary
+prefix_boundary_diagnostics
+exact2_basin_smt
 ```
 
-因此本轮不要继续扩大候选源、不要继续 projected preserve second-hop、不要回退 blind search。本轮只回答一个更窄的问题：
+该改动没有扩大 beam、budget、topN、timeout 或 frontier iteration limit；没有运行新 harness；没有修改 final candidate selection。当前 best 仍是：
 
 ```text
-为什么 78d540b49c590770 能稳定保持 runtime exact2 / distance5 246，
-但当前 transform/profile/scoring 边界无法从这个 exact2 basin 继续推进？
+78d540b49c59077041414141414141
+runtime exact2 / distance5 246
 ```
 
-Codex 本轮应围绕 `samplereverse` 的 profile、transform、compare-window、UTF-16LE/Base64/RC4 boundary 和 runtime exact-position mapping 做审计，判断当前 scoring/profile 是否只保护了 `flag{` prefix shape，而没有正确表达后续字符或边界信息。
+本轮只回答一个更窄的问题：
 
-本轮默认是 **审计任务**，不是搜索任务。只有证据证明存在小范围、非预算型、非 blind-search 的 transform/profile boundary bug，才允许最小代码修复。
+```text
+新加入的 prefix_boundary_diagnostics 和 exact2_basin_smt 是否能证明：
+1. exact2 basin 有可执行的 bounded SMT 方向；
+2. transform/profile boundary 缺少可利用信号；
+3. 还是当前仍然只是 candidate_quality_insufficient。
+```
+
+本轮不是继续写新搜索逻辑，也不是扩大预算。Codex 必须先产出或审计包含新 diagnostics 的 compare-aware artifact，然后再决定是否需要下一轮 real bounded exact2 SMT pass。
 
 ---
 
@@ -43,19 +51,19 @@ active_strategy = CompareAwareSearchStrategy
 sample = samplereverse
 current_mainline = L15(prefix8)
 known_transform = input -> UTF-16LE -> Base64 -> RC4 -> compare flag{ prefix
-current_bottleneck.stage = frontier_exact1
-current_bottleneck.reason = candidate_quality_or_transform_profile_boundary_after_exact2_source_audit
+current_bottleneck.stage = transform_profile_boundary
+current_bottleneck.reason = diagnostics_added_for_transform_profile_boundary_and_exact2_basin_smt
 current_bottleneck.confidence = high
-next_local_action = audit_transform_profile_boundary_for_exact2_basin_without_blind_search
+next_local_action = run_or_audit_new_compare_aware_diagnostics_without_blind_search
 ```
 
 ### Current best candidates
 
 | candidate | role | source | compare agree | runtime exact | distance5 | status |
 |---|---|---|---:|---:|---:|---|
-| `78d540b49c590770` | exact2 best / stable reference | `profile_seed -> bridge_pairscan -> seed_guided -> final_refine` | true | 2 | 246 | keep and use as boundary reference |
+| `78d540b49c590770` | exact2 best / stable reference | `profile_seed -> bridge_pairscan -> seed_guided -> final_refine` | true | 2 | 246 | keep and use as exact2 basin reference |
 | `5a3e7f46ddd474d0` | exact1 frontier / contrast case | `exact2_seed(78d...) -> refine(seed) -> guided(frontier)` | true | 1 | 258 | contrast against exact2 |
-| `5a3f7f46ddd474d0` | projected preserve second-hop anchor | projected preserve lane | true in prior validation | 0 | 740 | downgraded; do not promote |
+| `5a3f7f46ddd474d0` | projected preserve second-hop anchor | projected preserve lane | true | 0 | 740 | downgraded; do not promote |
 | `5a3f7fc2ddd474d0` | best new second-hop triad | projected/preserve pool | true | 0 | 419 | do not promote |
 | `343f7f46ddd474d0` | second-hop guided/top entry | second-hop guided pool | true | 0 | 428 | do not promote |
 
@@ -64,31 +72,42 @@ next_local_action = audit_transform_profile_boundary_for_exact2_basin_without_bl
 上一轮 `codex_execution_report.md` 的结论：
 
 ```text
-classification = exact2_seed_source_quality_audited_no_source_bug
+classification = transform_profile_boundary_diagnostics_added
+behavior_change = diagnostic_metadata_only
 code_fix_recommended = false
 source_bug_found = false
 projected_preserve_status = downgraded_validated_no_runtime_gain
-recommended_next = audit transform/profile boundary for the exact2 basin using 78d540b49c590770 as stable reference
 ```
 
-Key findings:
+Implemented diagnostic changes:
 
-1. `78d540b49c590770` 是 profile first seed anchor，并在 bridge、seed-guided validation、final refine 中保持 best exact2。
-2. bridge pairscan 记录 hot_positions `0,1`，并且只验证出 `78d540b49c590770` 为 exact2 / distance5 246。
-3. seed-guided mutations around `78d540b49c590770` 会掉到 exact0，而 unchanged base anchor 保持 exact2。
-4. frontier1 恢复 exact1 `5a3e7f46ddd474d0` / distance5 258，但没有改善 exact2。
-5. frontier2 / projected preserve 主要恢复同一个 exact1 或 exact0 variants；没有合法 better compare-agree source 被遗漏。
-6. 没有发现 source metadata loss、lane misclassification 或 validation candidate exclusion。
+1. `prefix_boundary` diagnostics break each candidate prefix into UTF-16 wchar deltas against `flag{`.
+2. Runtime validations now carry `prefix_boundary` metadata.
+3. Frontier/refine artifacts and strategy metadata now include `prefix_boundary_diagnostics`.
+4. Primary SMT payload now records `prefix_boundary`.
+5. When primary SMT chooses an exact1 frontier while a compare-agree exact2 exists, `exact2_basin_smt` records a diagnostic-only exact2 basin plan.
+6. No candidate selection behavior was changed.
+
+### Boundary evidence from latest report
+
+| candidate | runtime prefix pairs | runtime exact | distance5 | interpretation |
+|---|---|---:|---:|---|
+| `78d540b49c590770` | `4600 6c00 4464 830d 311c` | 2 | 246 | stable exact2 basin: `f`, `l` match |
+| `5a3e7f46ddd474d0` | `4600 6135 7f0b 8c68 8502` | 1 | 258 | exact1 frontier: only `f` matches |
+| `5a3f7f46ddd474d0` | `7493 4b15 6ba6 9ef3 370f` | 0 | 740 | projected preserve anchor collapses before first wchar |
+| `5a3f7fc2ddd474d0` | `854a e01a bc18 692c 7505` | 0 | 419 | best new second-hop candidate remains exact0 |
 
 ### Test evidence from latest report
 
-上一轮审计阶段运行：
+上一轮运行：
 
 ```powershell
-python -m pytest -q tests/test_compare_aware_search_strategy.py -k "exact2 or frontier or pairscan"  # 23 passed, 32 deselected
+python -m pytest -q tests/test_compare_aware_search_strategy.py -k "smt or exact2 or boundary or frontier"  # 26 passed, 31 deselected
+python -m pytest -q tests/test_compare_aware_search_strategy.py                                      # 57 passed
+python -m pytest -q                                                                                 # 139 passed
 ```
 
-没有运行新 harness，符合上一轮计划。
+No full harness was run, per plan.
 
 ---
 
@@ -103,13 +122,12 @@ python -m pytest -q tests/test_compare_aware_search_strategy.py -k "exact2 or fr
 5. 不要默认读取完整 `solve_reports`。
 6. 不要默认读取完整 `PROJECT_PROGRESS_LOG.txt`。
 7. 不要继续围绕 `5a3f7f46ddd474d0` 做 projected preserve second-hop 扩展。
-8. 不要重新跑同一个 `samplereverse_second_hop_loop_fix_verify_20260502` 来碰运气。
-9. 不要把 `5a3f7f46ddd474d0`、`5a3f7fc2ddd474d0` 或 `343f7f46ddd474d0` 提升为 best/final。
-10. 不要继续修 pairscan、bridge validation、frontier source、selection、loop stop condition 或 exact2 source metadata；这些方向已有 negative evidence。
-11. 不要直接引入第三跳。若认为需要第三跳，必须先证明 transform/profile boundary 审计无法解释当前瓶颈。
-12. 不要修改 GUI、模型调用路径、云端 API 路径、pipeline 总控或 harness 总控。
-13. 不要让 Codex 重复实现项目中已有的 compare-aware/frontier/guided/refine 功能。
-14. 不要把本轮做成“再跑一次搜索”。本轮是 transform/profile boundary audit。
+8. 不要把 `5a3f7f46ddd474d0`、`5a3f7fc2ddd474d0` 或 `343f7f46ddd474d0` 提升为 best/final。
+9. 不要只因为 diagnostic metadata 存在就改变 final candidate selection。
+10. 不要直接实现 real exact2 SMT pass，除非 diagnostics 证明它有 bounded variable positions / value pools。
+11. 不要修改 GUI、模型调用路径、云端 API 路径、pipeline 总控或 harness 总控。
+12. 不要让 Codex 重复实现项目中已有的 compare-aware/frontier/guided/refine 功能。
+13. 不要把本轮做成 blind 搜索或预算扩张。本轮是 diagnostics artifact audit / production。
 
 ---
 
@@ -129,231 +147,195 @@ project_state/decision_packet.md
 优先审计代码范围：
 
 ```text
-reverse_agent/profiles/samplereverse.py
-reverse_agent/transforms/samplereverse.py
 reverse_agent/strategies/compare_aware_search.py
 tests/test_compare_aware_search_strategy.py
 ```
 
-只聚焦 transform/profile/scoring boundary 相关逻辑，重点查找：
+必要时再读：
 
 ```text
-SamplereverseProfile seed / anchor / known prefix / target prefix assumptions
-known_transform construction
-UTF-16LE input expansion
-Base64 encoding block boundaries
-RC4 key / stream / compare alignment
-compare prefix / compare window / runtime exact-position mapping
-L15(prefix8) interpretation
-runtime_ci_exact_wchars and distance5 scoring assumptions
-compare_probe output mapping
-profile scoring around flag{ prefix shape
-candidate byte index -> transformed compare index mapping
+reverse_agent/profiles/samplereverse.py
+reverse_agent/transforms/samplereverse.py
 ```
 
-只读最新 run 的必要 artifacts，不读取完整 `solve_reports`：
+只聚焦 diagnostic metadata / exact2 basin SMT 相关逻辑，重点查找：
 
 ```text
-solve_reports\harness_runs\samplereverse_second_hop_loop_fix_verify_20260502\summary.json
-solve_reports\harness_runs\samplereverse_second_hop_loop_fix_verify_20260502\run_manifest.json
-solve_reports\harness_runs\samplereverse_second_hop_loop_fix_verify_20260502\reports\tool_artifacts\samplereverse\samplereverse_compare_probe.json
-solve_reports\harness_runs\samplereverse_second_hop_loop_fix_verify_20260502\reports\tool_artifacts\samplereverse\samplereverse_compare_probe.log
-solve_reports\harness_runs\samplereverse_second_hop_loop_fix_verify_20260502\reports\tool_artifacts\samplereverse\bridge\bridge_search_result.json
-solve_reports\harness_runs\samplereverse_second_hop_loop_fix_verify_20260502\reports\tool_artifacts\samplereverse\bridge\pairscan_summary.json
-solve_reports\harness_runs\samplereverse_second_hop_loop_fix_verify_20260502\reports\tool_artifacts\samplereverse\bridge\bridge_validation\bridge_validation.json
-solve_reports\harness_runs\samplereverse_second_hop_loop_fix_verify_20260502\reports\tool_artifacts\samplereverse\frontier_refine_2\samplereverse_compare_aware_result.json
-solve_reports\harness_runs\samplereverse_second_hop_loop_fix_verify_20260502\reports\tool_artifacts\samplereverse\samplereverse_compare_aware_frontier_summary.json
-solve_reports\harness_runs\samplereverse_second_hop_loop_fix_verify_20260502\reports\tool_artifacts\samplereverse\samplereverse_compare_aware_strata_summary.json
+prefix_boundary helper
+prefix_boundary_diagnostics emission
+runtime validation metadata
+frontier_summary / strata_summary metadata
+primary SMT payload prefix_boundary
+exact2_basin_smt diagnostic payload
+exact2 candidate selection as diagnostic base
+variable positions / value pools construction
+compare-agree filtering for exact2_basin_smt
+metadata-only behavior guard
+final selection isolation from diagnostics
 ```
 
-仅作为 contrast 读取 projected preserve second-hop artifacts：
+当前 `artifact_index.json` 仍指向旧 harness run：
 
 ```text
-solve_reports\harness_runs\samplereverse_second_hop_loop_fix_verify_20260502\reports\tool_artifacts\samplereverse\frontier_guided_2_5a3f7f46ddd474d0\samplereverse_compare_aware_guided_pool_result.json
-solve_reports\harness_runs\samplereverse_second_hop_loop_fix_verify_20260502\reports\tool_artifacts\samplereverse\frontier_guided_2_5a3f7f46ddd474d0\guided_pool_validation\samplereverse_compare_aware_guided_pool_validation.json
+solve_reports\harness_runs\samplereverse_second_hop_loop_fix_verify_20260502
 ```
 
-只有当上述 indexed artifacts 无法解释 transform/profile boundary 时，才允许搜索同名 helper 或要求增强 project_state/artifact diagnostics。
+注意：该 artifact index 还不是新 diagnostics run 的索引。上一轮只实现了 diagnostics metadata 代码，没有运行新 harness。Codex 本轮需要判断是否运行一个新的 diagnostics-only artifact-producing run，或是否已有足够 artifacts 可审计。
 
 ---
 
 ## 5. Required Audit
 
-Codex 本轮必须先输出审计发现，再决定是否修改代码。
+Codex 本轮必须先输出审计发现，再决定是否运行新 diagnostics harness 或修改 metadata emission。
 
 ### A. Pre-audit checks
 
 1. 确认工作区初始是否 clean。
-2. 确认最新 indexed run 是：
+2. 确认当前 `project_state` 的 task 是：
 
 ```text
-samplereverse_second_hop_loop_fix_verify_20260502
+run_or_audit_new_compare_aware_diagnostics_without_blind_search
 ```
 
-3. 确认当前 bottleneck 是：
+3. 确认 latest classification 是：
 
 ```text
-frontier_exact1 / candidate_quality_or_transform_profile_boundary_after_exact2_source_audit
+transform_profile_boundary_diagnostics_added
 ```
 
-4. 确认上一轮结论：
+4. 确认上一轮是 diagnostic metadata only：
 
 ```text
-exact2 seed source quality audited
-no source bug found
-no code fix recommended
-projected preserve downgraded
-no full harness rerun required before concrete transform/profile hypothesis
+no budget expansion
+no final selection behavior change
+no new harness run
 ```
 
-### B. Transform/profile boundary audit
+### B. Confirm diagnostics are wired into code path
 
 必须回答：
 
-1. `SamplereverseProfile` 中的 seed、anchor、known prefix、target prefix、profile scoring 假设分别是什么。
-2. `samplereverse` transform 是否确认为：
+1. `validate_compare_aware_results()` 是否为每条 runtime validation 附加 `prefix_boundary`。
+2. `frontier_summary`、`strata_summary`、strategy metadata、search artifact payload 是否包含 `prefix_boundary_diagnostics`。
+3. primary SMT payload 是否包含 `prefix_boundary`。
+4. 当 primary SMT chooses exact1 frontier 且存在 compare-agree exact2 时，是否附加 `exact2_basin_smt` diagnostic payload。
+5. `exact2_basin_smt` 是否只作为 diagnostic metadata，不运行额外 runtime validation，不替换 final best。
+6. 是否有测试覆盖 metadata-only guard，防止 diagnostics 改变 final selection。
+
+### C. Decide whether to run a new diagnostics-only artifact-producing execution
+
+Codex 必须选择以下路径之一，并说明理由：
 
 ```text
-input -> UTF-16LE -> Base64 -> RC4 -> compare flag{ prefix
+Path 1: artifacts already sufficient
+- 不运行 harness。
+- 只更新 codex_execution_report / project_state。
+- 说明为什么现有单元测试与 metadata inspection 足够。
+
+Path 2: need real compare-aware artifacts with new diagnostics
+- 允许运行一个新的 diagnostics-only harness。
+- 不扩大预算，不改 selection，不提交完整 solve_reports。
+- run name 必须是新的，不能覆盖旧 run。
 ```
 
-3. `L15(prefix8)` 的实际含义是什么：15 是输入长度、transformed compare length、candidate prefix length，还是 profile-specific label。
-4. `prefix8` 与 `flag{` prefix shape 的关系是什么。
-5. `runtime_ci_exact_wchars=2` 对应 compare output 的哪两个 wchar/position。
-6. `distance5=246` 如何计算，是否只反映前五个 wchar/compare chars 的距离。
-7. `78d540b49c590770` 的两个 exact wchar 是否对应特定 byte、Base64 block、RC4 keystream offset 或 compare window。
-8. `5a3e7f46ddd474d0` 为什么 local shape 更接近但 runtime exact 从 2 降到 1。
-9. `5a3f7f46ddd474d0` 为什么 compare-agree 但 runtime distance 爆炸到 740。
-10. `5a3f7fc2ddd474d0` 和 `343f7f46ddd474d0` 为什么只能达到 exact0 / distance5 419 或 428，是否说明当前 profile score 不能表达 exact2 basin 的关键 boundary。
-11. 是否存在以下边界问题：
+建议 run name：
 
 ```text
-compare prefix/window boundary mismatch
-UTF-16LE wchar alignment issue
-Base64 block boundary issue
-RC4 keystream alignment issue
-candidate byte index -> transformed compare index mismatch
-runtime exact-position mapping mismatch
-distance5 overfitting flag{ prefix shape
-known prefix or target prefix too short / too rigid
+samplereverse_prefix_boundary_diagnostics_20260502
 ```
 
-12. 如果 transform/profile 与 runtime 完全一致，必须说明为什么当前 scoring 无法继续利用 exact2 basin，以及下一轮应如何形成新的 bounded hypothesis。
+如果选择 Path 2，运行后必须执行：
 
-### C. Exact2 basin contrast
-
-必须比较以下候选：
-
-```text
-78d540b49c590770
-5a3e7f46ddd474d0
-5a3f7f46ddd474d0
-5a3f7fc2ddd474d0
-343f7f46ddd474d0
+```powershell
+python -m reverse_agent.project_state build --reports-dir solve_reports --sample samplereverse --run-name samplereverse_prefix_boundary_diagnostics_20260502
+python -m reverse_agent.project_state status
 ```
 
-必须回答：
+### D. Audit exact2_basin_smt payload
 
-1. exact2 `78d540b49c590770` 比 exact1 `5a3e7f46ddd474d0` 多匹配的 runtime exact 位，是否对应具体 transformed position。
-2. exact1 `5a3e7f46ddd474d0` 的 byte/pair/source delta 为什么导致 exact 数下降但 distance5 接近。
-3. projected preserve `5a3f7f46ddd474d0` 为什么距离爆炸。
-4. best new second-hop `5a3f7fc2ddd474d0` 是否只是 broader mutation noise，而不是 valid boundary evidence。
-5. `343f7f46ddd474d0` 是否说明 guided/top entries 没有抓住 exact2 的关键 transform boundary。
+如果存在 `exact2_basin_smt` payload，必须回答：
 
-### D. Boundary bug / no-boundary-bug classification
-
-必须明确分类为以下之一：
-
-```text
-A. transform/profile boundary bug found
-B. transform/profile is consistent, but scoring is too weak/short to guide beyond exact2 basin
-C. exact2 basin requires a new bounded hypothesis, not more source/search work
-D. evidence insufficient; project_state/artifact_index must be rebuilt with better transform/profile diagnostics
-```
-
-如果选择 A，必须给出最小修复点。
-
-如果选择 B 或 C，默认不改代码，只更新 `codex_execution_report.md` 和必要的 `project_state`。
-
-如果选择 D，不要读取完整 `solve_reports`；应要求 Codex 增强 project_state/artifact indexing 或 transform/profile diagnostics。
+1. payload 是否存在。
+2. base candidate 是否是 `78d540b49c590770`。
+3. base 的 `prefix_boundary` 是否显示 exact2：`f`, `l` match。
+4. variable positions 是哪些。
+5. value pools 是哪些，是否 bounded。
+6. 是否保留 compare-agree 约束。
+7. 是否能解释从 exact2 到 exact3+ 的可能方向。
+8. 是否只是 metadata，没有 runtime validation。
+9. 是否支持下一轮 real bounded exact2 SMT pass。
 
 ### E. Required evidence tables
 
-#### Table 1: transform/profile boundary map
+#### Table 1: diagnostics wiring audit
 
-| boundary | current assumption | evidence artifact/code | matches runtime? | implication |
-|---|---|---|---:|---|
-
-Required rows:
-
-```text
-UTF-16LE expansion
-Base64 block boundary
-RC4 stream alignment
-compare prefix/window
-runtime exact wchar mapping
-distance5 scoring
-L15(prefix8)
-profile known prefix / target prefix
-```
-
-#### Table 2: exact2 basin contrast
-
-| candidate | role | exact | distance5 | byte/pair delta vs exact2 | mapped compare positions | implication | keep / downgrade / investigate |
-|---|---|---:|---:|---|---|---|---|
+| diagnostic field | expected location | present? | behavior impact | evidence |
+|---|---|---:|---|---|
 
 Required rows:
 
 ```text
-78d540b49c590770
-5a3e7f46ddd474d0
-5a3f7f46ddd474d0
-5a3f7fc2ddd474d0
-343f7f46ddd474d0
+prefix_boundary
+prefix_boundary_diagnostics
+primary SMT prefix_boundary
+exact2_basin_smt
+metadata-only guard
+final selection isolation
 ```
 
-#### Table 3: boundary hypotheses
+#### Table 2: exact2 basin diagnostic payload
 
-| hypothesis | evidence for | evidence against | expected next evidence | risk | recommendation |
-|---|---|---|---|---|---|
+| field | value | bounded? | implication |
+|---|---|---:|---|
 
-Candidate hypotheses must include at least:
+Required rows if payload exists:
 
 ```text
-compare prefix/window boundary mismatch
-UTF-16LE wchar alignment issue
-Base64 block boundary issue
-RC4 keystream alignment issue
-runtime exact-position mapping mismatch
-profile scoring overfits flag{ prefix shape
-transform/profile is consistent but insufficiently informative
-continue projected preserve second-hop source
-return to blind search / increase budget
+base candidate
+runtime exact / distance5
+prefix_boundary matched wchars
+variable positions
+value pools
+compare-agree guard
+runtime validation status
+selection impact
 ```
 
-The last two should normally be rejected unless new evidence contradicts current state.
+#### Table 3: next classification
+
+| classification | evidence for | evidence against | next action | recommendation |
+|---|---|---|---|---|
+
+Candidate classifications must include:
+
+```text
+diagnostics show promising exact2_basin_smt
+diagnostics show no exact2-basin signal
+candidate_quality_insufficient_after_transform_boundary
+transform/profile boundary bug found
+diagnostics insufficient; enhance artifact_index or metadata
+```
 
 ---
 
 ## 6. Implementation Scope
 
-默认本轮不改代码。
+默认不改搜索行为。
 
 允许做的事情：
 
 ```text
-1. 审计 existing artifacts、samplereverse profile、samplereverse transform 和 compare_aware_search.py 中 scoring/boundary 相关逻辑。
-2. 写一个小型本地 diagnostic/read-only script 临时映射 candidate byte -> transform output -> runtime compare position，但不要提交大型 runtime output。
+1. 审计 diagnostic metadata 是否已进入代码路径。
+2. 如需要，运行一个新的 diagnostics-only compare-aware execution。
 3. 更新 project_state/codex_execution_report.md。
-4. 如已有 project_state builder 能表达 transform/profile boundary，可运行它重建 project_state。
-5. 只有发现 transform/profile boundary bug 时，才做最小代码修复和测试。
+4. 更新 project_state/task_packet.json、current_state.json、artifact_index.json、model_gate.json。
+5. 如果 diagnostics 字段缺失，修复 metadata emission。
+6. 如果测试不足，补充 diagnostic metadata tests。
 ```
 
 允许修改的文件范围：
 
 ```text
-reverse_agent/profiles/samplereverse.py
-reverse_agent/transforms/samplereverse.py
 reverse_agent/strategies/compare_aware_search.py
 tests/test_compare_aware_search_strategy.py
 project_state/codex_execution_report.md
@@ -375,64 +357,51 @@ GUI 相关文件
 完整 solve_reports 目录
 ```
 
-只有满足以下全部条件，才允许最小代码修复：
+只有满足以下条件，才允许 metadata 小修：
 
-1. artifacts 或代码审计证明存在具体 transform/profile boundary bug。
-2. 修复点能定位到 `samplereverse.py` profile/transform 或 `compare_aware_search.py` 中具体 scoring/boundary mapping 分支。
-3. 修复不扩大 beam、budget、topN、timeout、iteration limit。
-4. 修复不使用 compare-disagree candidates 作为主线。
-5. 修复不破坏 current exact2 best `78d540b49c590770` 的保留。
-6. 修复必须补充单元测试证明不是预算扩大，也不是 blind search。
+1. diagnostics 字段在代码路径中缺失或未被 artifact/index 捕获。
+2. 修复只是 metadata/reporting emission。
+3. 不改变 candidate generation、ranking、validation、final selection。
+4. 不扩大任何预算。
+5. 必须补测试证明 metadata-only。
 
-如果审计结果只是“transform/profile consistent but insufficiently informative”，不要改代码。应写出下一轮转向：新的 bounded hypothesis、transform/profile diagnostics enhancement，或更窄的 runtime compare-position hypothesis。
+如果 diagnostics 显示 `exact2_basin_smt` 有 promising bounded positions，本轮仍不要直接实现 real exact2 SMT execution。只在报告中推荐下一轮执行 real bounded exact2 SMT pass。
 
 ---
 
 ## 7. Tests
 
-审计阶段先跑：
+审计或 metadata 小修后先跑：
 
 ```powershell
-python -m pytest -q tests/test_compare_aware_search_strategy.py -k "exact2 or frontier or pairscan or profile or transform"
+python -m pytest -q tests/test_compare_aware_search_strategy.py -k "smt or exact2 or boundary or frontier"
 python -m pytest -q tests/test_compare_aware_search_strategy.py
 ```
 
-如果只更新报告 / project_state，且没有代码修改，不要重复运行 full harness。
-
-如果修改 profile / transform / scoring / boundary mapping，必须补充或更新单元测试，语义至少覆盖：
-
-```text
-test_samplereverse_transform_boundary_maps_runtime_exact_positions
-test_samplereverse_profile_prefix_window_matches_compare_probe
-test_exact2_reference_candidate_preserves_runtime_mapping
-test_projected_preserve_candidate_does_not_get_promoted
-test_transform_profile_boundary_does_not_expand_budget
-```
-
-代码修改后必须跑：
+如果修改了 metadata emission 或 diagnostics：
 
 ```powershell
-python -m pytest -q tests/test_compare_aware_search_strategy.py
 python -m pytest -q
 ```
 
-只有在代码修复后需要 runtime 验证，才运行新 harness。必须使用新 run name，不能覆盖旧 run：
+如果运行新的 diagnostics harness，建议命令：
 
 ```powershell
-python -m reverse_agent.harness --dataset .\samplereverse_exact1_projected_vs_neighbor_20260424.json --run-name samplereverse_transform_profile_boundary_20260502 --reports-dir solve_reports --analysis-mode "Auto" --model-type "Copilot CLI" --copilot-timeout-seconds 300 --ctf-skill-profile compact --case-id samplereverse-exact1-projected-vs-neighbor --no-resume
-python -m reverse_agent.project_state build --reports-dir solve_reports --sample samplereverse --run-name samplereverse_transform_profile_boundary_20260502
+python -m reverse_agent.harness --dataset .\samplereverse_exact1_projected_vs_neighbor_20260424.json --run-name samplereverse_prefix_boundary_diagnostics_20260502 --reports-dir solve_reports --analysis-mode "Auto" --model-type "Copilot CLI" --copilot-timeout-seconds 300 --ctf-skill-profile compact --case-id samplereverse-exact1-projected-vs-neighbor --no-resume
+python -m reverse_agent.project_state build --reports-dir solve_reports --sample samplereverse --run-name samplereverse_prefix_boundary_diagnostics_20260502
 python -m reverse_agent.project_state status
 ```
 
 最终报告必须包含：
 
-1. transform/profile boundary map。
-2. exact2 basin contrast table。
-3. 是否发现 transform/profile boundary bug。
-4. 是否修改代码；如果修改，列出函数、测试、是否运行 harness。
-5. 如果不修改代码，明确下一轮单一推荐方向。
-6. 是否需要增强 project_state/artifact diagnostics。
-7. 是否仍坚持不回 blind search、不扩大预算。
+1. 是否运行了新 diagnostics harness。
+2. run name。
+3. 是否生成 `prefix_boundary_diagnostics`。
+4. 是否生成 `exact2_basin_smt`。
+5. `exact2_basin_smt` 的 base candidate、variable positions、value pools。
+6. 是否有 candidate 超过 exact2。
+7. 是否保持不扩大预算、不改变 final selection。
+8. 下一轮是否推荐 real bounded exact2 SMT pass。
 
 ---
 
@@ -440,36 +409,34 @@ python -m reverse_agent.project_state status
 
 出现以下情况立即停止并报告：
 
-1. 发现具体 transform/profile boundary bug。
-   - 只做最小修复。
-   - 补单元测试。
-   - 不扩大预算。
+1. 新 diagnostics artifact 缺少 `prefix_boundary_diagnostics` 或 `exact2_basin_smt`。
+   - 不继续行为修改。
+   - 先修 metadata/reporting 或 project_state indexing。
 
-2. 发现 transform/profile 与 runtime 完全一致，但 scoring/profile 信息不足以继续推进 exact2 basin。
-   - 不改代码。
-   - 写清楚 exact2 basin 无法继续利用的原因。
-   - 推荐下一轮新的 bounded hypothesis 或 diagnostics enhancement。
+2. `exact2_basin_smt` 存在，但 payload 为空、没有 bounded positions、没有 value pools，或 base 不是 `78d540b49c590770`。
+   - 分类为 diagnostics insufficient 或 candidate_quality_insufficient_after_transform_boundary。
 
-3. exact2 basin 指向 runtime compare-position / boundary 假设，但证据不足。
-   - 不推翻完整 transform。
-   - 提出具体 missing diagnostics。
-   - 更新 project_state/report。
+3. `exact2_basin_smt` 显示有明确 bounded variable positions / value pools。
+   - 不直接扩大搜索。
+   - 不直接改 selection。
+   - 下一轮再决策是否运行 real bounded exact2 SMT pass。
 
-4. 需要第三跳、更大预算、更多 beam/topN/timeout 才能继续。
+4. diagnostics 指向 transform/profile boundary bug。
+   - 只做最小 metadata or boundary 修复。
+   - 补测试。
+   - 不改预算。
+
+5. 需要完整 `solve_reports` 或完整 `PROJECT_PROGRESS_LOG.txt`。
    - 停止。
-   - 不修改预算。
-   - 只报告为什么当前 evidence 不足以支持该扩展。
-
-5. 需要读取完整 `solve_reports` 或完整 `PROJECT_PROGRESS_LOG.txt` 才能继续。
-   - 停止。
-   - 先要求增强 `artifact_index` 或 transform/profile diagnostics。
+   - 先增强 artifact_index 或 diagnostics output。
 
 6. 唯一可行方向依赖 `compare_semantics_agree=false` candidate。
    - 不作为主线。
-   - 记录到 negative results 或报告中。
+   - 记录到 negative evidence。
 
-7. 审计结果仍然只建议继续 projected preserve second-hop。
-   - 拒绝该方向，除非提供新的 artifact 证明前两轮 no-source-bug 结论错误。
+7. 需要 blind search、第三跳、更大 beam/topN/timeout 才能继续。
+   - 停止。
+   - 不执行。
 
 ---
 
@@ -478,25 +445,32 @@ python -m reverse_agent.project_state status
 当前已经排除的方向：
 
 ```text
-1. second-hop 没有执行：已修复，frontier_guided_2 已生成。
+1. second-hop 没有执行：已修复。
 2. pair gate / refine / final selection 错误过滤更优候选：已审计，未发现。
 3. projected preserve second-hop 继续扩展：已验证无收益，5a3f7f46ddd474d0 降级。
 4. exact2 seed source metadata/ranking/inclusion bug：已审计，未发现。
+5. transform/profile boundary 直接行为修复：尚无证据，不应直接改 selection。
 ```
 
 下一轮单一方向：
 
 ```text
-audit transform/profile boundary for the exact2 basin using 78d540b49c590770 as stable reference, without blind search or budget expansion
+run or audit a new compare-aware diagnostic artifact containing prefix_boundary_diagnostics and exact2_basin_smt, without blind search or budget expansion
 ```
 
-Codex 不应继续扩大搜索，而应回答：
+Codex 不应继续扩大搜索，而应先回答：
 
 ```text
-78d540b49c590770 的 exact2 basin 对应哪些 transform/profile boundary；
-为什么 5a3e7f46ddd474d0、5a3f7f46ddd474d0、5a3f7fc2ddd474d0 等对照候选会退化；
-当前 profile/scoring 是否只保护 flag{ prefix shape，无法继续推进后续字符；
-这是 transform/profile boundary bug，还是 scoring 信息不足。
+新 diagnostics 是否真实进入 artifact；
+exact2_basin_smt 是否以 78d540b49c590770 为 base；
+是否存在 bounded variable positions / value pools；
+这些 evidence 是否足以支持下一轮 real bounded exact2 SMT pass。
 ```
 
-如果没有可定位的 boundary bug，本轮不要改代码。下一轮应转向更窄的 runtime compare-position hypothesis 或 diagnostics enhancement。
+如果 diagnostics 没有提供 exact2-basin signal，本轮应分类为：
+
+```text
+candidate_quality_insufficient_after_transform_boundary
+```
+
+如果 diagnostics 明确给出 bounded exact2 SMT 方向，本轮只报告并推荐下一轮执行，不要直接改变 final selection。
