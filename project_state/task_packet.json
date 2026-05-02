@@ -61,14 +61,17 @@
     "do not only increase beam or budget",
     "do not use compare_semantics_agree=false candidates as primary frontier",
     "do not commit full solve_reports directory",
-    "do not scan entire solve_reports unless explicitly needed"
+    "do not scan entire solve_reports unless explicitly needed",
+    "do not continue fixing frontier loop stop condition; frontier_guided_2 has already been emitted",
+    "do not rerun the same loop-fix harness before auditing second-hop pair/pool quality"
   ],
   "expected_gpt_output": "project_state/decision_packet.md",
-  "generated_at": "2026-05-02T08:10:44Z",
+  "generated_at": "2026-05-02T08:30:00Z",
   "included": [
     "current state",
     "best candidates",
     "stall reason",
+    "second-hop guided artifact evidence",
     "negative results",
     "artifact references"
   ],
@@ -77,6 +80,13 @@
     "reason": "pair_gate_after_projected_winner",
     "should_call_model": true
   },
+  "missing_evidence": [
+    "second-hop pool role/source distribution",
+    "second-hop compare-agree versus compare-disagree candidate distribution",
+    "precise pair gate rejection/drop reasons after projected winner",
+    "whether a compare-agree better candidate was incorrectly filtered before refine/final validation"
+  ],
+  "next_local_action": "audit_frontier_guided_2_pair_pool_quality_and_pair_gate_after_projected_winner",
   "omitted": [
     {
       "name": "full PROJECT_PROGRESS_LOG.txt",
@@ -88,9 +98,12 @@
     }
   ],
   "profile": "samplereverse",
+  "reason": "frontier_guided_2 was emitted after loop fix, but second-hop produced no runtime improvement over exact1/exact2 best",
   "relevant_files": [
     "reverse_agent/strategies/compare_aware_search.py",
-    "tests/test_compare_aware_search_strategy.py"
+    "tests/test_compare_aware_search_strategy.py",
+    "project_state/codex_execution_report.md",
+    "project_state/artifact_index.json"
   ],
   "sample": "samplereverse",
   "sufficiency_check": {
@@ -98,7 +111,9 @@
     "has_current_best": true,
     "has_negative_results": true,
     "has_runtime_validation": true,
-    "has_stall_stage": true
+    "has_stall_stage": true,
+    "has_frontier_guided_2_artifact": true,
+    "has_second_hop_quality_diagnosis": false
   },
-  "task": "Generate next decision for exact1 pair_pool bottleneck"
+  "task": "audit_second_hop_pair_pool_quality_and_pair_gate_after_projected_winner"
 }
