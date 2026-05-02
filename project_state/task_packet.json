@@ -63,14 +63,16 @@
     "do not commit full solve_reports directory",
     "do not scan entire solve_reports unless explicitly needed",
     "do not continue fixing frontier loop stop condition; frontier_guided_2 has already been emitted",
-    "do not rerun the same loop-fix harness before auditing second-hop pair/pool quality"
+    "do not continue fixing pair gate/refine selection unless new evidence shows a source bug",
+    "do not rerun the same loop-fix harness before auditing candidate source/projection hypothesis"
   ],
   "expected_gpt_output": "project_state/decision_packet.md",
-  "generated_at": "2026-05-02T08:30:00Z",
+  "generated_at": "2026-05-02T09:00:00Z",
   "included": [
     "current state",
     "best candidates",
     "stall reason",
+    "candidate quality diagnosis",
     "second-hop guided artifact evidence",
     "negative results",
     "artifact references"
@@ -80,8 +82,13 @@
     "reason": "candidate_quality_insufficient_after_projected_winner",
     "should_call_model": true
   },
-  "missing_evidence": [],
-  "next_local_action": "decide_second_hop_candidate_source_or_transform_hypothesis",
+  "missing_evidence": [
+    "source quality summary for preserve neighbor, triad, projected source, pair escape source",
+    "why profile_source_empty occurs for pair escape lanes",
+    "whether projected preserve source should be downgraded",
+    "whether exact2 seed source or transform/profile hypothesis should become next mainline"
+  ],
+  "next_local_action": "audit_second_hop_candidate_source_and_projection_hypothesis",
   "omitted": [
     {
       "name": "full PROJECT_PROGRESS_LOG.txt",
@@ -93,7 +100,7 @@
     }
   ],
   "profile": "samplereverse",
-  "reason": "second-hop pool audit found no compare-agree runtime-better candidate and no pair gate/refine drop bug; current bottleneck is candidate quality",
+  "reason": "second-hop pool audit found no gate/drop bug and no compare-agree runtime-better candidate; next decision must target candidate source quality or transform/profile hypothesis",
   "relevant_files": [
     "reverse_agent/strategies/compare_aware_search.py",
     "tests/test_compare_aware_search_strategy.py",
@@ -108,7 +115,8 @@
     "has_runtime_validation": true,
     "has_stall_stage": true,
     "has_frontier_guided_2_artifact": true,
-    "has_second_hop_quality_diagnosis": true
+    "has_second_hop_quality_diagnosis": true,
+    "has_candidate_source_hypothesis": false
   },
-  "task": "decide_second_hop_candidate_source_or_transform_hypothesis"
+  "task": "audit_second_hop_candidate_source_and_projection_hypothesis"
 }
