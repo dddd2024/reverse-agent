@@ -2640,3 +2640,58 @@ Reverse Agent 项目进展日志（截至 2026-04-16）
   - 不改变 final selection 规则；
   - 目标是验证 exact2 basin 是否能推进到 exact3+。
 
+## 2026-05-03 real bounded exact2 basin SMT pass
+
+1) 执行范围
+- 按计划实现真实 bounded exact2 basin SMT pass。
+- 保留 primary frontier SMT，不改变 final selection 规则。
+- 没有扩大 beam/budget/topN/timeout/frontier iteration limit。
+- 更新了 `project_state/codex_execution_report.md`、`project_state/current_state.json`、`project_state/task_packet.json`、`project_state/model_gate.json`、`project_state/artifact_index.json` 和本日志。
+
+2) 代码改动
+- `reverse_agent/samplereverse_z3.py`
+  - `solve_targeted_prefix8()` 新增 `value_pools` 参数。
+  - 对 selected byte 添加 pool 约束，并始终把 base byte 并入 pool，避免排除基线。
+  - Z3 evidence 现在记录实际使用的 bounded value pools。
+- `reverse_agent/strategies/compare_aware_search.py`
+  - `run_compare_aware_smt()` 支持 override byte/nibble positions 和 value pools。
+  - 当 `exact2_basin_smt.recommended=true` 时，新增单独 `smt_exact2_basin` pass。
+  - exact2-basin validations 会在有候选时进入 final candidate aggregation。
+- `tests/test_compare_aware_search_strategy.py`
+  - 补充 value pool 传递和 exact2-basin SMT pass 的覆盖。
+
+3) 自动化验证
+- `python -m pytest -q tests/test_compare_aware_search_strategy.py -k "smt or exact2 or boundary or frontier"` -> `26 passed, 32 deselected`
+- `python -m pytest -q tests/test_compare_aware_search_strategy.py` -> `58 passed`
+- `python -m pytest -q` -> `140 passed`
+
+4) Harness
+- Run: `samplereverse_exact2_basin_smt_20260503`
+- Summary: `solve_reports\harness_runs\samplereverse_exact2_basin_smt_20260503\summary.json`
+- Primary SMT artifact:
+  - `solve_reports\harness_runs\samplereverse_exact2_basin_smt_20260503\reports\tool_artifacts\samplereverse\smt\samplereverse_compare_aware_smt_result.json`
+  - base `5a3e7f46ddd474d0`
+  - summary `targeted z3 finished with unknown`
+- exact2-basin SMT artifact:
+  - `solve_reports\harness_runs\samplereverse_exact2_basin_smt_20260503\reports\tool_artifacts\samplereverse\smt_exact2_basin\samplereverse_compare_aware_smt_result.json`
+  - base `78d540b49c590770`
+  - byte positions `[1,2,3,0,4]`
+  - nibble positions `[2,3,0,1,4]`
+  - value pools `0:78, 1:d5/3e/3c, 2:40/7f/80, 3:b4/8f, 4:9c`
+  - summary `targeted z3 finished with unknown`
+  - validation candidates `[]`
+- Harness completed 1 case, 0 errors.
+
+5) 结论
+- Classification: `candidate_quality_insufficient_after_exact2_basin_smt`
+- 当前 runtime best 未改善：
+  - exact2 仍为 `78d540b49c59077041414141414141`，runtime exact2 / distance5 246。
+- `selected_flag` 仍为模型/候选评分选出的 `flag{`；仍不能视为 runtime improvement。
+- 注意：Z3 `unknown` 不是 unsat proof，只能说明当前 bounded SMT formulation 没有产出候选。
+
+6) 下一轮默认方向
+- 审计 `smt_exact2_basin_unknown`：
+  - 不通过扩大 timeout 解决；
+  - 优先考虑对当前 tiny value pools 做 deterministic bounded execution/evaluation；
+  - 或收缩 SMT formulation/objective，使 exact2-basin bounded pass 能产出可验证候选或明确失败证据。
+

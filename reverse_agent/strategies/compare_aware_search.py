@@ -6159,6 +6159,47 @@ def _smt_feedback_value_pools(
     return pools
 
 
+def _normalized_smt_value_pools(
+    value_pools: dict[int, Sequence[int]] | dict[str, Sequence[int]],
+) -> dict[int, list[int]]:
+    normalized: dict[int, list[int]] = {}
+    for raw_position, raw_values in dict(value_pools or {}).items():
+        try:
+            position = int(raw_position)
+        except (TypeError, ValueError):
+            continue
+        values: list[int] = []
+        for raw_value in raw_values:
+            try:
+                value = int(raw_value) & 0xFF
+            except (TypeError, ValueError):
+                continue
+            if value not in values:
+                values.append(value)
+        if values:
+            normalized[position] = values
+    return normalized
+
+
+def _bounded_position_list(
+    positions: Sequence[object],
+    *,
+    upper_bound: int,
+    limit: int,
+) -> list[int]:
+    out: list[int] = []
+    for raw_position in positions:
+        try:
+            position = int(raw_position)
+        except (TypeError, ValueError):
+            continue
+        if 0 <= position < upper_bound and position not in out:
+            out.append(position)
+        if len(out) >= limit:
+            break
+    return out
+
+
 def _exact2_basin_smt_diagnostic_payload(
     *,
     best_exact2_entry: dict[str, object] | None,
@@ -6337,6 +6378,9 @@ def run_compare_aware_smt(
     base_entry: dict[str, object],
     comparison_entries: Sequence[dict[str, object]],
     lineage_entries: Sequence[dict[str, object]] = (),
+    variable_byte_positions_override: Sequence[int] | None = None,
+    variable_nibble_positions_override: Sequence[int] | None = None,
+    value_pools_override: dict[int, Sequence[int]] | dict[str, Sequence[int]] | None = None,
     transform_model: SamplereverseTransformModel,
     per_probe_timeout: float,
     log,
@@ -6403,6 +6447,18 @@ def run_compare_aware_smt(
                 base_entry=base_entry,
             )
         )
+    if variable_byte_positions_override is not None:
+        variable_bytes = _bounded_position_list(
+            variable_byte_positions_override,
+            upper_bound=INPUT_LENGTH,
+            limit=HOT_POSITION_LIMIT,
+        )
+    if variable_nibble_positions_override is not None:
+        variable_nibbles = _bounded_position_list(
+            variable_nibble_positions_override,
+            upper_bound=INPUT_LENGTH * 2,
+            limit=HOT_NIBBLE_LIMIT,
+        )
     feedback_value_pools = _smt_feedback_value_pools(
         base_anchor=base_anchor,
         variable_byte_positions=variable_bytes,
@@ -6410,10 +6466,13 @@ def run_compare_aware_smt(
         preferred_entries=preferred_smt_entries,
         lineage_value_pools=lineage_value_pools,
     )
+    if value_pools_override:
+        feedback_value_pools = _normalized_smt_value_pools(value_pools_override)
     z3_result = solve_targeted_prefix8(
         base_anchor=base_anchor,
         variable_byte_positions=variable_bytes,
         variable_nibble_positions=variable_nibbles,
+        value_pools=feedback_value_pools,
         prioritize_distance=anchor_mode == FRONTIER_ANCHOR_MODE,
         timeout_ms=1500,
     )
@@ -7420,6 +7479,9 @@ class CompareAwareSearchStrategy(SolverStrategy):
         smt_artifact: ToolRunArtifact | None = None
         smt_validation_artifact: ToolRunArtifact | None = None
         smt_run: dict[str, object] | None = None
+        exact2_basin_smt_run: dict[str, object] | None = None
+        exact2_basin_smt_artifact: ToolRunArtifact | None = None
+        exact2_basin_smt_validation_artifact: ToolRunArtifact | None = None
         if not _bridge_progress(final_validations):
             comparison_entries = _unique_candidate_entries(
                 [
@@ -7514,9 +7576,91 @@ class CompareAwareSearchStrategy(SolverStrategy):
                 "exact2_basin_smt": exact2_basin_smt,
             }
             _write_json(Path(str(smt_run["result_path"])), dict(smt_run["payload"]))
+            exact2_basin_anchor = str(exact2_basin_smt.get("base_anchor", "")).strip().lower()
+            if exact2_basin_smt.get("recommended") and len(exact2_basin_anchor) == 16:
+                exact2_basin_entry = {
+                    "candidate_hex": str(best_exact2_validation.get("candidate_hex", ""))
+                    or f"{exact2_basin_anchor}{DEFAULT_FIXED_SUFFIX_HEX}",
+                    "cand8_hex": exact2_basin_anchor,
+                    "ci_exact_wchars": int(best_exact2_validation.get("runtime_ci_exact_wchars", 0) or 0),
+                    "ci_distance5": int(best_exact2_validation.get("runtime_ci_distance5", 1 << 30) or (1 << 30)),
+                    "raw_distance10": int(best_exact2_validation.get("offline_raw_distance10", 1 << 30) or (1 << 30)),
+                    "runtime_lhs_prefix_hex_10": str(best_exact2_validation.get("runtime_lhs_prefix_hex_10", "")),
+                    "frontier_role": str(best_exact2_validation.get("frontier_role", "")) or "exact2_seed",
+                    "anchor_mode": EXACT2_ANCHOR_MODE,
+                    "anchor_lineage": _lineage_root(
+                        source_anchor=exact2_basin_anchor,
+                        frontier_role=str(best_exact2_validation.get("frontier_role", "")) or "exact2_seed",
+                        anchor_mode=EXACT2_ANCHOR_MODE,
+                    ),
+                }
+                exact2_basin_smt_run = run_compare_aware_smt(
+                    target=file_path,
+                    artifacts_dir=artifacts_dir / "smt_exact2_basin",
+                    base_entry=exact2_basin_entry,
+                    comparison_entries=comparison_entries,
+                    lineage_entries=[
+                        *final_top_entries,
+                        *final_validations,
+                        *frontier_guided_entries,
+                        *frontier_guided_validations,
+                        *current_frontier_candidates,
+                    ],
+                    variable_byte_positions_override=list(exact2_basin_smt.get("variable_byte_positions", [])),
+                    variable_nibble_positions_override=list(exact2_basin_smt.get("variable_nibble_positions", [])),
+                    value_pools_override=dict(exact2_basin_smt.get("feedback_value_pools", {})),
+                    transform_model=transform_model,
+                    per_probe_timeout=per_probe_timeout,
+                    log=log,
+                )
+                exact2_basin_smt = {
+                    **exact2_basin_smt,
+                    "attempted": True,
+                    "summary": str(dict(exact2_basin_smt_run.get("payload", {})).get("summary", "")),
+                    "evidence": list(dict(exact2_basin_smt_run.get("payload", {})).get("evidence", [])),
+                    "result_path": str(exact2_basin_smt_run.get("result_path", "")),
+                    "validation_path": str(exact2_basin_smt_run.get("validation_path", "")),
+                    "top_entries": list(dict(exact2_basin_smt_run.get("payload", {})).get("top_entries", [])),
+                    "validation_candidates": list(
+                        dict(exact2_basin_smt_run.get("payload", {})).get("validation_candidates", [])
+                    ),
+                    "validations": list(exact2_basin_smt_run.get("validations", [])),
+                }
+                exact2_basin_smt_run["exact2_basin_smt"] = exact2_basin_smt
+                exact2_basin_smt_run["payload"] = {
+                    **dict(exact2_basin_smt_run.get("payload", {})),
+                    "exact2_basin_smt": exact2_basin_smt,
+                }
+                _write_json(Path(str(exact2_basin_smt_run["result_path"])), dict(exact2_basin_smt_run["payload"]))
+                smt_run["exact2_basin_smt"] = exact2_basin_smt
+                smt_run["exact2_basin_smt_run"] = exact2_basin_smt_run
+                smt_run["payload"] = {
+                    **dict(smt_run.get("payload", {})),
+                    "exact2_basin_smt": exact2_basin_smt,
+                }
+                _write_json(Path(str(smt_run["result_path"])), dict(smt_run["payload"]))
+                exact2_basin_smt_payload = dict(exact2_basin_smt_run["payload"])
+                exact2_basin_smt_artifact = _make_search_artifact(
+                    tool_name="CompareAwareExact2BasinSMT",
+                    output_path=Path(str(exact2_basin_smt_run["result_path"])),
+                    summary=str(exact2_basin_smt_payload.get("summary", "compare-aware exact2 basin smt complete")),
+                    strategy_name=self.name,
+                    evidence_kind="BridgeSearchEvidence",
+                    payload=exact2_basin_smt_payload,
+                    derived_entries=[exact2_basin_smt_run["entry"]] if exact2_basin_smt_run.get("entry") else [],
+                )
+                if exact2_basin_smt_run.get("validation_path"):
+                    exact2_basin_smt_validation_artifact = _make_validation_artifact(
+                        tool_name="CompareAwareExact2BasinSMTValidation",
+                        output_path=Path(str(exact2_basin_smt_run["validation_path"])),
+                        validations=list(exact2_basin_smt_run["validations"]),
+                        strategy_name=self.name,
+                    )
             if not frontier_stall_stage:
                 frontier_stall_stage = (
-                    "smt_exact2_basin_diagnostic"
+                    "smt_exact2_basin"
+                    if exact2_basin_smt.get("attempted")
+                    else "smt_exact2_basin_diagnostic"
                     if exact2_basin_smt.get("recommended")
                     else "frontier_smt"
                 )
@@ -7544,6 +7688,7 @@ class CompareAwareSearchStrategy(SolverStrategy):
             frontier_guided_validations,
             final_validations,
             list(smt_run["validations"]) if smt_run else [],
+            list(exact2_basin_smt_run["validations"]) if exact2_basin_smt_run else [],
         )
         artifacts = [
             bridge_artifact,
@@ -7561,6 +7706,10 @@ class CompareAwareSearchStrategy(SolverStrategy):
             artifacts.append(smt_artifact)
         if smt_validation_artifact is not None:
             artifacts.append(smt_validation_artifact)
+        if exact2_basin_smt_artifact is not None:
+            artifacts.append(exact2_basin_smt_artifact)
+        if exact2_basin_smt_validation_artifact is not None:
+            artifacts.append(exact2_basin_smt_validation_artifact)
         return StrategyResult(
             strategy_name=self.name,
             summary=search_artifact.summary,
@@ -7581,6 +7730,7 @@ class CompareAwareSearchStrategy(SolverStrategy):
                 "top_entries": final_top_entries,
                 "validations": final_validations,
                 "smt": smt_run or {},
+                "exact2_basin_smt": exact2_basin_smt_run or {},
                 "prefix_boundary_diagnostics": prefix_boundary_diagnostics,
                 "frontier_converged_reason": frontier_converged_reason,
                 "frontier_stall_stage": frontier_stall_stage,

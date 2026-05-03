@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 from dataclasses import dataclass
+from typing import Sequence
 
 try:
     from z3 import (
@@ -187,6 +188,7 @@ def solve_targeted_prefix8(
     base_anchor: str,
     variable_byte_positions: list[int],
     variable_nibble_positions: list[int],
+    value_pools: dict[int, Sequence[int]] | None = None,
     prioritize_distance: bool = False,
     timeout_ms: int = 1500,
 ) -> Z3ProbeResult:
@@ -212,6 +214,24 @@ def solve_targeted_prefix8(
 
     selected_bytes = {int(item) for item in variable_byte_positions if 0 <= int(item) < 8}
     selected_nibbles = {int(item) for item in variable_nibble_positions if 0 <= int(item) < 15}
+    normalized_value_pools: dict[int, list[int]] = {}
+    for raw_position, raw_values in dict(value_pools or {}).items():
+        try:
+            position = int(raw_position)
+        except (TypeError, ValueError):
+            continue
+        if position not in selected_bytes or not (0 <= position < len(base_bytes)):
+            continue
+        values: list[int] = [base_bytes[position]]
+        for raw_value in raw_values:
+            try:
+                value = int(raw_value) & 0xFF
+            except (TypeError, ValueError):
+                continue
+            if value not in values:
+                values.append(value)
+        normalized_value_pools[position] = values
+
     for idx, base_byte in enumerate(base_bytes):
         var = prefix_vars[idx]
         hi = (base_byte >> 4) & 0x0F
@@ -226,6 +246,16 @@ def solve_targeted_prefix8(
                 if 14 not in selected_nibbles:
                     opt.add(((var >> 4) & BitVecVal(0x0F, 8)) == BitVecVal(hi, 8))
                 opt.add((var & BitVecVal(0x0F, 8)) == BitVecVal(lo, 8))
+        elif idx in normalized_value_pools:
+            opt.add(
+                Sum(
+                    [
+                        If(var == BitVecVal(value, 8), 1, 0)
+                        for value in normalized_value_pools[idx]
+                    ]
+                )
+                >= 1
+            )
 
     candidate_vars = [*prefix_vars, *[BitVecVal(0x41, 8) for _ in range(7)]]
     b64_chars = _first_base64_chars_from_prefix(candidate_vars, 40)
@@ -296,6 +326,11 @@ def solve_targeted_prefix8(
                 f"runtime_probe:z3_targeted result={result} base={base_anchor}",
                 f"runtime_probe:z3_targeted bytes={','.join(str(v) for v in sorted(selected_bytes))}",
                 f"runtime_probe:z3_targeted nibbles={','.join(str(v) for v in sorted(selected_nibbles))}",
+                "runtime_probe:z3_targeted value_pools="
+                + ",".join(
+                    f"{position}:{'/'.join(f'{value:02x}' for value in values)}"
+                    for position, values in sorted(normalized_value_pools.items())
+                ),
             ],
         )
 
@@ -307,6 +342,11 @@ def solve_targeted_prefix8(
         f"runtime_probe:z3_targeted base={base_anchor}",
         f"runtime_probe:z3_targeted bytes={','.join(str(v) for v in sorted(selected_bytes))}",
         f"runtime_probe:z3_targeted nibbles={','.join(str(v) for v in sorted(selected_nibbles))}",
+        "runtime_probe:z3_targeted value_pools="
+        + ",".join(
+            f"{position}:{'/'.join(f'{value:02x}' for value in values)}"
+            for position, values in sorted(normalized_value_pools.items())
+        ),
         f"runtime_probe:z3_targeted dec_prefix_hex={dec.hex()}",
     ]
     return Z3ProbeResult(

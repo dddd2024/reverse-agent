@@ -1,9 +1,9 @@
 {
   "context_level": 2,
-  "generated_at": "2026-05-02T14:59:19Z",
+  "generated_at": "2026-05-03T09:15:30Z",
   "missing_evidence": [],
-  "next_local_action": "implement_real_bounded_exact2_smt_pass_without_budget_expansion",
-  "reason": "exact2_basin_smt_diagnostic_has_bounded_positions",
+  "next_local_action": "audit_smt_unknown_with_tiny_value_pools_without_timeout_expansion",
+  "reason": "bounded_exact2_basin_smt_attempted_but_z3_unknown",
   "recommended_packet": "project_state/task_packet.json",
   "should_call_model": true
 }

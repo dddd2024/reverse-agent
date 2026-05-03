@@ -2,8 +2,11 @@ import json
 import subprocess
 from pathlib import Path
 
+import pytest
+
 from reverse_agent.evidence import StructuredEvidence
 from reverse_agent.profiles.samplereverse import SamplereverseProfile
+from reverse_agent.samplereverse_z3 import _optimize_ready, solve_targeted_prefix8
 from reverse_agent.strategies import compare_aware_search
 from reverse_agent.strategies.base import StrategyResult
 from reverse_agent.strategies.compare_aware_search import (
@@ -73,6 +76,23 @@ def test_prefix_boundary_breakdown_explains_exact2_exact1_and_projected() -> Non
     assert [item["exact_ci"] for item in exact1["wchar_deltas"][:2]] == [True, False]
     assert projected["ci_exact_wchars"] == 0
     assert projected["wchar_deltas"][0]["raw_pair_hex"] == "7493"
+
+
+def test_solve_targeted_prefix8_records_bounded_value_pools_with_base_value() -> None:
+    if not _optimize_ready():
+        pytest.skip("z3 optimize is not installed")
+
+    base_anchor = "78d540b49c590770"
+    result = solve_targeted_prefix8(
+        base_anchor=base_anchor,
+        variable_byte_positions=[0],
+        variable_nibble_positions=[],
+        value_pools={0: [0x00]},
+        timeout_ms=10,
+    )
+
+    assert result.attempted is True
+    assert any("value_pools=0:78/00" in item for item in result.evidence or [])
 
 
 def test_score_prefix_exposes_long_window_structure_metrics() -> None:
@@ -2686,11 +2706,11 @@ def test_run_compare_aware_smt_records_feedback_value_pools_from_improved_fronti
 ) -> None:
     target = tmp_path / "samplereverse.exe"
     target.write_bytes(b"MZ")
+    captured_z3: dict[str, object] = {}
 
-    monkeypatch.setattr(
-        compare_aware_search,
-        "solve_targeted_prefix8",
-        lambda **kwargs: type(
+    def fake_solve_targeted_prefix8(**kwargs):
+        captured_z3.update(kwargs)
+        return type(
             "Z3Result",
             (),
             {
@@ -2699,8 +2719,9 @@ def test_run_compare_aware_smt_records_feedback_value_pools_from_improved_fronti
                 "evidence": [],
                 "candidate_hex": "5a3e7f46ddd474d041414141414141",
             },
-        )(),
-    )
+        )()
+
+    monkeypatch.setattr(compare_aware_search, "solve_targeted_prefix8", fake_solve_targeted_prefix8)
     monkeypatch.setattr(
         compare_aware_search,
         "validate_compare_aware_results",
@@ -2833,6 +2854,8 @@ def test_run_compare_aware_smt_records_feedback_value_pools_from_improved_fronti
     assert 0x57 not in result["payload"]["feedback_value_pools"]["1"]
     assert result["payload"]["prefix_boundary"]["cand8_hex"] == "5a3e7f46ddd474d0"
     assert result["payload"]["prefix_boundary"]["ci_exact_wchars"] == 1
+    assert captured_z3["value_pools"][1][0] == 0x3E
+    assert 0x44 in captured_z3["value_pools"][1]
 
 
 def test_compare_aware_strategy_runs_second_frontier_guided_round_on_improved_frontier(
@@ -3024,17 +3047,20 @@ def test_compare_aware_strategy_runs_second_frontier_guided_round_on_improved_fr
     monkeypatch.setattr(compare_aware_search, "run_compare_aware_guided_pool", fake_guided_pool)
     monkeypatch.setattr(compare_aware_search, "run_compare_aware_refine", fake_run_compare_aware_refine)
     monkeypatch.setattr(compare_aware_search, "validate_compare_aware_results", fake_validate_compare_aware_results)
-    monkeypatch.setattr(
-        compare_aware_search,
-        "run_compare_aware_smt",
-        lambda **kwargs: {
-            "result_path": str(tmp_path / "smt_result.json"),
+    smt_calls: list[dict[str, object]] = []
+
+    def fake_run_compare_aware_smt(**kwargs):
+        smt_calls.append(kwargs)
+        result_path = tmp_path / f"smt_result_{len(smt_calls)}.json"
+        return {
+            "result_path": str(result_path),
             "validation_path": "",
             "entry": None,
             "validations": [],
             "payload": {"summary": "smt attempted"},
-        },
-    )
+        }
+
+    monkeypatch.setattr(compare_aware_search, "run_compare_aware_smt", fake_run_compare_aware_smt)
 
     result = CompareAwareSearchStrategy().run(
         file_path=target,
@@ -3274,17 +3300,20 @@ def test_compare_aware_strategy_runs_second_frontier_guided_round_on_second_hop_
     monkeypatch.setattr(compare_aware_search, "run_compare_aware_guided_pool", fake_guided_pool)
     monkeypatch.setattr(compare_aware_search, "run_compare_aware_refine", fake_run_compare_aware_refine)
     monkeypatch.setattr(compare_aware_search, "validate_compare_aware_results", fake_validate_compare_aware_results)
-    monkeypatch.setattr(
-        compare_aware_search,
-        "run_compare_aware_smt",
-        lambda **kwargs: {
-            "result_path": str(tmp_path / "smt_result.json"),
+    smt_calls: list[dict[str, object]] = []
+
+    def fake_run_compare_aware_smt(**kwargs):
+        smt_calls.append(kwargs)
+        result_path = tmp_path / f"smt_second_hop_result_{len(smt_calls)}.json"
+        return {
+            "result_path": str(result_path),
             "validation_path": "",
             "entry": None,
             "validations": [],
             "payload": {"summary": "smt attempted"},
-        },
-    )
+        }
+
+    monkeypatch.setattr(compare_aware_search, "run_compare_aware_smt", fake_run_compare_aware_smt)
 
     result = CompareAwareSearchStrategy().run(
         file_path=target,
@@ -3304,6 +3333,11 @@ def test_compare_aware_strategy_runs_second_frontier_guided_round_on_second_hop_
     assert result.metadata["frontier_iterations"][0]["frontier_converged_reason"] == "continue"
     assert result.metadata["frontier_guided_runs"][1]["frontier_role"] == PROJECTED_PRESERVE_SECOND_HOP_ROLE
     assert result.metadata["frontier_guided_runs"][1]["anchor"] == "5a3f7f46ddd474d0"
+    assert [Path(call["artifacts_dir"]).name for call in smt_calls] == ["smt", "smt_exact2_basin"]
+    assert smt_calls[1]["base_entry"]["cand8_hex"] == "78d540b49c590770"
+    assert set(smt_calls[1]["variable_byte_positions_override"]) == {0, 1, 2, 3, 4}
+    assert smt_calls[1]["value_pools_override"]["1"][0] == 0xD5
+    assert result.metadata["exact2_basin_smt"]["payload"]["exact2_basin_smt"]["attempted"] is True
 
 
 def test_samplereverse_profile_runs_compare_aware_strategy_when_only_compare_truth_exists(
