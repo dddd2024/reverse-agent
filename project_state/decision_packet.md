@@ -1,133 +1,118 @@
 # DECISION_PACKET
 
-Generated: 2026-05-02
+Generated: 2026-05-03
 
 ## 1. Goal
 
-本轮目标是审计或产出 **new compare-aware diagnostics artifacts**，核心任务是验证上一轮 diagnostic-only 改动是否能为下一步提供可执行证据。
+本轮目标是实现并验证一个 **real bounded exact2 basin SMT pass**，只围绕上一轮 diagnostics 已经给出的 exact2 basin 信号做最小实现。
 
-当前任务名：
-
-```text
-run_or_audit_new_compare_aware_diagnostics_without_blind_search
-```
-
-上一轮 Codex 已实现 transform/profile boundary 的 diagnostic-only 改动，新增 metadata 包括：
+当前任务：
 
 ```text
-prefix_boundary
-prefix_boundary_diagnostics
-exact2_basin_smt
+implement_real_bounded_exact2_smt_pass_without_budget_expansion
 ```
 
-该改动没有扩大 beam、budget、topN、timeout 或 frontier iteration limit；没有运行新 harness；没有修改 final candidate selection。当前 best 仍是：
+核心目标：
 
 ```text
-78d540b49c59077041414141414141
-runtime exact2 / distance5 246
+从 exact2 base candidate 78d540b49c590770 出发，
+使用 exact2_basin_smt 中已经给出的 bounded variable byte/nibble positions 和 value pools，
+尝试生成并验证是否存在 exact3+ runtime candidate。
 ```
 
-本轮只回答一个更窄的问题：
-
-```text
-新加入的 prefix_boundary_diagnostics 和 exact2_basin_smt 是否能证明：
-1. exact2 basin 有可执行的 bounded SMT 方向；
-2. transform/profile boundary 缺少可利用信号；
-3. 还是当前仍然只是 candidate_quality_insufficient。
-```
-
-本轮不是继续写新搜索逻辑，也不是扩大预算。Codex 必须先产出或审计包含新 diagnostics 的 compare-aware artifact，然后再决定是否需要下一轮 real bounded exact2 SMT pass。
+本轮不是 blind search，不是扩大 beam/budget/topN/timeout，也不是替换 compare-aware 主流程。它是一个受 diagnostics 约束的、小范围、可审计的 exact2 basin SMT 执行分支。
 
 ---
 
 ## 2. Current Evidence
 
-事实来源是当前 `project_state` 文件，不要用记忆替代仓库状态。
+事实来源：
 
-### Current state
+```text
+project_state/task_packet.json
+project_state/current_state.json
+project_state/artifact_index.json
+project_state/negative_results.json
+project_state/codex_execution_report.md
+```
+
+当前主线：
 
 ```text
 active_strategy = CompareAwareSearchStrategy
 sample = samplereverse
 current_mainline = L15(prefix8)
 known_transform = input -> UTF-16LE -> Base64 -> RC4 -> compare flag{ prefix
-current_bottleneck.stage = transform_profile_boundary
-current_bottleneck.reason = diagnostics_added_for_transform_profile_boundary_and_exact2_basin_smt
-current_bottleneck.confidence = high
-next_local_action = run_or_audit_new_compare_aware_diagnostics_without_blind_search
+current_bottleneck.stage = smt_exact2_basin_diagnostic
+current_bottleneck.reason = exact2_basin_smt_diagnostic_has_bounded_positions
+next_local_action = implement_real_bounded_exact2_smt_pass_without_budget_expansion
 ```
 
-### Current best candidates
+当前 best candidates：
 
-| candidate | role | source | compare agree | runtime exact | distance5 | status |
-|---|---|---|---:|---:|---:|---|
-| `78d540b49c590770` | exact2 best / stable reference | `profile_seed -> bridge_pairscan -> seed_guided -> final_refine` | true | 2 | 246 | keep and use as exact2 basin reference |
-| `5a3e7f46ddd474d0` | exact1 frontier / contrast case | `exact2_seed(78d...) -> refine(seed) -> guided(frontier)` | true | 1 | 258 | contrast against exact2 |
-| `5a3f7f46ddd474d0` | projected preserve second-hop anchor | projected preserve lane | true | 0 | 740 | downgraded; do not promote |
-| `5a3f7fc2ddd474d0` | best new second-hop triad | projected/preserve pool | true | 0 | 419 | do not promote |
-| `343f7f46ddd474d0` | second-hop guided/top entry | second-hop guided pool | true | 0 | 428 | do not promote |
+| role | candidate_prefix | compare agree | runtime exact | distance5 | source |
+|---|---|---:|---:|---:|---|
+| exact2 best | `78d540b49c590770` | true | 2 | 246 | pairscan |
+| exact1/frontier | `5a3e7f46ddd474d0` | true | 1 | 258 | exact2_seed -> refine -> guided |
+| frontier | `5a3e7f46ddd474d0` | true | 1 | 258 | exact2_seed -> refine -> guided |
 
-### Latest Codex audit result
-
-上一轮 `codex_execution_report.md` 的结论：
+上一轮 Codex 结论：
 
 ```text
-classification = transform_profile_boundary_diagnostics_added
-behavior_change = diagnostic_metadata_only
+classification = diagnostics_show_promising_exact2_basin_smt
 code_fix_recommended = false
-source_bug_found = false
-projected_preserve_status = downgraded_validated_no_runtime_gain
+metadata_fix_applied = exact2_basin_smt_payload_written_to_smt_result
+runtime_best_improved = false
 ```
 
-Implemented diagnostic changes:
+exact2 basin diagnostic payload：
 
-1. `prefix_boundary` diagnostics break each candidate prefix into UTF-16 wchar deltas against `flag{`.
-2. Runtime validations now carry `prefix_boundary` metadata.
-3. Frontier/refine artifacts and strategy metadata now include `prefix_boundary_diagnostics`.
-4. Primary SMT payload now records `prefix_boundary`.
-5. When primary SMT chooses an exact1 frontier while a compare-agree exact2 exists, `exact2_basin_smt` records a diagnostic-only exact2 basin plan.
-6. No candidate selection behavior was changed.
-
-### Boundary evidence from latest report
-
-| candidate | runtime prefix pairs | runtime exact | distance5 | interpretation |
-|---|---|---:|---:|---|
-| `78d540b49c590770` | `4600 6c00 4464 830d 311c` | 2 | 246 | stable exact2 basin: `f`, `l` match |
-| `5a3e7f46ddd474d0` | `4600 6135 7f0b 8c68 8502` | 1 | 258 | exact1 frontier: only `f` matches |
-| `5a3f7f46ddd474d0` | `7493 4b15 6ba6 9ef3 370f` | 0 | 740 | projected preserve anchor collapses before first wchar |
-| `5a3f7fc2ddd474d0` | `854a e01a bc18 692c 7505` | 0 | 419 | best new second-hop candidate remains exact0 |
-
-### Test evidence from latest report
-
-上一轮运行：
-
-```powershell
-python -m pytest -q tests/test_compare_aware_search_strategy.py -k "smt or exact2 or boundary or frontier"  # 26 passed, 31 deselected
-python -m pytest -q tests/test_compare_aware_search_strategy.py                                      # 57 passed
-python -m pytest -q                                                                                 # 139 passed
+```text
+base_anchor = 78d540b49c590770
+primary_base_anchor = 5a3e7f46ddd474d0
+runtime_ci_exact_wchars = 2
+runtime_ci_distance5 = 246
+variable_byte_positions = [1, 2, 3, 0, 4]
+variable_nibble_positions = [2, 3, 0, 1, 4]
+value_pools = {1:[213,62,60], 2:[64,127,128], 3:[180,143], 0:[120], 4:[156]}
+attempted = false
+recommended = true
 ```
 
-No full harness was run, per plan.
+解释：
+
+```text
+78d540b49c590770 是稳定 compare-agree exact2 reference。
+现有 primary SMT 仍偏向 exact1 frontier 5a3e7f46ddd474d0。
+diagnostics 已经给出 exact2 basin 的 bounded positions / value pools。
+因此下一步不是继续诊断，而是执行一个真实 bounded exact2 SMT pass。
+```
 
 ---
 
 ## 3. Do Not Do
 
-严格禁止以下方向：
+严格禁止：
 
-1. 不要回退到旧 `sample_solver` blind search。
-2. 不要只增加 beam、budget、topN、timeout、frontier iteration limit 或扩大搜索空间。
-3. 不要把 `compare_semantics_agree=false` 的候选作为主突破点。
-4. 不要提交完整 `solve_reports` 目录。
-5. 不要默认读取完整 `solve_reports`。
-6. 不要默认读取完整 `PROJECT_PROGRESS_LOG.txt`。
-7. 不要继续围绕 `5a3f7f46ddd474d0` 做 projected preserve second-hop 扩展。
-8. 不要把 `5a3f7f46ddd474d0`、`5a3f7fc2ddd474d0` 或 `343f7f46ddd474d0` 提升为 best/final。
-9. 不要只因为 diagnostic metadata 存在就改变 final candidate selection。
-10. 不要直接实现 real exact2 SMT pass，除非 diagnostics 证明它有 bounded variable positions / value pools。
-11. 不要修改 GUI、模型调用路径、云端 API 路径、pipeline 总控或 harness 总控。
-12. 不要让 Codex 重复实现项目中已有的 compare-aware/frontier/guided/refine 功能。
-13. 不要把本轮做成 blind 搜索或预算扩张。本轮是 diagnostics artifact audit / production。
+```text
+1. do not return to old sample_solver blind search
+2. do not only increase beam or budget
+3. do not expand beam, budget, topN, timeout, or frontier iteration limit
+4. do not use compare_semantics_agree=false candidates as primary frontier
+5. do not commit full solve_reports directory
+6. do not scan entire solve_reports unless explicitly needed
+7. do not promote 5a3f7f46ddd474d0, 5a3f7fc2ddd474d0, or 343f7f46ddd474d0
+8. do not treat model-selected bare flag{ as runtime improvement
+9. do not rewrite harness/pipeline/model API/GUI paths
+10. do not replace final selection unless the new exact2 SMT branch produces runtime-validated exact3+
+```
+
+特别注意：
+
+```text
+selected_flag = flag{ 不是 runtime improvement。
+compare-aware runtime best 仍然是 78d540b49c59077041414141414141。
+```
 
 ---
 
@@ -141,10 +126,9 @@ project_state/current_state.json
 project_state/artifact_index.json
 project_state/negative_results.json
 project_state/codex_execution_report.md
-project_state/decision_packet.md
 ```
 
-优先审计代码范围：
+主要代码范围：
 
 ```text
 reverse_agent/strategies/compare_aware_search.py
@@ -158,182 +142,118 @@ reverse_agent/profiles/samplereverse.py
 reverse_agent/transforms/samplereverse.py
 ```
 
-只聚焦 diagnostic metadata / exact2 basin SMT 相关逻辑，重点查找：
+重点查找：
 
 ```text
-prefix_boundary helper
-prefix_boundary_diagnostics emission
-runtime validation metadata
-frontier_summary / strata_summary metadata
-primary SMT payload prefix_boundary
-exact2_basin_smt diagnostic payload
-exact2 candidate selection as diagnostic base
-variable positions / value pools construction
-compare-agree filtering for exact2_basin_smt
-metadata-only behavior guard
-final selection isolation from diagnostics
+run_compare_aware_smt
+exact2_basin_smt
+prefix_boundary
+prefix_boundary_diagnostics
+candidate generation
+runtime validation
+final selection
+compare_semantics_agree guard
+strategy metadata payload
+smt_result payload emission
 ```
 
-当前 `artifact_index.json` 仍指向旧 harness run：
+不要默认读取：
 
 ```text
-solve_reports\harness_runs\samplereverse_second_hop_loop_fix_verify_20260502
+full solve_reports
+full PROJECT_PROGRESS_LOG.txt
 ```
-
-注意：该 artifact index 还不是新 diagnostics run 的索引。上一轮只实现了 diagnostics metadata 代码，没有运行新 harness。Codex 本轮需要判断是否运行一个新的 diagnostics-only artifact-producing run，或是否已有足够 artifacts 可审计。
 
 ---
 
 ## 5. Required Audit
 
-Codex 本轮必须先输出审计发现，再决定是否运行新 diagnostics harness 或修改 metadata emission。
+Codex 在实现前必须先回答：
 
-### A. Pre-audit checks
+### A. exact2 basin SMT 输入是否可执行
 
-1. 确认工作区初始是否 clean。
-2. 确认当前 `project_state` 的 task 是：
-
-```text
-run_or_audit_new_compare_aware_diagnostics_without_blind_search
-```
-
-3. 确认 latest classification 是：
+确认：
 
 ```text
-transform_profile_boundary_diagnostics_added
+1. exact2_basin_smt payload 存在。
+2. base candidate 是 78d540b49c590770。
+3. base candidate compare_semantics_agree = true。
+4. variable_byte_positions = [1, 2, 3, 0, 4]。
+5. variable_nibble_positions = [2, 3, 0, 1, 4]。
+6. value_pools 是小集合，不需要扩大搜索预算。
+7. diagnostics attempted=false，说明上一轮没有真正执行该 pass。
 ```
 
-4. 确认上一轮是 diagnostic metadata only：
+### B. SMT pass 应该是 bounded branch，不是新搜索器
+
+必须保证：
 
 ```text
-no budget expansion
-no final selection behavior change
-no new harness run
+1. 只在 exact2_basin_smt.recommended = true 时启用。
+2. 只使用 diagnostics 已给出的 variable positions / value pools。
+3. 不扩大全局 beam/budget/topN/timeout。
+4. 不把 compare_semantics_agree=false candidate 纳入主线。
+5. 生成候选后必须走现有 runtime validation。
+6. 只有 runtime exact_wchars > 2 或 distance5 明确优于 246，才允许报告 improvement。
 ```
 
-### B. Confirm diagnostics are wired into code path
+### C. final selection guard
 
-必须回答：
-
-1. `validate_compare_aware_results()` 是否为每条 runtime validation 附加 `prefix_boundary`。
-2. `frontier_summary`、`strata_summary`、strategy metadata、search artifact payload 是否包含 `prefix_boundary_diagnostics`。
-3. primary SMT payload 是否包含 `prefix_boundary`。
-4. 当 primary SMT chooses exact1 frontier 且存在 compare-agree exact2 时，是否附加 `exact2_basin_smt` diagnostic payload。
-5. `exact2_basin_smt` 是否只作为 diagnostic metadata，不运行额外 runtime validation，不替换 final best。
-6. 是否有测试覆盖 metadata-only guard，防止 diagnostics 改变 final selection。
-
-### C. Decide whether to run a new diagnostics-only artifact-producing execution
-
-Codex 必须选择以下路径之一，并说明理由：
+必须审计：
 
 ```text
-Path 1: artifacts already sufficient
-- 不运行 harness。
-- 只更新 codex_execution_report / project_state。
-- 说明为什么现有单元测试与 metadata inspection 足够。
-
-Path 2: need real compare-aware artifacts with new diagnostics
-- 允许运行一个新的 diagnostics-only harness。
-- 不扩大预算，不改 selection，不提交完整 solve_reports。
-- run name 必须是新的，不能覆盖旧 run。
+1. bounded exact2 SMT 生成的 candidate 是否独立标记 source。
+2. 未验证候选不能替换 final best。
+3. exact0/exact1 candidate 不能替换 exact2 best。
+4. model-selected bare flag{ 不得覆盖 compare-aware runtime best。
+5. 如果没有 exact3+，final best 仍应保持 78d540b49c59077041414141414141。
 ```
 
-建议 run name：
+### D. Required evidence tables
 
-```text
-samplereverse_prefix_boundary_diagnostics_20260502
-```
+Codex 报告必须包含以下表格。
 
-如果选择 Path 2，运行后必须执行：
+#### Table 1: implementation wiring audit
 
-```powershell
-python -m reverse_agent.project_state build --reports-dir solve_reports --sample samplereverse --run-name samplereverse_prefix_boundary_diagnostics_20260502
-python -m reverse_agent.project_state status
-```
-
-### D. Audit exact2_basin_smt payload
-
-如果存在 `exact2_basin_smt` payload，必须回答：
-
-1. payload 是否存在。
-2. base candidate 是否是 `78d540b49c590770`。
-3. base 的 `prefix_boundary` 是否显示 exact2：`f`, `l` match。
-4. variable positions 是哪些。
-5. value pools 是哪些，是否 bounded。
-6. 是否保留 compare-agree 约束。
-7. 是否能解释从 exact2 到 exact3+ 的可能方向。
-8. 是否只是 metadata，没有 runtime validation。
-9. 是否支持下一轮 real bounded exact2 SMT pass。
-
-### E. Required evidence tables
-
-#### Table 1: diagnostics wiring audit
-
-| diagnostic field | expected location | present? | behavior impact | evidence |
-|---|---|---:|---|---|
-
-Required rows:
-
-```text
-prefix_boundary
-prefix_boundary_diagnostics
-primary SMT prefix_boundary
-exact2_basin_smt
-metadata-only guard
-final selection isolation
-```
-
-#### Table 2: exact2 basin diagnostic payload
-
-| field | value | bounded? | implication |
+| component | expected behavior | present? | evidence |
 |---|---|---:|---|
+| exact2_basin_smt reader | reads base/positions/pools from SMT diagnostic payload | yes/no | file/function |
+| bounded candidate generator | only mutates diagnostic positions | yes/no | file/function |
+| compare-agree guard | rejects compare_semantics_agree=false as primary | yes/no | file/function |
+| runtime validator | validates generated candidates before promotion | yes/no | file/function |
+| final selection guard | no unvalidated or worse candidate can replace best | yes/no | file/function |
+| artifact emission | result is persisted into SMT/search metadata | yes/no | file/function |
 
-Required rows if payload exists:
+#### Table 2: bounded exact2 SMT result
 
-```text
-base candidate
-runtime exact / distance5
-prefix_boundary matched wchars
-variable positions
-value pools
-compare-agree guard
-runtime validation status
-selection impact
-```
+| field | value |
+|---|---|
+| base candidate | |
+| variable byte positions | |
+| variable nibble positions | |
+| value pools | |
+| generated candidate count | |
+| validated candidate count | |
+| best runtime exact | |
+| best distance5 | |
+| improved over exact2? | |
+| final best changed? | |
 
-#### Table 3: next classification
+#### Table 3: classification
 
 | classification | evidence for | evidence against | next action | recommendation |
 |---|---|---|---|---|
-
-Candidate classifications must include:
-
-```text
-diagnostics show promising exact2_basin_smt
-diagnostics show no exact2-basin signal
-candidate_quality_insufficient_after_transform_boundary
-transform/profile boundary bug found
-diagnostics insufficient; enhance artifact_index or metadata
-```
+| exact2_basin_smt_produced_exact3_plus | | | promote only if runtime-validated | yes/no |
+| exact2_basin_smt_no_runtime_gain | | | preserve current exact2 best | yes/no |
+| exact2_basin_payload_insufficient | | | improve diagnostics metadata only | yes/no |
+| implementation_bug_in_smt_branch | | | minimal code fix + tests | yes/no |
+| candidate_quality_insufficient_after_bounded_smt | | | stop, report negative result | yes/no |
 
 ---
 
 ## 6. Implementation Scope
 
-默认不改搜索行为。
-
-允许做的事情：
-
-```text
-1. 审计 diagnostic metadata 是否已进入代码路径。
-2. 如需要，运行一个新的 diagnostics-only compare-aware execution。
-3. 更新 project_state/codex_execution_report.md。
-4. 更新 project_state/task_packet.json、current_state.json、artifact_index.json、model_gate.json。
-5. 如果 diagnostics 字段缺失，修复 metadata emission。
-6. 如果测试不足，补充 diagnostic metadata tests。
-```
-
-允许修改的文件范围：
+允许修改：
 
 ```text
 reverse_agent/strategies/compare_aware_search.py
@@ -343,134 +263,133 @@ project_state/task_packet.json
 project_state/current_state.json
 project_state/artifact_index.json
 project_state/model_gate.json
-PROJECT_PROGRESS_LOG.txt
 ```
 
-不允许修改：
+允许实现：
 
 ```text
-reverse_agent/harness.py
-reverse_agent/pipeline.py
-GUI 相关文件
-模型调用/云端 API 路径
-全局预算配置
-完整 solve_reports 目录
+1. Add a bounded exact2 basin SMT execution branch.
+2. Consume exact2_basin_smt diagnostic payload.
+3. Generate candidates only from bounded byte/nibble positions and value pools.
+4. Runtime-validate generated candidates.
+5. Persist exact2_basin_smt execution results into SMT/search artifacts.
+6. Add tests proving no budget expansion and no selection regression.
 ```
 
-只有满足以下条件，才允许 metadata 小修：
+不允许实现：
 
-1. diagnostics 字段在代码路径中缺失或未被 artifact/index 捕获。
-2. 修复只是 metadata/reporting emission。
-3. 不改变 candidate generation、ranking、validation、final selection。
-4. 不扩大任何预算。
-5. 必须补测试证明 metadata-only。
+```text
+1. new blind search
+2. new third-hop search
+3. budget expansion
+4. global ranking rewrite
+5. harness rewrite
+6. model/API path rewrite
+7. GUI changes
+8. full solve_reports commit
+```
 
-如果 diagnostics 显示 `exact2_basin_smt` 有 promising bounded positions，本轮仍不要直接实现 real exact2 SMT execution。只在报告中推荐下一轮执行 real bounded exact2 SMT pass。
+如果发现现有代码已经有 bounded SMT branch：
+
+```text
+不要重复实现。
+只审计为什么 diagnostics attempted=false，
+然后修复触发条件、payload handoff 或 artifact emission。
+```
 
 ---
 
 ## 7. Tests
 
-审计或 metadata 小修后先跑：
+先跑 targeted tests：
 
 ```powershell
 python -m pytest -q tests/test_compare_aware_search_strategy.py -k "smt or exact2 or boundary or frontier"
 python -m pytest -q tests/test_compare_aware_search_strategy.py
 ```
 
-如果修改了 metadata emission 或 diagnostics：
+如果修改了 candidate generation、selection guard 或 artifact emission：
 
 ```powershell
 python -m pytest -q
 ```
 
-如果运行新的 diagnostics harness，建议命令：
+如果实现完成并需要 harness 验证，运行一个新 run name，不覆盖旧 run：
 
 ```powershell
-python -m reverse_agent.harness --dataset .\samplereverse_exact1_projected_vs_neighbor_20260424.json --run-name samplereverse_prefix_boundary_diagnostics_20260502 --reports-dir solve_reports --analysis-mode "Auto" --model-type "Copilot CLI" --copilot-timeout-seconds 300 --ctf-skill-profile compact --case-id samplereverse-exact1-projected-vs-neighbor --no-resume
-python -m reverse_agent.project_state build --reports-dir solve_reports --sample samplereverse --run-name samplereverse_prefix_boundary_diagnostics_20260502
+python -m reverse_agent.harness --dataset .\samplereverse_exact1_projected_vs_neighbor_20260424.json --run-name samplereverse_exact2_basin_smt_20260503 --reports-dir solve_reports --analysis-mode "Auto" --model-type "Copilot CLI" --copilot-timeout-seconds 300 --ctf-skill-profile compact --case-id samplereverse-exact1-projected-vs-neighbor --no-resume
+```
+
+运行后更新 project_state：
+
+```powershell
+python -m reverse_agent.project_state build --reports-dir solve_reports --sample samplereverse --run-name samplereverse_exact2_basin_smt_20260503
 python -m reverse_agent.project_state status
 ```
 
-最终报告必须包含：
+最终 `CODEX_EXECUTION_REPORT.md` 必须写明：
 
-1. 是否运行了新 diagnostics harness。
-2. run name。
-3. 是否生成 `prefix_boundary_diagnostics`。
-4. 是否生成 `exact2_basin_smt`。
-5. `exact2_basin_smt` 的 base candidate、variable positions、value pools。
-6. 是否有 candidate 超过 exact2。
-7. 是否保持不扩大预算、不改变 final selection。
-8. 下一轮是否推荐 real bounded exact2 SMT pass。
+```text
+1. 是否实现 real bounded exact2 SMT pass。
+2. 是否使用 78d540b49c590770 作为 base。
+3. 是否只使用 bounded positions / value pools。
+4. 是否扩大任何预算。
+5. 生成了多少候选。
+6. runtime validation 结果。
+7. 是否出现 exact3+。
+8. final best 是否改变。
+9. 若没有提升，是否把该方向写入 negative_results。
+```
 
 ---
 
 ## 8. Stop Conditions
 
-出现以下情况立即停止并报告：
+立即停止并报告：
 
-1. 新 diagnostics artifact 缺少 `prefix_boundary_diagnostics` 或 `exact2_basin_smt`。
-   - 不继续行为修改。
-   - 先修 metadata/reporting 或 project_state indexing。
+```text
+1. exact2_basin_smt payload 缺失。
+2. base candidate 不是 78d540b49c590770。
+3. payload 没有 bounded variable positions 或 value pools。
+4. 实现需要扩大 beam/budget/topN/timeout 才能继续。
+5. 唯一可行方向依赖 compare_semantics_agree=false candidate。
+6. 生成候选无法 runtime validate。
+7. final selection 会被未验证候选、exact0/exact1 候选或 bare flag{ 覆盖。
+8. 需要读取完整 solve_reports 或完整 PROJECT_PROGRESS_LOG.txt 才能继续。
+```
 
-2. `exact2_basin_smt` 存在，但 payload 为空、没有 bounded positions、没有 value pools，或 base 不是 `78d540b49c590770`。
-   - 分类为 diagnostics insufficient 或 candidate_quality_insufficient_after_transform_boundary。
+成功停止条件：
 
-3. `exact2_basin_smt` 显示有明确 bounded variable positions / value pools。
-   - 不直接扩大搜索。
-   - 不直接改 selection。
-   - 下一轮再决策是否运行 real bounded exact2 SMT pass。
-
-4. diagnostics 指向 transform/profile boundary bug。
-   - 只做最小 metadata or boundary 修复。
-   - 补测试。
-   - 不改预算。
-
-5. 需要完整 `solve_reports` 或完整 `PROJECT_PROGRESS_LOG.txt`。
-   - 停止。
-   - 先增强 artifact_index 或 diagnostics output。
-
-6. 唯一可行方向依赖 `compare_semantics_agree=false` candidate。
-   - 不作为主线。
-   - 记录到 negative evidence。
-
-7. 需要 blind search、第三跳、更大 beam/topN/timeout 才能继续。
-   - 停止。
-   - 不执行。
+```text
+1. real bounded exact2 SMT pass 产生 runtime-validated exact3+ candidate。
+2. 或证明 bounded exact2 SMT pass 无 runtime gain，并保留 current exact2 best。
+3. 或发现 bounded SMT branch/payload handoff 的具体实现 bug，并用最小补丁修复。
+```
 
 ---
 
 ## GPT Decision Summary
 
-当前已经排除的方向：
+当前 evidence 已足够支持下一步：
 
 ```text
-1. second-hop 没有执行：已修复。
-2. pair gate / refine / final selection 错误过滤更优候选：已审计，未发现。
-3. projected preserve second-hop 继续扩展：已验证无收益，5a3f7f46ddd474d0 降级。
-4. exact2 seed source metadata/ranking/inclusion bug：已审计，未发现。
-5. transform/profile boundary 直接行为修复：尚无证据，不应直接改 selection。
+implement_real_bounded_exact2_smt_pass_without_budget_expansion
 ```
 
-下一轮单一方向：
+原因：
 
 ```text
-run or audit a new compare-aware diagnostic artifact containing prefix_boundary_diagnostics and exact2_basin_smt, without blind search or budget expansion
+1. exact2_basin_smt 已经存在。
+2. base 是稳定 compare-agree exact2 candidate：78d540b49c590770。
+3. variable byte/nibble positions 已给出。
+4. value pools 很小，属于 bounded execution，不需要扩大预算。
+5. 上一轮 attempted=false，所以真实 SMT pass 尚未执行。
 ```
 
-Codex 不应继续扩大搜索，而应先回答：
+Codex 本轮只做这一件事：
 
 ```text
-新 diagnostics 是否真实进入 artifact；
-exact2_basin_smt 是否以 78d540b49c590770 为 base；
-是否存在 bounded variable positions / value pools；
-这些 evidence 是否足以支持下一轮 real bounded exact2 SMT pass。
+把 exact2_basin_smt 从 diagnostic metadata 变成一个真实、受限、runtime-validated 的 execution branch。
 ```
 
-如果 diagnostics 没有提供 exact2-basin signal，本轮应分类为：
-
-```text
-candidate_quality_insufficient_after_transform_boundary
-```
-
-如果 diagnostics 明确给出 bounded exact2 SMT 方向，本轮只报告并推荐下一轮执行，不要直接改变 final selection。
+不要回到 blind search，不要扩大预算，不要替换 selection guard。
