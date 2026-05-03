@@ -4,31 +4,25 @@ Generated: 2026-05-03
 
 ## 1. Goal
 
-本轮目标是审计 `bounded exact2 basin SMT pass` 为什么在极小 value pools 下仍然返回 `unknown`，并判断是否应改成 deterministic bounded value-pool execution/evaluation path。
+本轮目标是 **停止 exact2 basin value-pool 分支**，转向新的 bounded profile / transform hypothesis audit。
 
 当前任务：
 
 ```text
-audit_smt_unknown_with_tiny_value_pools_without_timeout_expansion
+stop_exact2_basin_value_pool_branch_and_seek_new_bounded_profile_or_transform_hypothesis
 ```
 
-核心问题：
+核心判断：
 
 ```text
-real bounded exact2 SMT pass 已经执行；
-exact2 basin base = 78d540b49c590770；
-value pools 很小；
-但 Z3 返回 unknown，且没有 validation candidates。
+exact2_basin_smt 已执行；
+Z3 unknown 已审计；
+18 个 exact2 value-pool combinations 已全部 deterministic runtime-validated；
+无 exact3+，无 distance5 < 246；
+该分支应停止，不应重复。
 ```
 
-本轮不是继续扩大 SMT timeout，也不是增加 beam/budget/topN。目标是查明：
-
-```text
-1. unknown 是由 solver formulation 太重导致；
-2. 还是 value-pool constraints / byte-nibble constraint handoff 有 bug；
-3. 还是 exact2 basin 的候选质量确实不足；
-4. 是否可以用 deterministic enumeration/evaluation 替代 heavy symbolic RC4 SMT。
-```
+本轮不是继续扩大搜索，也不是重复 exact2 value-pool evaluation。Codex 应建立一个新的、有证据约束的 profile/transform 假设矩阵，定位下一轮可以验证的最小 bounded hypothesis。
 
 ---
 
@@ -44,57 +38,42 @@ project_state/negative_results.json
 project_state/codex_execution_report.md
 ```
 
-当前主线：
+当前状态：
 
 ```text
 active_strategy = CompareAwareSearchStrategy
 sample = samplereverse
 current_mainline = L15(prefix8)
 known_transform = input -> UTF-16LE -> Base64 -> RC4 -> compare flag{ prefix
-current_bottleneck.stage = smt_exact2_basin_unknown
-current_bottleneck.reason = bounded_exact2_basin_smt_attempted_but_z3_unknown
-next_local_action = audit_smt_unknown_with_tiny_value_pools_without_timeout_expansion
+current_bottleneck.stage = candidate_quality_insufficient_after_exact2_value_pool_eval
+current_bottleneck.reason = exact2_basin_value_pools_exhausted_no_gain
+next_local_action = stop_exact2_basin_value_pool_branch_and_seek_new_bounded_profile_or_transform_hypothesis
 ```
 
 最新 harness run：
 
 ```text
-samplereverse_exact2_basin_smt_20260503
+samplereverse_exact2_basin_valuepool_eval_20260503
 ```
 
-最新实现结果：
+最新分类：
 
 ```text
-real bounded exact2 basin SMT pass 已实现；
-solve_targeted_prefix8() 已支持 value_pools；
-compare-aware strategy 已增加 smt_exact2_basin 第二 SMT pass；
-exact2-basin validations 会在产生 candidate 时进入 final candidate aggregation；
-但本次没有产生 validation candidates。
+classification = exact2_basin_value_pools_exhausted_no_gain
 ```
 
-当前 best candidate 仍是：
+当前 best 仍是：
 
 ```text
 78d540b49c59077041414141414141
-runtime exact2 / distance5 246
+candidate_prefix = 78d540b49c590770
+runtime exact_wchars = 2
+runtime distance5 = 246
 compare_semantics_agree = true
+source = pairscan
 ```
 
-SMT 结果：
-
-```text
-primary SMT:
-  base = 5a3e7f46ddd474d0
-  result = targeted z3 finished with unknown
-
-exact2 basin SMT:
-  base = 78d540b49c590770
-  result = targeted z3 finished with unknown
-  validation_candidates = []
-  validations = []
-```
-
-exact2 basin value pools：
+已穷尽的 exact2 basin value pools：
 
 ```text
 0: [0x78]
@@ -104,16 +83,29 @@ exact2 basin value pools：
 4: [0x9c]
 ```
 
-候选空间上界：
+穷尽结果：
 
 ```text
-1 * 3 * 3 * 2 * 1 = 18 combinations
+estimated combinations = 18
+generated_count = 18
+unique_count = 18
+validated_count = 18
+best_candidate = 78d540b49c59077041414141414141
+best_runtime_exact_wchars = 2
+best_runtime_distance5 = 246
+improved_over_exact2 = false
+runtime_best_improved = false
 ```
 
-关键判断：
+负面结果已记录：
 
 ```text
-如果只有 18 个组合，继续让 Z3 走 heavy symbolic RC4 objective 并返回 unknown，说明下一步不应加 timeout，而应审计 solver formulation 或直接做 deterministic enumeration/evaluation。
+do not repeat exact2 basin value-pool evaluation with pools:
+0:78
+1:d5/3e/3c
+2:40/7f/80
+3:b4/8f
+4:9c
 ```
 
 ---
@@ -128,19 +120,21 @@ exact2 basin value pools：
 3. 不要扩大 beam、budget、topN、timeout、frontier iteration limit。
 4. 不要把 compare_semantics_agree=false candidates 作为主突破点。
 5. 不要提交完整 solve_reports 目录。
-6. 不要扫描完整 solve_reports，除非 artifact_index 不足。
-7. 不要提升 5a3f7f46ddd474d0、5a3f7fc2ddd474d0、343f7f46ddd474d0。
-8. 不要把 model-selected bare flag{ 当成 runtime improvement。
-9. 不要重写 harness、pipeline、GUI、云端 API 路径。
-10. 不要因为 Z3 unknown 就默认提高 timeout。
+6. 不要扫描完整 solve_reports。
+7. 不要重复 exact2 basin value-pool evaluation，除非 diagnostics value pools 改变。
+8. 不要提升 5a3f7f46ddd474d0、5a3f7fc2ddd474d0、343f7f46ddd474d0。
+9. 不要把 model-selected bare flag{ 当成 runtime improvement。
+10. 不要因为 exact2 branch 失败就默认增加 timeout 或扩大搜索空间。
 ```
 
-特别约束：
+额外约束：
 
 ```text
-unknown 不是 unsat proof。
-但 tiny value pools 下的 unknown 更像 formulation/evaluation path 问题。
-本轮只允许做局部审计或小范围 deterministic bounded evaluator。
+本轮应转向 profile/transform hypothesis audit。
+不是直接写新搜索器。
+不是直接重构 pipeline。
+不是默认修改 RC4/Base64/UTF-16LE 逻辑。
+必须先形成 evidence-backed hypothesis matrix。
 ```
 
 ---
@@ -157,159 +151,158 @@ project_state/negative_results.json
 project_state/codex_execution_report.md
 ```
 
-重点代码文件：
-
-```text
-reverse_agent/samplereverse_z3.py
-reverse_agent/strategies/compare_aware_search.py
-tests/test_compare_aware_search_strategy.py
-```
-
-必要时再读：
+主要代码文件：
 
 ```text
 reverse_agent/profiles/samplereverse.py
 reverse_agent/transforms/samplereverse.py
+reverse_agent/strategies/compare_aware_search.py
+reverse_agent/samplereverse_z3.py
+tests/test_compare_aware_search_strategy.py
 ```
 
-重点函数 / 逻辑：
+只在必要时读取这些 artifact，不要读取完整 `solve_reports`：
 
 ```text
-solve_targeted_prefix8()
-run_compare_aware_smt()
-smt_exact2_basin branch
-value_pools constraints
-byte/nibble override positions
-candidate generation from SMT model
-runtime validation handoff
-final candidate aggregation
-prefix_boundary scoring
+artifact_index.latest_artifacts.summary
+artifact_index.latest_artifacts.compare_probe
+artifact_index.latest_artifacts.bridge_validation
+artifact_index.latest_artifacts.pairscan_summary
+artifact_index.latest_artifacts.smt_result
+artifact_index.latest_artifacts.smt_exact2_basin_result
+artifact_index.latest_artifacts.exact2_basin_value_pool_result
+artifact_index.latest_artifacts.exact2_basin_value_pool_validation
 ```
 
-优先审计：
+重点审计：
 
 ```text
-1. value_pools 是否真的约束到目标 bytes。
-2. base byte 是否被强制保留。
-3. byte positions 和 nibble positions 是否混用错位。
-4. unknown 是否来自完整 RC4 symbolic encoding。
-5. 是否可以直接 enumerate 18 combinations。
-6. enumerate 后是否能调用现有 runtime validator。
+1. profile 中对 samplereverse 的输入长度、prefix 长度、candidate layout 的假设。
+2. transform 链：input -> UTF-16LE -> Base64 -> RC4 -> compare flag{ prefix。
+3. L15(prefix8) 与 runtime 5-wchar compare 的边界是否一致。
+4. Base64 boundary 是否存在 off-by-one / padding / chunk alignment 假设。
+5. UTF-16LE wchar 拆分与 prefix byte mutation 是否一致。
+6. RC4 key / keystream / decrypt_prefix helper 是否与 runtime compare probe 一致。
+7. compare_probe 与 offline semantics 的 agree/disagree 分布。
+8. exact2 candidate 为什么能稳定匹配 `f`, `l`，但局部 value-pool 无法推进到 exact3。
 ```
 
 ---
 
 ## 5. Required Audit
 
-### A. SMT unknown path audit
+### A. Stop exact2 branch
 
-Codex 必须回答：
+Codex 必须确认：
 
 ```text
-1. solve_targeted_prefix8() 在 value_pools 下构造了多少 symbolic variables。
-2. value_pools 是否实际进入 Z3 constraints。
-3. base byte 是否被加入 value pool 或被固定保留。
-4. byte positions [1,2,3,0,4] 与 pools key 是否一致。
-5. nibble positions [2,3,0,1,4] 是否只影响目标 objective，而不是错误约束 byte index。
-6. Z3 unknown 的 reason 是什么，是否能从 solver.reason_unknown() 取出。
-7. unknown 是 primary SMT 和 exact2-basin SMT 都出现，还是 exact2-only。
-8. 当前 formulation 是否仍在 symbolic RC4 全链路上求解。
+1. exact2_basin_value_pool_eval attempted = true。
+2. generated_count = 18。
+3. validated_count = 18。
+4. best remains 78d540b49c59077041414141414141。
+5. no exact3+。
+6. no distance5 < 246。
+7. negative_results 已记录该 exact2 value-pool pool。
+8. 本轮不得重复该 pool。
 ```
 
-### B. Tiny value-pool deterministic evaluation audit
+### B. Profile / transform hypothesis matrix
 
-因为 value pools 只有 18 个组合，Codex 必须判断是否可做：
+Codex 必须构建一个 hypothesis matrix，至少包含这些候选假设：
 
 ```text
-for each combination in value_pools:
-    patch base prefix bytes
-    build candidate
-    run existing compare/runtime validation
-    collect exact_wchars / distance5
+H1: candidate byte layout / prefix length 假设错误或过窄。
+H2: UTF-16LE wchar boundary 与 byte mutation positions 存在错位。
+H3: Base64 boundary / padding / chunk alignment 假设存在 off-by-one。
+H4: RC4 helper/runtime mismatch。
+H5: compare-aware offline semantics 与 runtime semantics 在特定 candidate basin 上有系统偏差。
+H6: current exact2 candidate 已处于局部最优，当前 evidence 不足以继续 profile 内局部变异。
 ```
 
-必须保证：
+每个 hypothesis 必须包含：
 
 ```text
-1. 不扩大搜索预算。
-2. 不引入 blind search。
-3. 只枚举 diagnostics 给出的 value pools。
-4. 枚举数量必须记录在 artifact 中。
-5. 每个 candidate 必须走现有 runtime validation。
-6. 只有 runtime exact_wchars > 2 或 distance5 < 246 才算 improvement。
+1. evidence for
+2. evidence against
+3. files/artifacts needed
+4. bounded validation method
+5. expected success signal
+6. stop condition
+7. whether code change is allowed
 ```
 
-### C. Candidate promotion guard
+### C. Bounded validation design
 
-必须确认：
+每个新 hypothesis 的验证必须是 bounded 的，例如：
 
 ```text
-1. exact0/exact1 candidate 不能替换 current exact2 best。
-2. unvalidated candidate 不能替换 final best。
-3. bare flag{ 不能覆盖 compare-aware runtime best。
-4. compare_semantics_agree=false candidate 不能作为主线。
-5. 如果 18-combo enumeration 没有提升，则 final best 保持 78d540b49c59077041414141414141。
+1. 只比较现有 best candidates 的 transform trace。
+2. 只生成 trace metadata，不生成大规模候选。
+3. 只验证少量 hand-picked contrast candidates。
+4. 只审计 byte/wchar/base64/rc4 boundary，不扩展 beam。
+5. 只使用 compare_semantics_agree=true candidates 作为主线。
+```
+
+不允许把 hypothesis audit 变成：
+
+```text
+1. blind search
+2. third-hop search
+3. larger guided pool
+4. timeout expansion
+5. full solve_reports scan
 ```
 
 ### D. Required evidence tables
 
-#### Table 1: SMT unknown audit
-
-| item | expected | observed | implication |
-|---|---|---|---|
-| primary SMT result | sat/unsat/unknown | | |
-| exact2-basin SMT result | sat/unsat/unknown | | |
-| solver reason_unknown | recorded | | |
-| symbolic RC4 full chain used? | yes/no | | |
-| value_pools constraints applied? | yes/no | | |
-| base bytes preserved? | yes/no | | |
-| validation candidates generated? | yes/no | | |
-
-#### Table 2: deterministic value-pool feasibility
-
-| item | value |
-|---|---|
-| base candidate | `78d540b49c590770` |
-| value pool sizes | `1 * 3 * 3 * 2 * 1` |
-| total combinations | `18` |
-| requires budget expansion? | no |
-| requires blind search? | no |
-| can use existing runtime validator? | yes/no |
-| recommended path | deterministic enumeration / keep SMT / stop |
-
-#### Table 3: deterministic evaluation result
+#### Table 1: exhausted branch confirmation
 
 | field | value |
 |---|---|
-| generated combinations | |
-| validated candidates | |
+| run | |
+| branch | exact2 basin value-pool |
+| generated_count | |
+| unique_count | |
+| validated_count | |
 | best candidate | |
-| best runtime exact_wchars | |
+| best exact_wchars | |
 | best distance5 | |
 | improved over exact2? | |
-| final best changed? | |
 | negative result recorded? | |
 
-#### Table 4: classification
+#### Table 2: profile / transform hypothesis matrix
 
-| classification | evidence for | evidence against | next action | recommendation |
-|---|---|---|---|---|
-| smt_unknown_due_to_heavy_symbolic_formulation | | | replace with deterministic bounded evaluator | yes/no |
-| value_pool_constraint_bug | | | fix handoff/constraints + tests | yes/no |
-| exact2_basin_value_pools_exhausted_no_gain | | | record negative result, stop this branch | yes/no |
-| exact2_basin_deterministic_eval_produced_exact3_plus | | | promote only runtime-validated candidate | yes/no |
-| candidate_quality_insufficient_after_exact2_basin_smt | | | move to next bounded evidence source | yes/no |
+| hypothesis | evidence for | evidence against | files/artifacts | bounded validation | recommendation |
+|---|---|---|---|---|---|
+| H1 candidate layout / prefix length | | | | | |
+| H2 UTF-16LE wchar boundary | | | | | |
+| H3 Base64 boundary / padding | | | | | |
+| H4 RC4 helper/runtime mismatch | | | | | |
+| H5 offline/runtime semantic skew | | | | | |
+| H6 candidate quality insufficient | | | | | |
+
+#### Table 3: next recommended bounded experiment
+
+| field | value |
+|---|---|
+| selected hypothesis | |
+| reason | |
+| files to modify | |
+| artifacts to read | |
+| candidate count allowed | |
+| runtime validation required? | |
+| expected improvement signal | |
+| stop condition | |
 
 ---
 
 ## 6. Implementation Scope
 
+默认本轮只做 audit / metadata / report，不直接改搜索行为。
+
 允许修改：
 
 ```text
-reverse_agent/samplereverse_z3.py
-reverse_agent/strategies/compare_aware_search.py
-tests/test_compare_aware_search_strategy.py
 project_state/codex_execution_report.md
 project_state/task_packet.json
 project_state/current_state.json
@@ -318,86 +311,97 @@ project_state/negative_results.json
 project_state/model_gate.json
 ```
 
-允许做的实现：
+如果缺少必要 trace metadata，允许最小修改：
 
 ```text
-1. 记录 solver.reason_unknown()。
-2. 记录 SMT variable/constraint summary。
-3. 修复 value_pools handoff bug，如果确实存在。
-4. 增加 deterministic bounded value-pool evaluator。
-5. 枚举 exact2_basin_smt 中的 tiny value pools。
-6. 对枚举 candidate 走现有 runtime validation。
-7. 将结果写入 artifact：generated_count、validated_count、best_candidate、best_exact、best_distance5。
-8. 增加测试证明 enumeration 不扩大预算、不跑 blind search、不破坏 final selection。
+reverse_agent/profiles/samplereverse.py
+reverse_agent/transforms/samplereverse.py
+reverse_agent/strategies/compare_aware_search.py
+tests/test_compare_aware_search_strategy.py
 ```
 
-不允许做的实现：
+允许做的最小实现：
 
 ```text
-1. 不要提高 SMT timeout。
-2. 不要扩大 value pools。
-3. 不要引入新 beam search。
-4. 不要第三跳扩展。
-5. 不要全局改 ranking。
-6. 不要改 harness/pipeline/model API。
-7. 不要提交完整 solve_reports。
+1. 增加 transform trace metadata。
+2. 增加 candidate layout / UTF-16LE / Base64 / RC4 boundary trace。
+3. 增加 compare_probe/offline semantics contrast table。
+4. 增加 hypothesis_matrix artifact。
+5. 增加测试，证明只是 metadata，不改变 candidate generation/ranking/selection。
 ```
 
-推荐实现方向：
+不允许做：
 
 ```text
-优先加一个 deterministic bounded evaluator，而不是继续让 Z3 解 18-combo 的 heavy symbolic RC4 目标。
+1. 新 blind search。
+2. 新 beam/guided expansion。
+3. 重复 exact2 value-pool branch。
+4. 提高 SMT timeout。
+5. 改 final selection。
+6. 改 harness/pipeline/API/GUI。
+7. 提交完整 solve_reports。
 ```
 
-建议命名：
+推荐产出 artifact：
 
 ```text
-evaluate_exact2_basin_value_pools()
-run_exact2_basin_value_pool_evaluation()
+solve_reports/.../reports/tool_artifacts/samplereverse/profile_transform_hypothesis_matrix.json
+```
+
+或 compact project_state 字段：
+
+```text
+latest_audit.profile_transform_hypotheses
+next_local_action = run_selected_bounded_profile_transform_validation
 ```
 
 ---
 
 ## 7. Tests
 
-先跑 targeted tests：
+如果只更新 project_state / report：
 
 ```powershell
-python -m pytest -q tests/test_compare_aware_search_strategy.py -k "smt or exact2 or boundary or frontier or value"
+python -m reverse_agent.project_state status
+```
+
+如果增加 metadata / trace：
+
+```powershell
+python -m pytest -q tests/test_compare_aware_search_strategy.py -k "profile or transform or boundary or trace or compare"
 python -m pytest -q tests/test_compare_aware_search_strategy.py
 ```
 
-如果修改 `samplereverse_z3.py` 或 candidate aggregation：
+如果修改 transform/profile helper：
 
 ```powershell
 python -m pytest -q
 ```
 
-如果实现 deterministic evaluator，运行新 harness，不覆盖旧 run：
+如果需要运行 bounded diagnostics harness，使用新 run name：
 
 ```powershell
-python -m reverse_agent.harness --dataset .\samplereverse_exact1_projected_vs_neighbor_20260424.json --run-name samplereverse_exact2_basin_valuepool_eval_20260503 --reports-dir solve_reports --analysis-mode "Auto" --model-type "Copilot CLI" --copilot-timeout-seconds 300 --ctf-skill-profile compact --case-id samplereverse-exact1-projected-vs-neighbor --no-resume
+python -m reverse_agent.harness --dataset .\samplereverse_exact1_projected_vs_neighbor_20260424.json --run-name samplereverse_profile_transform_hypothesis_audit_20260503 --reports-dir solve_reports --analysis-mode "Auto" --model-type "Copilot CLI" --copilot-timeout-seconds 300 --ctf-skill-profile compact --case-id samplereverse-exact1-projected-vs-neighbor --no-resume
 ```
 
-运行后更新 project_state：
+运行后：
 
 ```powershell
-python -m reverse_agent.project_state build --reports-dir solve_reports --sample samplereverse --run-name samplereverse_exact2_basin_valuepool_eval_20260503
+python -m reverse_agent.project_state build --reports-dir solve_reports --sample samplereverse --run-name samplereverse_profile_transform_hypothesis_audit_20260503
 python -m reverse_agent.project_state status
 ```
 
 最终报告必须包含：
 
 ```text
-1. 是否记录 solver.reason_unknown()。
-2. 是否确认 value_pools 真实进入 constraints。
-3. 是否实现 deterministic bounded value-pool evaluator。
-4. 枚举组合数量是否为 18。
-5. runtime validation 结果。
-6. 是否出现 exact3+。
-7. 是否低于 distance5 246。
-8. final best 是否改变。
-9. 如果无提升，是否将 exact2_basin_value_pools_exhausted_no_gain 写入 negative_results。
+1. exact2 value-pool branch 是否确认停止。
+2. negative_results 是否已记录，不重复该 pool。
+3. profile/transform hypothesis matrix。
+4. 每个 hypothesis 的 evidence for/against。
+5. 推荐的唯一下一步 bounded experiment。
+6. 是否修改代码。
+7. 是否改变 candidate generation/ranking/final selection。
+8. 测试结果。
 ```
 
 ---
@@ -407,45 +411,51 @@ python -m reverse_agent.project_state status
 立即停止并报告：
 
 ```text
-1. value_pools 没有实际进入 solver constraints。
-2. byte positions / nibble positions handoff 错位。
-3. base candidate 不是 78d540b49c590770。
-4. deterministic enumeration 需要超过 diagnostics value pools。
-5. 实现需要扩大 timeout、beam、budget、topN。
-6. 生成 candidate 不能走 runtime validation。
-7. final selection 会被 unvalidated candidate 或 bare flag{ 覆盖。
-8. 唯一提升依赖 compare_semantics_agree=false candidate。
+1. 需要重复 exact2 value-pool evaluation。
+2. 需要扩大 beam/budget/topN/timeout。
+3. 需要 full solve_reports scan。
+4. 唯一方向依赖 compare_semantics_agree=false candidate。
+5. 需要改 final selection 才能看到收益。
+6. 无法把 hypothesis 限定为 bounded validation。
+7. 缺少 artifact_index 支持，无法定位必要 artifact。
 ```
 
 成功停止条件：
 
 ```text
-1. 找到 value_pools / constraint handoff bug，并最小修复。
-2. deterministic 18-combo evaluation 产生 runtime-validated exact3+。
-3. deterministic 18-combo evaluation 无提升，并把该方向记录为 negative result。
-4. 证明 unknown 只来自 heavy symbolic formulation，并完成 deterministic evaluator 替代。
+1. 生成 profile/transform hypothesis matrix。
+2. 选出一个 evidence-backed bounded hypothesis。
+3. 明确下一轮只验证该 hypothesis。
+4. 不重复 exact2 value-pool branch。
+5. 不扩大搜索预算。
 ```
 
 ---
 
 ## GPT Decision Summary
 
-当前不应继续加 SMT timeout。
+当前 exact2 basin value-pool 分支应停止。
 
 原因：
 
 ```text
-1. real bounded exact2 SMT pass 已经执行。
-2. exact2 value pools 极小，理论组合只有 18 个。
-3. Z3 返回 unknown，但这不是 unsat proof。
-4. 没有 validation candidates，也没有 runtime best improvement。
-5. 下一步更合理的是 deterministic bounded value-pool evaluation。
+1. real bounded exact2 SMT 已执行。
+2. Z3 unknown 已审计。
+3. deterministic value-pool evaluator 已穷尽 18 个组合。
+4. 18 个候选全部 runtime validated。
+5. 无 exact3+。
+6. 无 distance5 improvement。
+7. negative_results 已记录该分支不要重复。
 ```
 
-Codex 本轮只做一件事：
+下一轮单一方向：
 
 ```text
-审计 SMT unknown，并优先把 tiny value pools 转换为 deterministic enumeration + runtime validation。
+build profile/transform hypothesis matrix and choose one bounded validation target
 ```
 
-不要回到 blind search，不要扩大预算，不要提升 compare_semantics_agree=false candidate。
+Codex 不应继续扩大搜索，也不应继续 exact2 pool，而应把注意力转到：
+
+```text
+candidate layout / UTF-16LE boundary / Base64 boundary / RC4 helper-runtime consistency / offline-runtime semantic skew
+```
