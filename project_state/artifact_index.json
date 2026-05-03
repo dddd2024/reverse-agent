@@ -1,150 +1,151 @@
 {
-  "generated_at": "2026-05-03T10:12:42Z",
+  "generated_at": "2026-05-03T13:58:12Z",
   "latest_artifacts": {
-    "bridge_search_result": "solve_reports\\harness_runs\\samplereverse_exact2_basin_valuepool_eval_20260503\\reports\\tool_artifacts\\samplereverse\\bridge\\bridge_search_result.json",
-    "bridge_validation": "solve_reports\\harness_runs\\samplereverse_exact2_basin_valuepool_eval_20260503\\reports\\tool_artifacts\\samplereverse\\bridge\\bridge_validation\\bridge_validation.json",
+    "bridge_search_result": "solve_reports\\harness_runs\\samplereverse_profile_transform_hypothesis_audit_20260503\\reports\\tool_artifacts\\samplereverse\\bridge\\bridge_search_result.json",
+    "bridge_validation": "solve_reports\\harness_runs\\samplereverse_profile_transform_hypothesis_audit_20260503\\reports\\tool_artifacts\\samplereverse\\bridge\\bridge_validation\\bridge_validation.json",
     "checkpoint": "solve_reports\\tool_artifacts\\samplereverse_optimizer_smoke\\samplereverse_search_checkpoint.json",
-    "compare_aware_result": "solve_reports\\harness_runs\\samplereverse_exact2_basin_valuepool_eval_20260503\\reports\\tool_artifacts\\samplereverse\\frontier_refine_2\\samplereverse_compare_aware_result.json",
-    "compare_probe": "solve_reports\\harness_runs\\samplereverse_exact2_basin_valuepool_eval_20260503\\reports\\tool_artifacts\\samplereverse\\samplereverse_compare_probe.json",
-    "compare_probe_log": "solve_reports\\harness_runs\\samplereverse_exact2_basin_valuepool_eval_20260503\\reports\\tool_artifacts\\samplereverse\\samplereverse_compare_probe.log",
-    "frontier_summary": "solve_reports\\harness_runs\\samplereverse_exact2_basin_valuepool_eval_20260503\\reports\\tool_artifacts\\samplereverse\\samplereverse_compare_aware_frontier_summary.json",
-    "guided_pool_result": "solve_reports\\harness_runs\\samplereverse_exact2_basin_valuepool_eval_20260503\\reports\\tool_artifacts\\samplereverse\\frontier_guided_2_5a3f7f46ddd474d0\\samplereverse_compare_aware_guided_pool_result.json",
-    "guided_pool_validation": "solve_reports\\harness_runs\\samplereverse_exact2_basin_valuepool_eval_20260503\\reports\\tool_artifacts\\samplereverse\\frontier_guided_2_5a3f7f46ddd474d0\\guided_pool_validation\\samplereverse_compare_aware_guided_pool_validation.json",
-    "pairscan_summary": "solve_reports\\harness_runs\\samplereverse_exact2_basin_valuepool_eval_20260503\\reports\\tool_artifacts\\samplereverse\\bridge\\pairscan_summary.json",
-    "run_manifest": "solve_reports\\harness_runs\\samplereverse_exact2_basin_valuepool_eval_20260503\\run_manifest.json",
-    "exact2_basin_value_pool_result": "solve_reports\\harness_runs\\samplereverse_exact2_basin_valuepool_eval_20260503\\reports\\tool_artifacts\\samplereverse\\exact2_basin_value_pool\\samplereverse_exact2_basin_value_pool_result.json",
-    "exact2_basin_value_pool_validation": "solve_reports\\harness_runs\\samplereverse_exact2_basin_valuepool_eval_20260503\\reports\\tool_artifacts\\samplereverse\\exact2_basin_value_pool\\value_pool_validation\\samplereverse_exact2_basin_value_pool_validation.json",
-    "smt_exact2_basin_result": "solve_reports\\harness_runs\\samplereverse_exact2_basin_valuepool_eval_20260503\\reports\\tool_artifacts\\samplereverse\\smt_exact2_basin\\samplereverse_compare_aware_smt_result.json",
-    "smt_result": "solve_reports\\harness_runs\\samplereverse_exact2_basin_valuepool_eval_20260503\\reports\\tool_artifacts\\samplereverse\\smt\\samplereverse_compare_aware_smt_result.json",
+    "compare_aware_result": "solve_reports\\harness_runs\\samplereverse_profile_transform_hypothesis_audit_20260503\\reports\\tool_artifacts\\samplereverse\\frontier_refine_2\\samplereverse_compare_aware_result.json",
+    "compare_probe": "solve_reports\\harness_runs\\samplereverse_profile_transform_hypothesis_audit_20260503\\reports\\tool_artifacts\\samplereverse\\samplereverse_compare_probe.json",
+    "compare_probe_log": "solve_reports\\harness_runs\\samplereverse_profile_transform_hypothesis_audit_20260503\\reports\\tool_artifacts\\samplereverse\\samplereverse_compare_probe.log",
+    "frontier_summary": "solve_reports\\harness_runs\\samplereverse_profile_transform_hypothesis_audit_20260503\\reports\\tool_artifacts\\samplereverse\\samplereverse_compare_aware_frontier_summary.json",
+    "guided_pool_result": "solve_reports\\harness_runs\\samplereverse_profile_transform_hypothesis_audit_20260503\\reports\\tool_artifacts\\samplereverse\\frontier_guided_2_5a3f7f46ddd474d0\\samplereverse_compare_aware_guided_pool_result.json",
+    "guided_pool_validation": "solve_reports\\harness_runs\\samplereverse_profile_transform_hypothesis_audit_20260503\\reports\\tool_artifacts\\samplereverse\\frontier_guided_2_5a3f7f46ddd474d0\\guided_pool_validation\\samplereverse_compare_aware_guided_pool_validation.json",
+    "pairscan_summary": "solve_reports\\harness_runs\\samplereverse_profile_transform_hypothesis_audit_20260503\\reports\\tool_artifacts\\samplereverse\\bridge\\pairscan_summary.json",
+    "run_manifest": "solve_reports\\harness_runs\\samplereverse_profile_transform_hypothesis_audit_20260503\\run_manifest.json",
+    "smt_result": "solve_reports\\harness_runs\\samplereverse_profile_transform_hypothesis_audit_20260503\\reports\\tool_artifacts\\samplereverse\\smt\\samplereverse_compare_aware_smt_result.json",
     "smt_validation": null,
-    "strata_summary": "solve_reports\\harness_runs\\samplereverse_exact2_basin_valuepool_eval_20260503\\reports\\tool_artifacts\\samplereverse\\samplereverse_compare_aware_strata_summary.json",
-    "summary": "solve_reports\\harness_runs\\samplereverse_exact2_basin_valuepool_eval_20260503\\summary.json"
+    "strata_summary": "solve_reports\\harness_runs\\samplereverse_profile_transform_hypothesis_audit_20260503\\reports\\tool_artifacts\\samplereverse\\samplereverse_compare_aware_strata_summary.json",
+    "summary": "solve_reports\\harness_runs\\samplereverse_profile_transform_hypothesis_audit_20260503\\summary.json",
+    "profile_transform_hypothesis_matrix": "solve_reports\\harness_runs\\samplereverse_profile_transform_hypothesis_audit_20260503\\reports\\tool_artifacts\\samplereverse\\profile_transform_hypothesis_matrix.json",
+    "exact2_basin_value_pool_result": "solve_reports\\harness_runs\\samplereverse_profile_transform_hypothesis_audit_20260503\\reports\\tool_artifacts\\samplereverse\\exact2_basin_value_pool\\samplereverse_exact2_basin_value_pool_result.json",
+    "exact2_basin_value_pool_validation": "solve_reports\\harness_runs\\samplereverse_profile_transform_hypothesis_audit_20260503\\reports\\tool_artifacts\\samplereverse\\exact2_basin_value_pool\\value_pool_validation\\samplereverse_exact2_basin_value_pool_validation.json",
+    "smt_exact2_basin_result": "solve_reports\\harness_runs\\samplereverse_profile_transform_hypothesis_audit_20260503\\reports\\tool_artifacts\\samplereverse\\smt_exact2_basin\\samplereverse_compare_aware_smt_result.json"
   },
   "latest_case_results": [
-    "solve_reports\\harness_runs\\samplereverse_exact2_basin_valuepool_eval_20260503\\case_results\\samplereverse-exact1-projected-vs-neighbor.json"
+    "solve_reports\\harness_runs\\samplereverse_profile_transform_hypothesis_audit_20260503\\case_results\\samplereverse-exact1-projected-vs-neighbor.json"
   ],
-  "latest_harness_run": "solve_reports\\harness_runs\\samplereverse_exact2_basin_valuepool_eval_20260503",
-  "latest_summary": "solve_reports\\harness_runs\\samplereverse_exact2_basin_valuepool_eval_20260503\\summary.json",
+  "latest_harness_run": "solve_reports\\harness_runs\\samplereverse_profile_transform_hypothesis_audit_20260503",
+  "latest_summary": "solve_reports\\harness_runs\\samplereverse_profile_transform_hypothesis_audit_20260503\\summary.json",
   "missing": [],
   "recent_artifacts": [
     {
       "kind": "summary",
-      "modified_at": "2026-05-03T10:12:19Z",
-      "path": "solve_reports\\harness_runs\\samplereverse_exact2_basin_valuepool_eval_20260503\\summary.json",
-      "size_bytes": 995
+      "modified_at": "2026-05-03T13:57:41Z",
+      "path": "solve_reports\\harness_runs\\samplereverse_profile_transform_hypothesis_audit_20260503\\summary.json",
+      "size_bytes": 1030
     },
     {
       "kind": "run_manifest",
-      "modified_at": "2026-05-03T10:12:19Z",
-      "path": "solve_reports\\harness_runs\\samplereverse_exact2_basin_valuepool_eval_20260503\\run_manifest.json",
-      "size_bytes": 2156
+      "modified_at": "2026-05-03T13:57:41Z",
+      "path": "solve_reports\\harness_runs\\samplereverse_profile_transform_hypothesis_audit_20260503\\run_manifest.json",
+      "size_bytes": 2177
     },
     {
       "kind": "smt_result",
-      "modified_at": "2026-05-03T10:09:41Z",
-      "path": "solve_reports\\harness_runs\\samplereverse_exact2_basin_valuepool_eval_20260503\\reports\\tool_artifacts\\samplereverse\\smt\\samplereverse_compare_aware_smt_result.json",
-      "size_bytes": 8451
+      "modified_at": "2026-05-03T13:54:56Z",
+      "path": "solve_reports\\harness_runs\\samplereverse_profile_transform_hypothesis_audit_20260503\\reports\\tool_artifacts\\samplereverse\\smt\\samplereverse_compare_aware_smt_result.json",
+      "size_bytes": 8458
     },
     {
       "kind": "smt_result",
-      "modified_at": "2026-05-03T10:09:41Z",
-      "path": "solve_reports\\harness_runs\\samplereverse_exact2_basin_valuepool_eval_20260503\\reports\\tool_artifacts\\samplereverse\\smt_exact2_basin\\samplereverse_compare_aware_smt_result.json",
-      "size_bytes": 8410
+      "modified_at": "2026-05-03T13:54:56Z",
+      "path": "solve_reports\\harness_runs\\samplereverse_profile_transform_hypothesis_audit_20260503\\reports\\tool_artifacts\\samplereverse\\smt_exact2_basin\\samplereverse_compare_aware_smt_result.json",
+      "size_bytes": 8417
     },
     {
       "kind": "frontier_summary",
-      "modified_at": "2026-05-03T10:09:30Z",
-      "path": "solve_reports\\harness_runs\\samplereverse_exact2_basin_valuepool_eval_20260503\\reports\\tool_artifacts\\samplereverse\\samplereverse_compare_aware_frontier_summary.json",
-      "size_bytes": 670282
+      "modified_at": "2026-05-03T13:54:46Z",
+      "path": "solve_reports\\harness_runs\\samplereverse_profile_transform_hypothesis_audit_20260503\\reports\\tool_artifacts\\samplereverse\\samplereverse_compare_aware_frontier_summary.json",
+      "size_bytes": 670688
     },
     {
       "kind": "strata_summary",
-      "modified_at": "2026-05-03T10:09:30Z",
-      "path": "solve_reports\\harness_runs\\samplereverse_exact2_basin_valuepool_eval_20260503\\reports\\tool_artifacts\\samplereverse\\samplereverse_compare_aware_strata_summary.json",
-      "size_bytes": 78250
+      "modified_at": "2026-05-03T13:54:46Z",
+      "path": "solve_reports\\harness_runs\\samplereverse_profile_transform_hypothesis_audit_20260503\\reports\\tool_artifacts\\samplereverse\\samplereverse_compare_aware_strata_summary.json",
+      "size_bytes": 77094
     },
     {
       "kind": "compare_aware_result",
-      "modified_at": "2026-05-03T10:09:01Z",
-      "path": "solve_reports\\harness_runs\\samplereverse_exact2_basin_valuepool_eval_20260503\\reports\\tool_artifacts\\samplereverse\\frontier_refine_2\\samplereverse_compare_aware_result.json",
+      "modified_at": "2026-05-03T13:54:27Z",
+      "path": "solve_reports\\harness_runs\\samplereverse_profile_transform_hypothesis_audit_20260503\\reports\\tool_artifacts\\samplereverse\\frontier_refine_2\\samplereverse_compare_aware_result.json",
       "size_bytes": 25001
     },
     {
       "kind": "guided_pool_validation",
-      "modified_at": "2026-05-03T10:06:16Z",
-      "path": "solve_reports\\harness_runs\\samplereverse_exact2_basin_valuepool_eval_20260503\\reports\\tool_artifacts\\samplereverse\\frontier_guided_2_5a3f7f46ddd474d0\\guided_pool_validation\\samplereverse_compare_aware_guided_pool_validation.json",
-      "size_bytes": 38972
+      "modified_at": "2026-05-03T13:51:57Z",
+      "path": "solve_reports\\harness_runs\\samplereverse_profile_transform_hypothesis_audit_20260503\\reports\\tool_artifacts\\samplereverse\\frontier_guided_2_5a3f7f46ddd474d0\\guided_pool_validation\\samplereverse_compare_aware_guided_pool_validation.json",
+      "size_bytes": 39091
     },
     {
       "kind": "guided_pool_result",
-      "modified_at": "2026-05-03T10:05:46Z",
-      "path": "solve_reports\\harness_runs\\samplereverse_exact2_basin_valuepool_eval_20260503\\reports\\tool_artifacts\\samplereverse\\frontier_guided_2_5a3f7f46ddd474d0\\samplereverse_compare_aware_guided_pool_result.json",
+      "modified_at": "2026-05-03T13:51:38Z",
+      "path": "solve_reports\\harness_runs\\samplereverse_profile_transform_hypothesis_audit_20260503\\reports\\tool_artifacts\\samplereverse\\frontier_guided_2_5a3f7f46ddd474d0\\samplereverse_compare_aware_guided_pool_result.json",
       "size_bytes": 922514
     },
     {
       "kind": "compare_aware_result",
-      "modified_at": "2026-05-03T10:05:16Z",
-      "path": "solve_reports\\harness_runs\\samplereverse_exact2_basin_valuepool_eval_20260503\\reports\\tool_artifacts\\samplereverse\\frontier_refine_1\\samplereverse_compare_aware_result.json",
+      "modified_at": "2026-05-03T13:51:18Z",
+      "path": "solve_reports\\harness_runs\\samplereverse_profile_transform_hypothesis_audit_20260503\\reports\\tool_artifacts\\samplereverse\\frontier_refine_1\\samplereverse_compare_aware_result.json",
       "size_bytes": 24749
     },
     {
       "kind": "guided_pool_validation",
-      "modified_at": "2026-05-03T10:02:29Z",
-      "path": "solve_reports\\harness_runs\\samplereverse_exact2_basin_valuepool_eval_20260503\\reports\\tool_artifacts\\samplereverse\\frontier_guided_1_5a3e7f46ddd474d0\\guided_pool_validation\\samplereverse_compare_aware_guided_pool_validation.json",
-      "size_bytes": 38178
+      "modified_at": "2026-05-03T13:48:44Z",
+      "path": "solve_reports\\harness_runs\\samplereverse_profile_transform_hypothesis_audit_20260503\\reports\\tool_artifacts\\samplereverse\\frontier_guided_1_5a3e7f46ddd474d0\\guided_pool_validation\\samplereverse_compare_aware_guided_pool_validation.json",
+      "size_bytes": 38297
     },
     {
       "kind": "guided_pool_result",
-      "modified_at": "2026-05-03T10:02:01Z",
-      "path": "solve_reports\\harness_runs\\samplereverse_exact2_basin_valuepool_eval_20260503\\reports\\tool_artifacts\\samplereverse\\frontier_guided_1_5a3e7f46ddd474d0\\samplereverse_compare_aware_guided_pool_result.json",
+      "modified_at": "2026-05-03T13:48:25Z",
+      "path": "solve_reports\\harness_runs\\samplereverse_profile_transform_hypothesis_audit_20260503\\reports\\tool_artifacts\\samplereverse\\frontier_guided_1_5a3e7f46ddd474d0\\samplereverse_compare_aware_guided_pool_result.json",
       "size_bytes": 1028799
     },
     {
       "kind": "compare_aware_result",
-      "modified_at": "2026-05-03T10:01:31Z",
-      "path": "solve_reports\\harness_runs\\samplereverse_exact2_basin_valuepool_eval_20260503\\reports\\tool_artifacts\\samplereverse\\samplereverse_compare_aware_result.json",
+      "modified_at": "2026-05-03T13:48:04Z",
+      "path": "solve_reports\\harness_runs\\samplereverse_profile_transform_hypothesis_audit_20260503\\reports\\tool_artifacts\\samplereverse\\samplereverse_compare_aware_result.json",
       "size_bytes": 23144
     },
     {
       "kind": "guided_pool_validation",
-      "modified_at": "2026-05-03T09:58:54Z",
-      "path": "solve_reports\\harness_runs\\samplereverse_exact2_basin_valuepool_eval_20260503\\reports\\tool_artifacts\\samplereverse\\guided_pool\\guided_pool_validation\\samplereverse_compare_aware_guided_pool_validation.json",
-      "size_bytes": 23859
+      "modified_at": "2026-05-03T13:45:29Z",
+      "path": "solve_reports\\harness_runs\\samplereverse_profile_transform_hypothesis_audit_20260503\\reports\\tool_artifacts\\samplereverse\\guided_pool\\guided_pool_validation\\samplereverse_compare_aware_guided_pool_validation.json",
+      "size_bytes": 23936
     },
     {
       "kind": "guided_pool_result",
-      "modified_at": "2026-05-03T09:58:35Z",
-      "path": "solve_reports\\harness_runs\\samplereverse_exact2_basin_valuepool_eval_20260503\\reports\\tool_artifacts\\samplereverse\\guided_pool\\samplereverse_compare_aware_guided_pool_result.json",
+      "modified_at": "2026-05-03T13:45:18Z",
+      "path": "solve_reports\\harness_runs\\samplereverse_profile_transform_hypothesis_audit_20260503\\reports\\tool_artifacts\\samplereverse\\guided_pool\\samplereverse_compare_aware_guided_pool_result.json",
       "size_bytes": 38696
     },
     {
       "kind": "bridge_validation",
-      "modified_at": "2026-05-03T09:58:35Z",
-      "path": "solve_reports\\harness_runs\\samplereverse_exact2_basin_valuepool_eval_20260503\\reports\\tool_artifacts\\samplereverse\\bridge\\bridge_validation\\bridge_validation.json",
-      "size_bytes": 4926
+      "modified_at": "2026-05-03T13:45:17Z",
+      "path": "solve_reports\\harness_runs\\samplereverse_profile_transform_hypothesis_audit_20260503\\reports\\tool_artifacts\\samplereverse\\bridge\\bridge_validation\\bridge_validation.json",
+      "size_bytes": 4947
     },
     {
       "kind": "bridge_search_result",
-      "modified_at": "2026-05-03T09:58:31Z",
-      "path": "solve_reports\\harness_runs\\samplereverse_exact2_basin_valuepool_eval_20260503\\reports\\tool_artifacts\\samplereverse\\bridge\\bridge_search_result.json",
-      "size_bytes": 3972
+      "modified_at": "2026-05-03T13:45:15Z",
+      "path": "solve_reports\\harness_runs\\samplereverse_profile_transform_hypothesis_audit_20260503\\reports\\tool_artifacts\\samplereverse\\bridge\\bridge_search_result.json",
+      "size_bytes": 3979
     },
     {
       "kind": "pairscan_summary",
-      "modified_at": "2026-05-03T09:58:31Z",
-      "path": "solve_reports\\harness_runs\\samplereverse_exact2_basin_valuepool_eval_20260503\\reports\\tool_artifacts\\samplereverse\\bridge\\pairscan_summary.json",
+      "modified_at": "2026-05-03T13:45:15Z",
+      "path": "solve_reports\\harness_runs\\samplereverse_profile_transform_hypothesis_audit_20260503\\reports\\tool_artifacts\\samplereverse\\bridge\\pairscan_summary.json",
       "size_bytes": 884
     },
     {
       "kind": "compare_probe",
-      "modified_at": "2026-05-03T09:58:29Z",
-      "path": "solve_reports\\harness_runs\\samplereverse_exact2_basin_valuepool_eval_20260503\\reports\\tool_artifacts\\samplereverse\\samplereverse_compare_probe.json",
-      "size_bytes": 2155
+      "modified_at": "2026-05-03T13:45:13Z",
+      "path": "solve_reports\\harness_runs\\samplereverse_profile_transform_hypothesis_audit_20260503\\reports\\tool_artifacts\\samplereverse\\samplereverse_compare_probe.json",
+      "size_bytes": 2156
     },
     {
       "kind": "compare_probe_log",
-      "modified_at": "2026-05-03T09:58:29Z",
-      "path": "solve_reports\\harness_runs\\samplereverse_exact2_basin_valuepool_eval_20260503\\reports\\tool_artifacts\\samplereverse\\samplereverse_compare_probe.log",
+      "modified_at": "2026-05-03T13:45:13Z",
+      "path": "solve_reports\\harness_runs\\samplereverse_profile_transform_hypothesis_audit_20260503\\reports\\tool_artifacts\\samplereverse\\samplereverse_compare_probe.log",
       "size_bytes": 22
     }
   ],

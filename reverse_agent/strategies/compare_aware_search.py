@@ -13,7 +13,11 @@ from ..evidence import StructuredEvidence
 from ..sample_solver import _decrypt_prefix
 from ..samplereverse_z3 import solve_targeted_prefix8
 from ..tool_runners import ToolRunArtifact
-from ..transforms.samplereverse import SamplereverseTransformModel, score_compare_prefix
+from ..transforms.samplereverse import (
+    SamplereverseTransformModel,
+    score_compare_prefix,
+    trace_candidate_transform,
+)
 from .base import SolverStrategy, StrategyResult
 
 RESULT_FILE_NAME = "samplereverse_compare_aware_result.json"
@@ -31,6 +35,8 @@ SMT_VALIDATION_FILE_NAME = "samplereverse_compare_aware_smt_validation.json"
 EXACT2_BASIN_VALUE_POOL_RESULT_FILE_NAME = "samplereverse_exact2_basin_value_pool_result.json"
 EXACT2_BASIN_VALUE_POOL_VALIDATION_FILE_NAME = "samplereverse_exact2_basin_value_pool_validation.json"
 FRONTIER_SUMMARY_FILE_NAME = "samplereverse_compare_aware_frontier_summary.json"
+PROFILE_TRANSFORM_HYPOTHESIS_MATRIX_FILE_NAME = "profile_transform_hypothesis_matrix.json"
+PROFILE_TRANSFORM_AUDIT_CANDIDATE_LIMIT = 8
 
 DEFAULT_ANCHORS = (
     "78d540b49c590770",
@@ -94,6 +100,11 @@ FRONTIER_ANCHOR_MODE = "frontier"
 FRONTIER_EXACT1_SUBMODE = "frontier_exact1"
 FRONTIER_EXACT0_SUBMODE = "frontier_exact0"
 PROJECTED_PRESERVE_SECOND_HOP_ROLE = "validated_projected_preserve_second_hop"
+DO_NOT_PROMOTE_PROJECTED_ANCHORS = (
+    "5a3f7f46ddd474d0",
+    "5a3f7fc2ddd474d0",
+    "343f7f46ddd474d0",
+)
 PAIR_TAIL_FLAGLIKE_BYTES = set(b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_{}-")
 
 PAIRSCAN_TOOL = "pairscan"
@@ -3120,6 +3131,479 @@ def resolve_compare_aware_anchors(
 def _write_json(path: Path, payload: dict[str, object]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def _read_json_object(path: Path) -> dict[str, object]:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def _project_state_json(name: str) -> dict[str, object]:
+    return _read_json_object(_repo_root() / "project_state" / name)
+
+
+def _indexed_artifact_payload(kind: str) -> tuple[dict[str, object], str]:
+    index = _project_state_json("artifact_index.json")
+    latest = index.get("latest_artifacts", {})
+    if not isinstance(latest, dict):
+        return {}, ""
+    rel_path = str(latest.get(kind, "") or "").strip()
+    if not rel_path:
+        return {}, ""
+    path = Path(rel_path)
+    if not path.is_absolute():
+        path = _repo_root() / path
+    return _read_json_object(path), rel_path
+
+
+def _candidate_from_project_state(label: str) -> dict[str, object]:
+    current_state = _project_state_json("current_state.json")
+    best_candidates = current_state.get("best_candidates", current_state.get("current_best", {}))
+    if not isinstance(best_candidates, dict):
+        return {}
+    entry = best_candidates.get(label, {})
+    return dict(entry) if isinstance(entry, dict) else {}
+
+
+def _negative_exact2_value_pool_recorded() -> bool:
+    negative_results_path = _repo_root() / "project_state" / "negative_results.json"
+    try:
+        payload = json.loads(negative_results_path.read_text(encoding="utf-8"))
+    except Exception:
+        return False
+    if not isinstance(payload, list):
+        return False
+    for item in payload:
+        if not isinstance(item, dict):
+            continue
+        direction = str(item.get("direction", "")).lower()
+        if "exact2 basin value-pool" in direction and bool(item.get("do_not_repeat")):
+            return True
+    return False
+
+
+def _profile_audit_candidate_record(
+    *,
+    label: str,
+    source: str,
+    candidate_hex: str,
+    runtime_entry: dict[str, object] | None = None,
+    promotion_allowed: bool = True,
+) -> dict[str, object]:
+    runtime_entry = runtime_entry or {}
+    normalized = str(candidate_hex).strip().lower()
+    trace = trace_candidate_transform(normalized)
+    runtime_prefix = str(
+        runtime_entry.get("runtime_lhs_prefix_hex_10")
+        or str(runtime_entry.get("runtime_lhs_prefix_hex") or "")[: len(TARGET_PREFIX) * 2]
+        or ""
+    ).strip().lower()
+    if not runtime_prefix and normalized.startswith("78d540b49c590770"):
+        runtime_prefix = "46006c004464830d311c"
+    if not runtime_prefix and normalized.startswith("4a78f0eaeb4f13b0"):
+        runtime_prefix = "46004c007e40b92886f5"
+    compare_boundary = dict(trace.get("compare_boundary", {})) if isinstance(trace.get("compare_boundary"), dict) else {}
+    decrypt_prefix = str(dict(trace.get("rc4", {})).get("decrypt_prefix_hex", "")).strip().lower()
+    offline_prefix_10 = decrypt_prefix[: len(TARGET_PREFIX) * 2]
+    return {
+        "label": label,
+        "source": source,
+        "candidate_hex": normalized,
+        "cand8_hex": normalized[:16],
+        "promotion_allowed": bool(promotion_allowed),
+        "runtime_prefix_hex_10": runtime_prefix,
+        "offline_prefix_hex_10": offline_prefix_10,
+        "offline_runtime_prefix_agree_10": bool(runtime_prefix) and runtime_prefix == offline_prefix_10,
+        "runtime_ci_exact_wchars": runtime_entry.get("runtime_ci_exact_wchars"),
+        "runtime_ci_distance5": runtime_entry.get("runtime_ci_distance5"),
+        "compare_semantics_agree": runtime_entry.get("compare_semantics_agree"),
+        "trace": trace,
+        "summary": {
+            "candidate_length_bytes": dict(trace.get("candidate_layout", {})).get("candidate_length_bytes"),
+            "prefix_bytes": dict(trace.get("candidate_layout", {})).get("prefix_bytes"),
+            "base64_length_chars": dict(trace.get("base64_boundary", {})).get("base64_length_chars"),
+            "prefix_ends_on_base64_chunk_boundary": dict(trace.get("base64_boundary", {})).get(
+                "prefix_ends_on_base64_chunk_boundary"
+            ),
+            "prefix_last_chunk_raw_remainder": dict(trace.get("base64_boundary", {})).get(
+                "prefix_last_chunk_raw_remainder"
+            ),
+            "rc4_key_length_bytes": dict(trace.get("rc4", {})).get("key_length_bytes"),
+            "ci_exact_wchars": compare_boundary.get("ci_exact_wchars"),
+            "ci_distance5": compare_boundary.get("ci_distance5"),
+        },
+    }
+
+
+def _profile_transform_audit_candidates(
+    *,
+    runtime_validations: Sequence[dict[str, object]],
+    top_entries: Sequence[dict[str, object]],
+    exact2_basin_value_pool_payload: dict[str, object],
+) -> list[dict[str, object]]:
+    candidates: list[dict[str, object]] = []
+    seen: set[str] = set()
+
+    def _push(
+        label: str,
+        source: str,
+        candidate_hex: str,
+        runtime_entry: dict[str, object] | None = None,
+        *,
+        promotion_allowed: bool = True,
+    ) -> None:
+        normalized = str(candidate_hex).strip().lower()
+        if not normalized or len(normalized) != INPUT_LENGTH * 2 or normalized in seen:
+            return
+        if len(candidates) >= PROFILE_TRANSFORM_AUDIT_CANDIDATE_LIMIT:
+            return
+        seen.add(normalized)
+        candidates.append(
+            _profile_audit_candidate_record(
+                label=label,
+                source=source,
+                candidate_hex=normalized,
+                runtime_entry=runtime_entry,
+                promotion_allowed=promotion_allowed,
+            )
+        )
+
+    all_validations = [
+        dict(item)
+        for item in runtime_validations
+        if isinstance(item, dict) and bool(item.get("compare_semantics_agree"))
+    ]
+    exact2_runtime = next(
+        (
+            item
+            for item in sorted(all_validations, key=_runtime_validation_sort_key)
+            if int(item.get("runtime_ci_exact_wchars", 0) or 0) >= 2
+        ),
+        None,
+    )
+    if exact2_runtime:
+        _push(
+            "current_exact2_best",
+            "current_run_runtime_validation",
+            _candidate_hex_from_entry(exact2_runtime),
+            exact2_runtime,
+        )
+    else:
+        state_exact2 = _candidate_from_project_state("exact2")
+        _push(
+            "current_exact2_best",
+            "project_state.current_state.best_candidates.exact2",
+            _candidate_hex_from_entry(state_exact2) or "78d540b49c59077041414141414141",
+            state_exact2,
+        )
+
+    exact1_runtime = _best_compare_agree_frontier_entry_for_exact(all_validations, 1)
+    if exact1_runtime:
+        _push(
+            "exact1_frontier_best",
+            "current_run_runtime_validation",
+            _candidate_hex_from_entry(exact1_runtime),
+            exact1_runtime,
+        )
+    else:
+        state_exact1 = _candidate_from_project_state("exact1")
+        _push(
+            "exact1_frontier_best",
+            "project_state.current_state.best_candidates.exact1",
+            _candidate_hex_from_entry(state_exact1),
+            state_exact1,
+        )
+
+    _push(
+        "secondary_exact2_reference",
+        "project_handoff_reference",
+        "4a78f0eaeb4f13b041414141414141",
+    )
+    for anchor in DO_NOT_PROMOTE_PROJECTED_ANCHORS:
+        _push(
+            f"projected_do_not_promote_{anchor}",
+            "project_state.do_not_do_projected_example",
+            f"{anchor}{DEFAULT_FIXED_SUFFIX_HEX}",
+            promotion_allowed=False,
+        )
+
+    for entry in top_entries:
+        if len(candidates) >= PROFILE_TRANSFORM_AUDIT_CANDIDATE_LIMIT - 1:
+            break
+        _push("frontier_top_entry", "current_run_top_entries", _candidate_hex_from_entry(dict(entry)), dict(entry))
+
+    value_pool_best = exact2_basin_value_pool_payload.get("best_runtime_candidate", {})
+    if isinstance(value_pool_best, dict):
+        _push(
+            "exact2_value_pool_best_runtime",
+            "latest_indexed_exact2_basin_value_pool_result",
+            _candidate_hex_from_entry(value_pool_best),
+            value_pool_best,
+        )
+
+    _push("probe_all_A_baseline", "probe_baseline", "414141414141414141414141414141")
+    return candidates[:PROFILE_TRANSFORM_AUDIT_CANDIDATE_LIMIT]
+
+
+def run_profile_transform_hypothesis_audit(
+    *,
+    artifacts_dir: Path,
+    transform_model: SamplereverseTransformModel,
+    runtime_validations: Sequence[dict[str, object]],
+    top_entries: Sequence[dict[str, object]],
+    exact2_basin_value_pool_run: dict[str, object] | None = None,
+    smt_run: dict[str, object] | None = None,
+    exact2_basin_smt_run: dict[str, object] | None = None,
+    frontier_summary_path: Path | None = None,
+    strata_summary_path: Path | None = None,
+    search_budget: int | None = None,
+    snapshot_interval: int | None = None,
+    validate_top: int | None = None,
+    per_probe_timeout: float | None = None,
+    log: Any | None = None,
+) -> dict[str, object]:
+    _ = transform_model
+    latest_value_pool_payload, latest_value_pool_path = _indexed_artifact_payload("exact2_basin_value_pool_result")
+    if exact2_basin_value_pool_run and isinstance(exact2_basin_value_pool_run.get("payload"), dict):
+        value_pool_payload = dict(exact2_basin_value_pool_run["payload"])
+        value_pool_path = str(exact2_basin_value_pool_run.get("result_path", "")) or latest_value_pool_path
+    else:
+        value_pool_payload = latest_value_pool_payload
+        value_pool_path = latest_value_pool_path
+
+    candidates = _profile_transform_audit_candidates(
+        runtime_validations=runtime_validations,
+        top_entries=top_entries,
+        exact2_basin_value_pool_payload=value_pool_payload,
+    )
+    exact2_record = next((item for item in candidates if item["label"] == "current_exact2_best"), {})
+    helper_runtime_consistent = bool(exact2_record.get("offline_runtime_prefix_agree_10"))
+    any_runtime_disagreement = any(
+        item.get("runtime_prefix_hex_10") and not item.get("offline_runtime_prefix_agree_10")
+        for item in candidates
+    )
+    negative_recorded = _negative_exact2_value_pool_recorded()
+    exhausted_branch = {
+        "branch": "exact2_basin_value_pool",
+        "attempted": bool(value_pool_payload.get("attempted")),
+        "classification": str(value_pool_payload.get("classification", "")),
+        "generated_count": int(value_pool_payload.get("generated_count", 0) or 0),
+        "unique_count": int(value_pool_payload.get("unique_count", 0) or 0),
+        "validated_count": int(value_pool_payload.get("validated_count", 0) or 0),
+        "best_candidate": str(
+            dict(value_pool_payload.get("best_runtime_candidate", {})).get(
+                "candidate_hex",
+                value_pool_payload.get("best_candidate", ""),
+            )
+        ),
+        "best_runtime_exact_wchars": int(
+            dict(value_pool_payload.get("best_runtime_candidate", {})).get(
+                "runtime_ci_exact_wchars",
+                value_pool_payload.get("best_runtime_exact_wchars", 0),
+            )
+            or 0
+        ),
+        "best_runtime_distance5": int(
+            dict(value_pool_payload.get("best_runtime_candidate", {})).get(
+                "runtime_ci_distance5",
+                value_pool_payload.get("best_runtime_distance5", 1 << 30),
+            )
+            or (1 << 30)
+        ),
+        "improved_over_exact2": bool(value_pool_payload.get("improved_over_exact2")),
+        "negative_result_recorded": negative_recorded,
+        "do_not_repeat": bool(negative_recorded),
+        "artifact": value_pool_path,
+    }
+
+    trace_artifacts = [
+        item
+        for item in [
+            "project_state/artifact_index.json",
+            "project_state/current_state.json",
+            "project_state/negative_results.json",
+            str(frontier_summary_path) if frontier_summary_path else "",
+            str(strata_summary_path) if strata_summary_path else "",
+            value_pool_path,
+        ]
+        if item
+    ]
+    hypothesis_matrix = [
+        {
+            "id": "H1",
+            "hypothesis": "candidate byte layout / prefix length is wrong or too narrow",
+            "evidence_for": [
+                "The active line is fixed at L15(prefix8), while compare evidence is judged over the first five UTF-16LE wchars.",
+                "The exact2 best stabilizes on f/l but current local mutations do not move the third wchar to an exact match.",
+            ],
+            "evidence_against": [
+                "The exact2 baseline trace is runtime-consistent at the 5-wchar prefix.",
+                "No candidate generation, ranking, or final selection change was made in this audit.",
+            ],
+            "files_or_artifacts_needed": trace_artifacts,
+            "bounded_validation": "Trace at most 8 existing candidates and compare prefix8/suffix layout against the 5-wchar boundary; do not generate new search candidates.",
+            "success_signal": "A contrast candidate shows the same early score but a different prefix/suffix or suffix-influenced Base64 boundary that explains the exact2 stall.",
+            "stop_condition": "If traces show the fixed prefix8 boundary is internally consistent for all audit candidates, do not widen this branch without a separate bounded contrast design.",
+            "code_change_allowed": "metadata_only",
+            "recommendation": "primary_next_target" if helper_runtime_consistent else "blocked_until_helper_runtime_consistency",
+        },
+        {
+            "id": "H2",
+            "hypothesis": "UTF-16LE wchar boundary and byte mutation positions are offset",
+            "evidence_for": [
+                "Candidate bytes are nibble-expanded before UTF-16LE interleaving, so one candidate byte maps to four raw bytes before Base64.",
+                "The third wchar failure appears immediately after two exact UTF-16LE pairs.",
+            ],
+            "evidence_against": [
+                "The trace helper reproduces the known exact2 runtime prefix when helper/runtime consistency is true.",
+                "Current wchar deltas align target pairs as f, l, a, g, {.",
+            ],
+            "files_or_artifacts_needed": trace_artifacts,
+            "bounded_validation": "Compare nibble expansion, UTF-16 raw bytes, and wchar deltas for the audit candidates only.",
+            "success_signal": "A trace shows a systematic one-byte or one-wchar shift between mutation positions and compare pairs.",
+            "stop_condition": "If exact2 offline/runtime prefix and wchar deltas align, demote H2 and avoid transform changes.",
+            "code_change_allowed": "metadata_only",
+            "recommendation": "secondary",
+        },
+        {
+            "id": "H3",
+            "hypothesis": "Base64 boundary / padding / chunk alignment has an off-by-one",
+            "evidence_for": [
+                "The prefix8 raw payload is 32 bytes, which leaves remainder 2 inside a Base64 3-byte chunk.",
+                "The first suffix byte therefore begins inside the Base64 chunk covering the prefix boundary.",
+            ],
+            "evidence_against": [
+                "The current helper/runtime exact2 prefix consistency argues against a simple Base64 implementation mismatch.",
+                "The audit has not generated contrast candidates, only trace metadata.",
+            ],
+            "files_or_artifacts_needed": trace_artifacts,
+            "bounded_validation": "Use no more than 8 hand-picked contrast candidates to vary only the boundary-adjacent byte layout in a later run.",
+            "success_signal": "A minimal contrast changes third-to-fifth wchar deltas through Base64 chunk alignment without losing runtime consistency.",
+            "stop_condition": "If boundary traces are identical across best/frontier/projected examples, stop and move to candidate-quality evidence.",
+            "code_change_allowed": "metadata_only_now; later_contrast_candidates_only",
+            "recommendation": "primary_next_target" if helper_runtime_consistent else "blocked_until_helper_runtime_consistency",
+        },
+        {
+            "id": "H4",
+            "hypothesis": "RC4 helper and runtime are inconsistent",
+            "evidence_for": [
+                "Any offline/runtime prefix mismatch in the audit candidate table would immediately support this.",
+            ]
+            if any_runtime_disagreement
+            else [
+                "No direct evidence in this audit unless a runtime prefix mismatch appears.",
+            ],
+            "evidence_against": [
+                "The exact2 baseline offline trace matches the known runtime prefix."
+            ]
+            if helper_runtime_consistent
+            else [
+                "The exact2 baseline did not prove helper/runtime consistency in this matrix.",
+            ],
+            "files_or_artifacts_needed": trace_artifacts,
+            "bounded_validation": "Stop search and compare RC4 key prefix/key length/decrypt prefix for existing runtime-validated candidates.",
+            "success_signal": "Any compare_semantics_agree candidate has runtime prefix different from trace decrypt_prefix.",
+            "stop_condition": "If exact2 and secondary exact2 prefixes match runtime, demote H4 for the next iteration.",
+            "code_change_allowed": "trace_or_helper_fix_only_if_mismatch",
+            "recommendation": "stop_and_fix_first" if any_runtime_disagreement else "demote",
+        },
+        {
+            "id": "H5",
+            "hypothesis": "offline compare-aware semantics skew from runtime in this basin",
+            "evidence_for": [
+                "Would be supported by compare_semantics_agree=false or metric deltas among audit candidates.",
+            ],
+            "evidence_against": [
+                "Current exact2 value-pool validations were runtime checked and compare_semantics_agree=true.",
+                "The negative branch was recorded after validating all 18 bounded combinations.",
+            ],
+            "files_or_artifacts_needed": trace_artifacts,
+            "bounded_validation": "Contrast offline ci_exact/distance5 with runtime ci_exact/distance5 for existing validation rows only.",
+            "success_signal": "A repeated metric divergence appears among compare_semantics_agree=true candidates.",
+            "stop_condition": "If offline/runtime metrics agree for exact2 and value-pool rows, demote H5.",
+            "code_change_allowed": "metadata_only",
+            "recommendation": "demote" if helper_runtime_consistent else "inspect_with_H4",
+        },
+        {
+            "id": "H6",
+            "hypothesis": "current exact2 candidate is locally optimal under available evidence; candidate quality is insufficient",
+            "evidence_for": [
+                "The exact2 basin value-pool branch generated and runtime-validated all 18 diagnostic combinations with no exact3+ or distance5 improvement.",
+                "negative_results.json records this pool as do_not_repeat.",
+            ],
+            "evidence_against": [
+                "This is not an unsat proof for the full input space; it only closes the current diagnostic pool.",
+            ],
+            "files_or_artifacts_needed": trace_artifacts,
+            "bounded_validation": "Do not repeat the exhausted pool; only choose a new bounded contrast if H1/H3 trace evidence justifies it.",
+            "success_signal": "A new evidence source identifies a smaller, different candidate family than the exhausted value pool.",
+            "stop_condition": "If no H1/H3/H4/H5 evidence appears, stop local mutation and request a different evidence source.",
+            "code_change_allowed": "metadata_only",
+            "recommendation": "fallback_after_H1_H3_audit",
+        },
+    ]
+    next_target = (
+        {
+            "selected_hypotheses": ["H4", "H5"],
+            "reason": "offline/runtime prefix consistency failed or could not be established",
+            "bounded_validation": "Stop candidate search and repair/verify transform or RC4 trace assumptions first.",
+        }
+        if not helper_runtime_consistent or any_runtime_disagreement
+        else {
+            "selected_hypotheses": ["H1", "H3"],
+            "reason": "helper/runtime prefix is consistent, while prefix8 raw bytes end inside a Base64 chunk boundary.",
+            "bounded_validation": "Next run should use a tiny hand-picked contrast set around prefix8 + Base64 chunk boundary; this run only emits trace metadata.",
+        }
+    )
+    payload = {
+        "artifact_kind": "profile_transform_hypothesis_matrix",
+        "profile": "samplereverse",
+        "audit_only": True,
+        "candidate_limit": PROFILE_TRANSFORM_AUDIT_CANDIDATE_LIMIT,
+        "candidate_count": len(candidates),
+        "candidate_generation_changed": False,
+        "ranking_changed": False,
+        "final_selection_changed": False,
+        "search_budget_changed": False,
+        "beam_budget_topn_timeout_frontier_limit_expanded": False,
+        "settings_snapshot": {
+            "search_budget": search_budget,
+            "snapshot_interval": snapshot_interval,
+            "validate_top": validate_top,
+            "per_probe_timeout": per_probe_timeout,
+            "frontier_max_iterations": FRONTIER_MAX_ITERATIONS,
+            "guided_pool_beam_limit": GUIDED_POOL_BEAM_LIMIT,
+        },
+        "read_scope": {
+            "uses_latest_indexed_artifacts_only": True,
+            "scans_full_solve_reports": False,
+            "read_artifacts": trace_artifacts,
+        },
+        "exhausted_branch_confirmation": exhausted_branch,
+        "candidates": candidates,
+        "hypotheses": hypothesis_matrix,
+        "next_bounded_validation_target": {
+            **next_target,
+            "candidate_count_allowed": PROFILE_TRANSFORM_AUDIT_CANDIDATE_LIMIT,
+            "runtime_validation_required": True,
+            "expected_improvement_signal": "runtime_ci_exact_wchars > 2 or runtime_ci_distance5 < 246 without compare_semantics disagreement",
+            "stop_condition": "Do not expand beam/budget/topN/timeout/frontier iterations; stop if trace shows helper/runtime mismatch.",
+        },
+        "smt_context": {
+            "primary_smt_summary": str(dict((smt_run or {}).get("payload", {})).get("summary", "")),
+            "exact2_basin_smt_summary": str(
+                dict((exact2_basin_smt_run or {}).get("payload", {})).get("summary", "")
+            ),
+        },
+    }
+    output_path = artifacts_dir / PROFILE_TRANSFORM_HYPOTHESIS_MATRIX_FILE_NAME
+    _write_json(output_path, payload)
+    if log:
+        log(f"profile transform hypothesis audit wrote {output_path}")
+    return {"result_path": str(output_path), "payload": payload}
 
 
 def _mutated_candidate_hex(base_anchor: str, position: int, value: int) -> str:
@@ -7713,6 +8197,8 @@ class CompareAwareSearchStrategy(SolverStrategy):
         exact2_basin_value_pool_run: dict[str, object] | None = None
         exact2_basin_value_pool_artifact: ToolRunArtifact | None = None
         exact2_basin_value_pool_validation_artifact: ToolRunArtifact | None = None
+        profile_transform_audit_run: dict[str, object] | None = None
+        profile_transform_audit_artifact: ToolRunArtifact | None = None
         if not _bridge_progress(final_validations):
             comparison_entries = _unique_candidate_entries(
                 [
@@ -7959,6 +8445,46 @@ class CompareAwareSearchStrategy(SolverStrategy):
                     strategy_name=self.name,
                 )
 
+        profile_transform_audit_run = run_profile_transform_hypothesis_audit(
+            artifacts_dir=artifacts_dir,
+            transform_model=transform_model,
+            runtime_validations=[
+                *bridge_validations,
+                *guided_validations,
+                *frontier_guided_validations,
+                *final_validations,
+                *(list(smt_run.get("validations", [])) if smt_run else []),
+                *(list(exact2_basin_smt_run.get("validations", [])) if exact2_basin_smt_run else []),
+                *(list(exact2_basin_value_pool_run.get("validations", [])) if exact2_basin_value_pool_run else []),
+            ],
+            top_entries=[
+                *final_top_entries[:BRIDGE_VALIDATE_TOP],
+                *frontier_guided_entries[:BRIDGE_VALIDATE_TOP],
+                *guided_entries[:BRIDGE_VALIDATE_TOP],
+                *bridge_entries[:BRIDGE_VALIDATE_TOP],
+            ],
+            exact2_basin_value_pool_run=exact2_basin_value_pool_run,
+            smt_run=smt_run,
+            exact2_basin_smt_run=exact2_basin_smt_run,
+            frontier_summary_path=frontier_summary_path,
+            strata_summary_path=strata_summary_path,
+            search_budget=search_budget,
+            snapshot_interval=snapshot_interval,
+            validate_top=validate_top,
+            per_probe_timeout=per_probe_timeout,
+            log=log,
+        )
+        profile_transform_audit_payload = dict(profile_transform_audit_run.get("payload", {}))
+        profile_transform_audit_artifact = _make_search_artifact(
+            tool_name="ProfileTransformHypothesisAudit",
+            output_path=Path(str(profile_transform_audit_run["result_path"])),
+            summary="profile transform hypothesis audit complete",
+            strategy_name=self.name,
+            evidence_kind="TransformEvidence",
+            payload=profile_transform_audit_payload,
+            derived_entries=[],
+        )
+
         candidates = _validated_candidates_from_runs(
             bridge_validations,
             guided_validations,
@@ -7994,6 +8520,8 @@ class CompareAwareSearchStrategy(SolverStrategy):
             artifacts.append(exact2_basin_value_pool_artifact)
         if exact2_basin_value_pool_validation_artifact is not None:
             artifacts.append(exact2_basin_value_pool_validation_artifact)
+        if profile_transform_audit_artifact is not None:
+            artifacts.append(profile_transform_audit_artifact)
         return StrategyResult(
             strategy_name=self.name,
             summary=search_artifact.summary,
@@ -8016,6 +8544,7 @@ class CompareAwareSearchStrategy(SolverStrategy):
                 "smt": smt_run or {},
                 "exact2_basin_smt": exact2_basin_smt_run or {},
                 "exact2_basin_value_pool": exact2_basin_value_pool_run or {},
+                "profile_transform_hypothesis_audit": profile_transform_audit_run or {},
                 "prefix_boundary_diagnostics": prefix_boundary_diagnostics,
                 "frontier_converged_reason": frontier_converged_reason,
                 "frontier_stall_stage": frontier_stall_stage,
