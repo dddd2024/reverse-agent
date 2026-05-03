@@ -28,6 +28,8 @@ GUIDED_POOL_VALIDATION_FILE_NAME = "samplereverse_compare_aware_guided_pool_vali
 STRATA_SUMMARY_FILE_NAME = "samplereverse_compare_aware_strata_summary.json"
 SMT_RESULT_FILE_NAME = "samplereverse_compare_aware_smt_result.json"
 SMT_VALIDATION_FILE_NAME = "samplereverse_compare_aware_smt_validation.json"
+EXACT2_BASIN_VALUE_POOL_RESULT_FILE_NAME = "samplereverse_exact2_basin_value_pool_result.json"
+EXACT2_BASIN_VALUE_POOL_VALIDATION_FILE_NAME = "samplereverse_exact2_basin_value_pool_validation.json"
 FRONTIER_SUMMARY_FILE_NAME = "samplereverse_compare_aware_frontier_summary.json"
 
 DEFAULT_ANCHORS = (
@@ -62,6 +64,7 @@ FRONTIER_PAIR_SEED_LIMIT = 8
 FRONTIER_TRIAD_VALUE_LIMIT = 3
 FRONTIER_TRIAD_POOL_LIMIT = 8
 FRONTIER_MAX_ITERATIONS = 2
+EXACT2_BASIN_VALUE_POOL_EVAL_MAX_COMBINATIONS = 128
 EXACT1_PAIR_LOCK_LIMIT = 3
 EXACT1_PAIR_DISTANCE_ESCAPE = 24
 EXACT1_PAIR_PRESERVE_VALUE_LIMIT = 6
@@ -6476,6 +6479,7 @@ def run_compare_aware_smt(
         prioritize_distance=anchor_mode == FRONTIER_ANCHOR_MODE,
         timeout_ms=1500,
     )
+    z3_diagnostics = dict(getattr(z3_result, "diagnostics", None) or {})
     payload: dict[str, object] = {
         "base_anchor": base_anchor,
         "anchor_mode": anchor_mode,
@@ -6493,6 +6497,7 @@ def run_compare_aware_smt(
         "attempted": z3_result.attempted,
         "summary": z3_result.summary,
         "evidence": z3_result.evidence or [],
+        **z3_diagnostics,
         "top_entries": [],
         "validation_candidates": [],
     }
@@ -6546,6 +6551,229 @@ def run_compare_aware_smt(
         "variable_byte_positions": variable_bytes,
         "variable_nibble_positions": variable_nibbles,
         "payload": payload,
+    }
+
+
+def _exact2_basin_runtime_improved(
+    validation: dict[str, object],
+    *,
+    baseline_exact: int,
+    baseline_distance: int,
+) -> bool:
+    if not bool(validation.get("compare_semantics_agree")):
+        return False
+    runtime_exact = int(validation.get("runtime_ci_exact_wchars", 0) or 0)
+    runtime_distance = int(validation.get("runtime_ci_distance5", 1 << 30) or (1 << 30))
+    return runtime_exact > baseline_exact or runtime_distance < baseline_distance
+
+
+def run_exact2_basin_value_pool_evaluation(
+    *,
+    target: Path,
+    artifacts_dir: Path,
+    base_entry: dict[str, object],
+    exact2_basin_smt: dict[str, object],
+    transform_model: SamplereverseTransformModel,
+    per_probe_timeout: float,
+    log,
+    max_combinations: int = EXACT2_BASIN_VALUE_POOL_EVAL_MAX_COMBINATIONS,
+) -> dict[str, object]:
+    artifacts_dir.mkdir(parents=True, exist_ok=True)
+    base_anchor = (
+        str(exact2_basin_smt.get("base_anchor", "")).strip().lower()
+        or str(base_entry.get("cand8_hex", "")).strip().lower()
+        or str(base_entry.get("candidate_hex", ""))[:16].strip().lower()
+    )
+    result_path = artifacts_dir / EXACT2_BASIN_VALUE_POOL_RESULT_FILE_NAME
+    if len(base_anchor) != 16:
+        payload = {
+            "attempted": False,
+            "classification": "exact2_basin_value_pool_invalid_base",
+            "base_anchor": base_anchor,
+            "generated_count": 0,
+            "unique_count": 0,
+            "validated_count": 0,
+            "validation_candidates": [],
+            "validations": [],
+        }
+        _write_json(result_path, payload)
+        return {
+            "result_path": str(result_path),
+            "validation_path": "",
+            "payload": payload,
+            "validations": [],
+            "promotable_validations": [],
+        }
+
+    base_bytes = bytes.fromhex(base_anchor)
+    positions = _bounded_position_list(
+        list(exact2_basin_smt.get("variable_byte_positions", [])),
+        upper_bound=len(base_bytes),
+        limit=HOT_POSITION_LIMIT,
+    )
+    raw_pools = _normalized_smt_value_pools(
+        dict(exact2_basin_smt.get("feedback_value_pools", {}))
+    )
+    value_pools: dict[int, list[int]] = {}
+    for position in positions:
+        values = [int(base_bytes[position]) & 0xFF]
+        for raw_value in raw_pools.get(position, []):
+            value = int(raw_value) & 0xFF
+            if value not in values:
+                values.append(value)
+        value_pools[position] = values
+
+    estimated_combinations = 1
+    for position in positions:
+        estimated_combinations *= max(1, len(value_pools.get(position, [])))
+    if estimated_combinations > max_combinations:
+        payload = {
+            "attempted": False,
+            "classification": "exact2_basin_value_pool_over_cap",
+            "base_anchor": base_anchor,
+            "positions": positions,
+            "value_pools": {str(key): list(values) for key, values in value_pools.items()},
+            "generated_count": 0,
+            "unique_count": 0,
+            "validated_count": 0,
+            "estimated_value_pool_combinations": estimated_combinations,
+            "max_combinations": max_combinations,
+            "validation_candidates": [],
+            "validations": [],
+        }
+        _write_json(result_path, payload)
+        return {
+            "result_path": str(result_path),
+            "validation_path": "",
+            "payload": payload,
+            "validations": [],
+            "promotable_validations": [],
+        }
+
+    entries: list[dict[str, object]] = []
+    seen_candidates: set[str] = set()
+    pool_lists = [value_pools[position] for position in positions]
+    combinations = itertools.product(*pool_lists) if pool_lists else [()]
+    for values in combinations:
+        candidate_prefix = bytearray(base_bytes)
+        for position, value in zip(positions, values):
+            candidate_prefix[position] = int(value) & 0xFF
+        candidate_hex = bytes(candidate_prefix).hex() + DEFAULT_FIXED_SUFFIX_HEX
+        if candidate_hex in seen_candidates:
+            continue
+        seen_candidates.add(candidate_hex)
+        entry = _evaluate_candidate_hex(candidate_hex, transform_model)
+        entry.update(
+            {
+                "stage": "exact2_basin_value_pool",
+                "base_anchor": base_anchor,
+                "source_anchor": base_anchor,
+                "frontier_role": "exact2_basin_value_pool",
+                "anchor_mode": EXACT2_ANCHOR_MODE,
+                "anchor_lineage": _append_lineage(
+                    _lineage_root(
+                        source_anchor=base_anchor,
+                        frontier_role="exact2_seed",
+                        anchor_mode=EXACT2_ANCHOR_MODE,
+                    ),
+                    "value_pool_eval",
+                ),
+                "positions_or_nibbles": positions,
+            }
+        )
+        entries.append(entry)
+    entries.sort(
+        key=lambda entry: (
+            -int(entry.get("ci_exact_wchars", 0) or 0),
+            int(entry.get("ci_distance5", 1 << 30) or (1 << 30)),
+            int(entry.get("raw_distance10", 1 << 30) or (1 << 30)),
+            str(entry.get("candidate_hex", "")),
+        )
+    )
+
+    baseline_exact = int(
+        base_entry.get("runtime_ci_exact_wchars", base_entry.get("ci_exact_wchars", 2)) or 2
+    )
+    baseline_distance = int(
+        base_entry.get("runtime_ci_distance5", base_entry.get("ci_distance5", DEFAULT_BRIDGE_BASELINE_DISTANCE5))
+        or DEFAULT_BRIDGE_BASELINE_DISTANCE5
+    )
+    payload: dict[str, object] = {
+        "attempted": True,
+        "classification": "exact2_basin_value_pool_pending_validation",
+        "base_anchor": base_anchor,
+        "positions": positions,
+        "value_pools": {str(key): list(values) for key, values in value_pools.items()},
+        "generated_count": estimated_combinations,
+        "unique_count": len(entries),
+        "validated_count": 0,
+        "estimated_value_pool_combinations": estimated_combinations,
+        "max_combinations": max_combinations,
+        "baseline_exact_wchars": baseline_exact,
+        "baseline_distance5": baseline_distance,
+        "best_offline_candidate": entries[0] if entries else {},
+        "best_runtime_candidate": {},
+        "improved_over_exact2": False,
+        "validation_candidates": entries,
+        "validations": [],
+    }
+    _write_json(result_path, payload)
+
+    validation_path: Path | None = None
+    validations: list[dict[str, object]] = []
+    if entries:
+        validation_path, validations = validate_compare_aware_results(
+            target=target,
+            artifacts_dir=artifacts_dir / "value_pool_validation",
+            result_path=result_path,
+            transform_model=transform_model,
+            validate_top=len(entries),
+            per_probe_timeout=per_probe_timeout,
+            log=log,
+            output_file_name=EXACT2_BASIN_VALUE_POOL_VALIDATION_FILE_NAME,
+            compare_output_prefix="exact2_basin_value_pool_compare_aware",
+        )
+
+    compare_agree_validations = [
+        item for item in validations if bool(item.get("compare_semantics_agree"))
+    ]
+    best_runtime_candidate = (
+        sorted(compare_agree_validations, key=_runtime_validation_sort_key)[0]
+        if compare_agree_validations
+        else {}
+    )
+    promotable_validations = [
+        item
+        for item in validations
+        if _exact2_basin_runtime_improved(
+            item,
+            baseline_exact=baseline_exact,
+            baseline_distance=baseline_distance,
+        )
+    ]
+    improved = bool(promotable_validations)
+    payload.update(
+        {
+            "classification": (
+                "exact2_basin_deterministic_eval_improved"
+                if improved
+                else "exact2_basin_value_pools_exhausted_no_gain"
+            ),
+            "validated_count": len(validations),
+            "best_runtime_candidate": best_runtime_candidate,
+            "improved_over_exact2": improved,
+            "validation_path": str(validation_path) if validation_path else "",
+            "validations": validations,
+            "promotable_validations": promotable_validations,
+        }
+    )
+    _write_json(result_path, payload)
+    return {
+        "result_path": str(result_path),
+        "validation_path": str(validation_path) if validation_path else "",
+        "payload": payload,
+        "validations": validations,
+        "promotable_validations": promotable_validations,
     }
 
 
@@ -7482,6 +7710,9 @@ class CompareAwareSearchStrategy(SolverStrategy):
         exact2_basin_smt_run: dict[str, object] | None = None
         exact2_basin_smt_artifact: ToolRunArtifact | None = None
         exact2_basin_smt_validation_artifact: ToolRunArtifact | None = None
+        exact2_basin_value_pool_run: dict[str, object] | None = None
+        exact2_basin_value_pool_artifact: ToolRunArtifact | None = None
+        exact2_basin_value_pool_validation_artifact: ToolRunArtifact | None = None
         if not _bridge_progress(final_validations):
             comparison_entries = _unique_candidate_entries(
                 [
@@ -7656,6 +7887,52 @@ class CompareAwareSearchStrategy(SolverStrategy):
                         validations=list(exact2_basin_smt_run["validations"]),
                         strategy_name=self.name,
                     )
+                exact2_payload = dict(exact2_basin_smt_run.get("payload", {}))
+                exact2_validation_candidates = list(exact2_payload.get("validation_candidates", []))
+                exact2_estimated_combinations = int(
+                    exact2_payload.get("estimated_value_pool_combinations", 1 << 30)
+                    or (1 << 30)
+                )
+                if (
+                    bool(exact2_payload.get("attempted"))
+                    and not exact2_validation_candidates
+                    and exact2_estimated_combinations <= EXACT2_BASIN_VALUE_POOL_EVAL_MAX_COMBINATIONS
+                ):
+                    exact2_basin_value_pool_run = run_exact2_basin_value_pool_evaluation(
+                        target=file_path,
+                        artifacts_dir=artifacts_dir / "exact2_basin_value_pool",
+                        base_entry=exact2_basin_entry,
+                        exact2_basin_smt=exact2_basin_smt,
+                        transform_model=transform_model,
+                        per_probe_timeout=per_probe_timeout,
+                        log=log,
+                    )
+                    exact2_basin_value_pool_payload = dict(
+                        exact2_basin_value_pool_run.get("payload", {})
+                    )
+                    exact2_basin_value_pool_artifact = _make_search_artifact(
+                        tool_name="CompareAwareExact2BasinValuePool",
+                        output_path=Path(str(exact2_basin_value_pool_run["result_path"])),
+                        summary=str(
+                            exact2_basin_value_pool_payload.get(
+                                "classification",
+                                "compare-aware exact2 basin value-pool evaluation complete",
+                            )
+                        ),
+                        strategy_name=self.name,
+                        evidence_kind="BridgeSearchEvidence",
+                        payload=exact2_basin_value_pool_payload,
+                        derived_entries=list(
+                            exact2_basin_value_pool_payload.get("validation_candidates", [])
+                        ),
+                    )
+                    if exact2_basin_value_pool_run.get("validation_path"):
+                        exact2_basin_value_pool_validation_artifact = _make_validation_artifact(
+                            tool_name="CompareAwareExact2BasinValuePoolValidation",
+                            output_path=Path(str(exact2_basin_value_pool_run["validation_path"])),
+                            validations=list(exact2_basin_value_pool_run.get("validations", [])),
+                            strategy_name=self.name,
+                        )
             if not frontier_stall_stage:
                 frontier_stall_stage = (
                     "smt_exact2_basin"
@@ -7689,6 +7966,9 @@ class CompareAwareSearchStrategy(SolverStrategy):
             final_validations,
             list(smt_run["validations"]) if smt_run else [],
             list(exact2_basin_smt_run["validations"]) if exact2_basin_smt_run else [],
+            list(exact2_basin_value_pool_run.get("promotable_validations", []))
+            if exact2_basin_value_pool_run
+            else [],
         )
         artifacts = [
             bridge_artifact,
@@ -7710,6 +7990,10 @@ class CompareAwareSearchStrategy(SolverStrategy):
             artifacts.append(exact2_basin_smt_artifact)
         if exact2_basin_smt_validation_artifact is not None:
             artifacts.append(exact2_basin_smt_validation_artifact)
+        if exact2_basin_value_pool_artifact is not None:
+            artifacts.append(exact2_basin_value_pool_artifact)
+        if exact2_basin_value_pool_validation_artifact is not None:
+            artifacts.append(exact2_basin_value_pool_validation_artifact)
         return StrategyResult(
             strategy_name=self.name,
             summary=search_artifact.summary,
@@ -7731,6 +8015,7 @@ class CompareAwareSearchStrategy(SolverStrategy):
                 "validations": final_validations,
                 "smt": smt_run or {},
                 "exact2_basin_smt": exact2_basin_smt_run or {},
+                "exact2_basin_value_pool": exact2_basin_value_pool_run or {},
                 "prefix_boundary_diagnostics": prefix_boundary_diagnostics,
                 "frontier_converged_reason": frontier_converged_reason,
                 "frontier_stall_stage": frontier_stall_stage,

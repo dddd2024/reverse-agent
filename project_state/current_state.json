@@ -1,21 +1,23 @@
 {
   "active_strategy": "CompareAwareSearchStrategy",
   "artifact_refs": {
-    "bridge_search_result": "solve_reports\\harness_runs\\samplereverse_exact2_basin_smt_20260503\\reports\\tool_artifacts\\samplereverse\\bridge\\bridge_search_result.json",
-    "bridge_validation": "solve_reports\\harness_runs\\samplereverse_exact2_basin_smt_20260503\\reports\\tool_artifacts\\samplereverse\\bridge\\bridge_validation\\bridge_validation.json",
+    "bridge_search_result": "solve_reports\\harness_runs\\samplereverse_exact2_basin_valuepool_eval_20260503\\reports\\tool_artifacts\\samplereverse\\bridge\\bridge_search_result.json",
+    "bridge_validation": "solve_reports\\harness_runs\\samplereverse_exact2_basin_valuepool_eval_20260503\\reports\\tool_artifacts\\samplereverse\\bridge\\bridge_validation\\bridge_validation.json",
     "checkpoint": "solve_reports\\tool_artifacts\\samplereverse_optimizer_smoke\\samplereverse_search_checkpoint.json",
-    "compare_aware_result": "solve_reports\\harness_runs\\samplereverse_exact2_basin_smt_20260503\\reports\\tool_artifacts\\samplereverse\\frontier_refine_2\\samplereverse_compare_aware_result.json",
-    "compare_probe": "solve_reports\\harness_runs\\samplereverse_exact2_basin_smt_20260503\\reports\\tool_artifacts\\samplereverse\\samplereverse_compare_probe.json",
-    "compare_probe_log": "solve_reports\\harness_runs\\samplereverse_exact2_basin_smt_20260503\\reports\\tool_artifacts\\samplereverse\\samplereverse_compare_probe.log",
-    "frontier_summary": "solve_reports\\harness_runs\\samplereverse_exact2_basin_smt_20260503\\reports\\tool_artifacts\\samplereverse\\samplereverse_compare_aware_frontier_summary.json",
-    "guided_pool_result": "solve_reports\\harness_runs\\samplereverse_exact2_basin_smt_20260503\\reports\\tool_artifacts\\samplereverse\\frontier_guided_2_5a3f7f46ddd474d0\\samplereverse_compare_aware_guided_pool_result.json",
-    "guided_pool_validation": "solve_reports\\harness_runs\\samplereverse_exact2_basin_smt_20260503\\reports\\tool_artifacts\\samplereverse\\frontier_guided_2_5a3f7f46ddd474d0\\guided_pool_validation\\samplereverse_compare_aware_guided_pool_validation.json",
-    "pairscan_summary": "solve_reports\\harness_runs\\samplereverse_exact2_basin_smt_20260503\\reports\\tool_artifacts\\samplereverse\\bridge\\pairscan_summary.json",
-    "run_manifest": "solve_reports\\harness_runs\\samplereverse_exact2_basin_smt_20260503\\run_manifest.json",
-    "smt_exact2_basin_result": "solve_reports\\harness_runs\\samplereverse_exact2_basin_smt_20260503\\reports\\tool_artifacts\\samplereverse\\smt_exact2_basin\\samplereverse_compare_aware_smt_result.json",
-    "smt_result": "solve_reports\\harness_runs\\samplereverse_exact2_basin_smt_20260503\\reports\\tool_artifacts\\samplereverse\\smt\\samplereverse_compare_aware_smt_result.json",
-    "strata_summary": "solve_reports\\harness_runs\\samplereverse_exact2_basin_smt_20260503\\reports\\tool_artifacts\\samplereverse\\samplereverse_compare_aware_strata_summary.json",
-    "summary": "solve_reports\\harness_runs\\samplereverse_exact2_basin_smt_20260503\\summary.json"
+    "compare_aware_result": "solve_reports\\harness_runs\\samplereverse_exact2_basin_valuepool_eval_20260503\\reports\\tool_artifacts\\samplereverse\\frontier_refine_2\\samplereverse_compare_aware_result.json",
+    "compare_probe": "solve_reports\\harness_runs\\samplereverse_exact2_basin_valuepool_eval_20260503\\reports\\tool_artifacts\\samplereverse\\samplereverse_compare_probe.json",
+    "compare_probe_log": "solve_reports\\harness_runs\\samplereverse_exact2_basin_valuepool_eval_20260503\\reports\\tool_artifacts\\samplereverse\\samplereverse_compare_probe.log",
+    "frontier_summary": "solve_reports\\harness_runs\\samplereverse_exact2_basin_valuepool_eval_20260503\\reports\\tool_artifacts\\samplereverse\\samplereverse_compare_aware_frontier_summary.json",
+    "guided_pool_result": "solve_reports\\harness_runs\\samplereverse_exact2_basin_valuepool_eval_20260503\\reports\\tool_artifacts\\samplereverse\\frontier_guided_2_5a3f7f46ddd474d0\\samplereverse_compare_aware_guided_pool_result.json",
+    "guided_pool_validation": "solve_reports\\harness_runs\\samplereverse_exact2_basin_valuepool_eval_20260503\\reports\\tool_artifacts\\samplereverse\\frontier_guided_2_5a3f7f46ddd474d0\\guided_pool_validation\\samplereverse_compare_aware_guided_pool_validation.json",
+    "pairscan_summary": "solve_reports\\harness_runs\\samplereverse_exact2_basin_valuepool_eval_20260503\\reports\\tool_artifacts\\samplereverse\\bridge\\pairscan_summary.json",
+    "run_manifest": "solve_reports\\harness_runs\\samplereverse_exact2_basin_valuepool_eval_20260503\\run_manifest.json",
+    "exact2_basin_value_pool_result": "solve_reports\\harness_runs\\samplereverse_exact2_basin_valuepool_eval_20260503\\reports\\tool_artifacts\\samplereverse\\exact2_basin_value_pool\\samplereverse_exact2_basin_value_pool_result.json",
+    "exact2_basin_value_pool_validation": "solve_reports\\harness_runs\\samplereverse_exact2_basin_valuepool_eval_20260503\\reports\\tool_artifacts\\samplereverse\\exact2_basin_value_pool\\value_pool_validation\\samplereverse_exact2_basin_value_pool_validation.json",
+    "smt_exact2_basin_result": "solve_reports\\harness_runs\\samplereverse_exact2_basin_valuepool_eval_20260503\\reports\\tool_artifacts\\samplereverse\\smt_exact2_basin\\samplereverse_compare_aware_smt_result.json",
+    "smt_result": "solve_reports\\harness_runs\\samplereverse_exact2_basin_valuepool_eval_20260503\\reports\\tool_artifacts\\samplereverse\\smt\\samplereverse_compare_aware_smt_result.json",
+    "strata_summary": "solve_reports\\harness_runs\\samplereverse_exact2_basin_valuepool_eval_20260503\\reports\\tool_artifacts\\samplereverse\\samplereverse_compare_aware_strata_summary.json",
+    "summary": "solve_reports\\harness_runs\\samplereverse_exact2_basin_valuepool_eval_20260503\\summary.json"
   },
   "best_candidates": {
     "exact1": {
@@ -54,11 +56,11 @@
   },
   "current_bottleneck": {
     "confidence": "high",
-    "reason": "bounded_exact2_basin_smt_attempted_but_z3_unknown",
-    "stage": "smt_exact2_basin_unknown"
+    "reason": "exact2_basin_value_pools_exhausted_no_gain",
+    "stage": "candidate_quality_insufficient_after_exact2_value_pool_eval"
   },
   "current_mainline": "L15(prefix8)",
-  "generated_at": "2026-05-03T09:15:30Z",
+  "generated_at": "2026-05-03T10:12:42Z",
   "known_transform": [
     "input",
     "UTF-16LE",
@@ -67,8 +69,8 @@
     "compare flag{ prefix"
   ],
   "latest_audit": {
-    "classification": "candidate_quality_insufficient_after_exact2_basin_smt",
-    "harness_run": "samplereverse_exact2_basin_smt_20260503",
+    "classification": "exact2_basin_value_pools_exhausted_no_gain",
+    "harness_run": "samplereverse_exact2_basin_valuepool_eval_20260503",
     "primary_smt": {
       "attempted": true,
       "base_anchor": "5a3e7f46ddd474d0",
@@ -77,36 +79,36 @@
     "exact2_basin_smt": {
       "attempted": true,
       "base_anchor": "78d540b49c590770",
-      "primary_base_anchor": "5a3e7f46ddd474d0",
       "summary": "targeted z3 finished with unknown",
-      "variable_byte_positions": [1, 2, 3, 0, 4],
-      "variable_nibble_positions": [2, 3, 0, 1, 4],
-      "feedback_value_pools": {
-        "1": [213, 62, 60],
-        "2": [64, 127, 128],
-        "3": [180, 143],
-        "0": [120],
-        "4": [156]
+      "z3_reason_unknown": "unknown",
+      "estimated_value_pool_combinations": 18,
+      "value_pool_sizes": {
+        "0": 1,
+        "1": 3,
+        "2": 3,
+        "3": 2,
+        "4": 1
       },
-      "validation_candidates": [],
-      "validations": []
+      "validation_candidates": []
+    },
+    "exact2_basin_value_pool_eval": {
+      "attempted": true,
+      "generated_count": 18,
+      "unique_count": 18,
+      "validated_count": 18,
+      "best_candidate": "78d540b49c59077041414141414141",
+      "best_runtime_exact_wchars": 2,
+      "best_runtime_distance5": 246,
+      "improved_over_exact2": false
     },
     "runtime_best_improved": false,
     "selected_flag_note": "case selected_flag remained model-scored flag{; compare-aware runtime best remains exact2 78d540b49c59077041414141414141"
   },
-  "latest_code_change": {
-    "behavior_change": "bounded_exact2_basin_smt_execution",
-    "files": [
-      "reverse_agent/samplereverse_z3.py",
-      "reverse_agent/strategies/compare_aware_search.py",
-      "tests/test_compare_aware_search_strategy.py"
-    ]
-  },
-  "next_local_action": "audit_smt_unknown_with_tiny_value_pools_without_timeout_expansion",
+  "next_local_action": "stop_exact2_basin_value_pool_branch_and_seek_new_bounded_profile_or_transform_hypothesis",
   "profile": "samplereverse",
   "sample": "samplereverse",
   "uncertainty": [
-    "z3 returned unknown for the bounded exact2 basin pass, so this is not an unsat proof",
-    "a tiny deterministic value-pool execution path may be more appropriate than increasing SMT timeout"
+    "Z3 reason_unknown is reported only as 'unknown', but deterministic enumeration exhausted the 18-combo diagnostic pool with runtime validation",
+    "No runtime-validated exact3+ or distance5 < 246 candidate exists in this exact2 value-pool branch"
   ]
 }

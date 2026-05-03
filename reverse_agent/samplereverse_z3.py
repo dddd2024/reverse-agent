@@ -40,6 +40,7 @@ class Z3ProbeResult:
     candidate_hex: str = ""
     candidate_latin1: str = ""
     evidence: list[str] | None = None
+    diagnostics: dict[str, object] | None = None
 
 
 def _z3_ready() -> bool:
@@ -152,7 +153,7 @@ def _candidate_from_prefix(prefix: bytes, m: int) -> bytes:
     return prefix
 
 
-def _decrypt_prefix(candidate: bytes) -> bytes:
+def _decrypt_prefix(candidate: bytes, prefix_len: int = 10) -> bytes:
     expanded = bytearray()
     for c in candidate:
         expanded.append(((c >> 4) & 0x0F) + 0x78)
@@ -170,7 +171,7 @@ def _decrypt_prefix(candidate: bytes) -> bytes:
     i = 0
     j = 0
     out = bytearray()
-    for idx in range(5):
+    for idx in range(prefix_len):
         i = (i + 1) & 0xFF
         j = (j + s[i]) & 0xFF
         s[i], s[j] = s[j], s[i]
@@ -231,6 +232,23 @@ def solve_targeted_prefix8(
             if value not in values:
                 values.append(value)
         normalized_value_pools[position] = values
+
+    value_pool_sizes = {
+        int(position): len(values) for position, values in sorted(normalized_value_pools.items())
+    }
+    estimated_value_pool_combinations = 1
+    for position in sorted(selected_bytes):
+        estimated_value_pool_combinations *= max(1, value_pool_sizes.get(int(position), 256))
+    diagnostics: dict[str, object] = {
+        "solver_type": "Optimize",
+        "timeout_ms": int(timeout_ms),
+        "symbolic_prefix_bytes": len(prefix_vars),
+        "symbolic_compare_bytes": len(TARGET),
+        "selected_byte_count": len(selected_bytes),
+        "selected_nibble_count": len(selected_nibbles),
+        "value_pool_sizes": {str(key): value for key, value in value_pool_sizes.items()},
+        "estimated_value_pool_combinations": estimated_value_pool_combinations,
+    }
 
     for idx, base_byte in enumerate(base_bytes):
         var = prefix_vars[idx]
@@ -319,11 +337,22 @@ def solve_targeted_prefix8(
         opt.minimize(dist10)
     result = opt.check()
     if result != sat:
+        reason_unknown = ""
+        if str(result) == "unknown":
+            try:
+                reason_unknown = str(opt.reason_unknown())
+            except Exception:  # pragma: no cover - defensive against z3py variants
+                reason_unknown = ""
+            diagnostics["z3_reason_unknown"] = reason_unknown
         return Z3ProbeResult(
             attempted=True,
             summary=f"targeted z3 finished with {result}",
             evidence=[
                 f"runtime_probe:z3_targeted result={result} base={base_anchor}",
+                f"runtime_probe:z3_targeted solver_type=Optimize timeout_ms={timeout_ms}",
+                f"runtime_probe:z3_targeted symbolic_compare_bytes={len(TARGET)}",
+                f"runtime_probe:z3_targeted estimated_value_pool_combinations={estimated_value_pool_combinations}",
+                f"runtime_probe:z3_targeted reason_unknown={reason_unknown}",
                 f"runtime_probe:z3_targeted bytes={','.join(str(v) for v in sorted(selected_bytes))}",
                 f"runtime_probe:z3_targeted nibbles={','.join(str(v) for v in sorted(selected_nibbles))}",
                 "runtime_probe:z3_targeted value_pools="
@@ -332,14 +361,18 @@ def solve_targeted_prefix8(
                     for position, values in sorted(normalized_value_pools.items())
                 ),
             ],
+            diagnostics=diagnostics,
         )
 
     model = opt.model()
     prefix = bytes(model.eval(var, model_completion=True).as_long() & 0xFF for var in prefix_vars)
     candidate = prefix + (b"A" * 7)
-    dec = _decrypt_prefix(candidate)[:10]
+    dec = _decrypt_prefix(candidate, prefix_len=len(TARGET))[: len(TARGET)]
     evidence = [
         f"runtime_probe:z3_targeted base={base_anchor}",
+        f"runtime_probe:z3_targeted solver_type=Optimize timeout_ms={timeout_ms}",
+        f"runtime_probe:z3_targeted symbolic_compare_bytes={len(TARGET)}",
+        f"runtime_probe:z3_targeted estimated_value_pool_combinations={estimated_value_pool_combinations}",
         f"runtime_probe:z3_targeted bytes={','.join(str(v) for v in sorted(selected_bytes))}",
         f"runtime_probe:z3_targeted nibbles={','.join(str(v) for v in sorted(selected_nibbles))}",
         "runtime_probe:z3_targeted value_pools="
@@ -355,6 +388,7 @@ def solve_targeted_prefix8(
         candidate_hex=candidate.hex(),
         candidate_latin1=candidate.decode("latin1"),
         evidence=evidence,
+        diagnostics=diagnostics,
     )
 
 
@@ -399,7 +433,7 @@ def solve_with_partitions(
                 evidence.append(
                     f"runtime_probe:z3_sat m={m} idx={idx} prefix_hex={prefix.hex()} dec_prefix_hex={dec.hex()}"
                 )
-                if dec[:5].lower() == TARGET:
+                if dec[: len(TARGET)].lower() == TARGET:
                     text = candidate.decode("latin1", errors="ignore")
                     evidence.append(
                         f"runtime_candidate:{text}"

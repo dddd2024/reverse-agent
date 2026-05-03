@@ -42,6 +42,7 @@ from reverse_agent.strategies.compare_aware_search import (
     _select_smt_base_entry,
     _validated_projected_preserve_second_hop_candidates,
     run_compare_aware_smt,
+    run_exact2_basin_value_pool_evaluation,
     validate_compare_aware_results,
     resolve_compare_aware_anchors,
 )
@@ -93,6 +94,11 @@ def test_solve_targeted_prefix8_records_bounded_value_pools_with_base_value() ->
 
     assert result.attempted is True
     assert any("value_pools=0:78/00" in item for item in result.evidence or [])
+    assert result.diagnostics
+    assert result.diagnostics["solver_type"] == "Optimize"
+    assert result.diagnostics["timeout_ms"] == 10
+    assert result.diagnostics["symbolic_compare_bytes"] == 10
+    assert result.diagnostics["value_pool_sizes"]["0"] == 2
 
 
 def test_score_prefix_exposes_long_window_structure_metrics() -> None:
@@ -2856,6 +2862,139 @@ def test_run_compare_aware_smt_records_feedback_value_pools_from_improved_fronti
     assert result["payload"]["prefix_boundary"]["ci_exact_wchars"] == 1
     assert captured_z3["value_pools"][1][0] == 0x3E
     assert 0x44 in captured_z3["value_pools"][1]
+
+
+def test_run_compare_aware_smt_records_z3_unknown_diagnostics(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    target = tmp_path / "samplereverse.exe"
+    target.write_bytes(b"MZ")
+
+    def fake_solve_targeted_prefix8(**kwargs):
+        return type(
+            "Z3Result",
+            (),
+            {
+                "attempted": True,
+                "summary": "targeted z3 finished with unknown",
+                "evidence": ["runtime_probe:z3_targeted reason_unknown=timeout"],
+                "candidate_hex": "",
+                "diagnostics": {
+                    "z3_reason_unknown": "timeout",
+                    "estimated_value_pool_combinations": 18,
+                    "value_pool_sizes": {"0": 1, "1": 3},
+                    "symbolic_compare_bytes": 10,
+                    "solver_type": "Optimize",
+                    "timeout_ms": 1500,
+                },
+            },
+        )()
+
+    monkeypatch.setattr(compare_aware_search, "solve_targeted_prefix8", fake_solve_targeted_prefix8)
+
+    result = run_compare_aware_smt(
+        target=target,
+        artifacts_dir=tmp_path / "smt",
+        base_entry={
+            "candidate_hex": "78d540b49c59077041414141414141",
+            "cand8_hex": "78d540b49c590770",
+            "ci_exact_wchars": 2,
+            "ci_distance5": 246,
+            "anchor_mode": "exact2",
+        },
+        comparison_entries=[],
+        variable_byte_positions_override=[0, 1],
+        variable_nibble_positions_override=[0, 1],
+        value_pools_override={0: [0x78], 1: [0xD5, 0x3E, 0x3C]},
+        transform_model=SamplereverseTransformModel(),
+        per_probe_timeout=0.5,
+        log=lambda _: None,
+    )
+
+    assert result["payload"]["summary"] == "targeted z3 finished with unknown"
+    assert result["payload"]["z3_reason_unknown"] == "timeout"
+    assert result["payload"]["estimated_value_pool_combinations"] == 18
+    assert result["payload"]["value_pool_sizes"] == {"0": 1, "1": 3}
+    assert result["payload"]["validation_candidates"] == []
+
+
+def test_exact2_basin_value_pool_evaluation_enumerates_bounded_pool_and_requires_improvement(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    target = tmp_path / "samplereverse.exe"
+    target.write_bytes(b"MZ")
+    captured: dict[str, object] = {}
+
+    def fake_validate_compare_aware_results(**kwargs):
+        payload = json.loads(Path(kwargs["result_path"]).read_text(encoding="utf-8"))
+        candidates = list(payload["validation_candidates"])
+        captured["validate_top"] = kwargs["validate_top"]
+        captured["candidate_count"] = len(candidates)
+        validations = []
+        for entry in candidates:
+            candidate_hex = str(entry["candidate_hex"])
+            is_base = candidate_hex.startswith("78d540b49c590770")
+            validations.append(
+                {
+                    **entry,
+                    "candidate_hex": candidate_hex,
+                    "cand8_hex": candidate_hex[:16],
+                    "compare_semantics_agree": True,
+                    "runtime_ci_exact_wchars": 2 if is_base else 1,
+                    "runtime_ci_distance5": 246 if is_base else 258,
+                    "offline_ci_distance5": int(entry.get("ci_distance5", 1 << 30) or (1 << 30)),
+                    "offline_raw_distance10": int(entry.get("raw_distance10", 1 << 30) or (1 << 30)),
+                }
+            )
+        return tmp_path / "value_pool_validation.json", validations
+
+    monkeypatch.setattr(
+        compare_aware_search,
+        "validate_compare_aware_results",
+        fake_validate_compare_aware_results,
+    )
+
+    result = run_exact2_basin_value_pool_evaluation(
+        target=target,
+        artifacts_dir=tmp_path / "exact2_basin_value_pool",
+        base_entry={
+            "candidate_hex": "78d540b49c59077041414141414141",
+            "cand8_hex": "78d540b49c590770",
+            "runtime_ci_exact_wchars": 2,
+            "runtime_ci_distance5": 246,
+            "ci_exact_wchars": 2,
+            "ci_distance5": 246,
+        },
+        exact2_basin_smt={
+            "base_anchor": "78d540b49c590770",
+            "variable_byte_positions": [1, 2, 3, 0, 4],
+            "feedback_value_pools": {
+                "1": [0xD5, 0x3E, 0x3C],
+                "2": [0x40, 0x7F, 0x80],
+                "3": [0xB4, 0x8F],
+                "0": [0x78],
+                "4": [0x9C],
+            },
+        },
+        transform_model=SamplereverseTransformModel(),
+        per_probe_timeout=0.5,
+        log=lambda _: None,
+    )
+
+    payload = result["payload"]
+    assert payload["generated_count"] == 18
+    assert payload["unique_count"] == 18
+    assert payload["validated_count"] == 18
+    assert captured["validate_top"] == 18
+    assert captured["candidate_count"] == 18
+    assert payload["value_pools"]["1"][0] == 0xD5
+    assert payload["value_pools"]["0"] == [0x78]
+    assert payload["best_runtime_candidate"]["cand8_hex"] == "78d540b49c590770"
+    assert payload["improved_over_exact2"] is False
+    assert payload["classification"] == "exact2_basin_value_pools_exhausted_no_gain"
+    assert result["promotable_validations"] == []
 
 
 def test_compare_aware_strategy_runs_second_frontier_guided_round_on_improved_frontier(

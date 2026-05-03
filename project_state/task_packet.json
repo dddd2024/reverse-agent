@@ -1,21 +1,23 @@
 {
   "active_strategy": "CompareAwareSearchStrategy",
   "artifact_refs": {
-    "bridge_search_result": "solve_reports\\harness_runs\\samplereverse_exact2_basin_smt_20260503\\reports\\tool_artifacts\\samplereverse\\bridge\\bridge_search_result.json",
-    "bridge_validation": "solve_reports\\harness_runs\\samplereverse_exact2_basin_smt_20260503\\reports\\tool_artifacts\\samplereverse\\bridge\\bridge_validation\\bridge_validation.json",
+    "bridge_search_result": "solve_reports\\harness_runs\\samplereverse_exact2_basin_valuepool_eval_20260503\\reports\\tool_artifacts\\samplereverse\\bridge\\bridge_search_result.json",
+    "bridge_validation": "solve_reports\\harness_runs\\samplereverse_exact2_basin_valuepool_eval_20260503\\reports\\tool_artifacts\\samplereverse\\bridge\\bridge_validation\\bridge_validation.json",
     "checkpoint": "solve_reports\\tool_artifacts\\samplereverse_optimizer_smoke\\samplereverse_search_checkpoint.json",
-    "compare_aware_result": "solve_reports\\harness_runs\\samplereverse_exact2_basin_smt_20260503\\reports\\tool_artifacts\\samplereverse\\frontier_refine_2\\samplereverse_compare_aware_result.json",
-    "compare_probe": "solve_reports\\harness_runs\\samplereverse_exact2_basin_smt_20260503\\reports\\tool_artifacts\\samplereverse\\samplereverse_compare_probe.json",
-    "compare_probe_log": "solve_reports\\harness_runs\\samplereverse_exact2_basin_smt_20260503\\reports\\tool_artifacts\\samplereverse\\samplereverse_compare_probe.log",
-    "frontier_summary": "solve_reports\\harness_runs\\samplereverse_exact2_basin_smt_20260503\\reports\\tool_artifacts\\samplereverse\\samplereverse_compare_aware_frontier_summary.json",
-    "guided_pool_result": "solve_reports\\harness_runs\\samplereverse_exact2_basin_smt_20260503\\reports\\tool_artifacts\\samplereverse\\frontier_guided_2_5a3f7f46ddd474d0\\samplereverse_compare_aware_guided_pool_result.json",
-    "guided_pool_validation": "solve_reports\\harness_runs\\samplereverse_exact2_basin_smt_20260503\\reports\\tool_artifacts\\samplereverse\\frontier_guided_2_5a3f7f46ddd474d0\\guided_pool_validation\\samplereverse_compare_aware_guided_pool_validation.json",
-    "pairscan_summary": "solve_reports\\harness_runs\\samplereverse_exact2_basin_smt_20260503\\reports\\tool_artifacts\\samplereverse\\bridge\\pairscan_summary.json",
-    "run_manifest": "solve_reports\\harness_runs\\samplereverse_exact2_basin_smt_20260503\\run_manifest.json",
-    "smt_exact2_basin_result": "solve_reports\\harness_runs\\samplereverse_exact2_basin_smt_20260503\\reports\\tool_artifacts\\samplereverse\\smt_exact2_basin\\samplereverse_compare_aware_smt_result.json",
-    "smt_result": "solve_reports\\harness_runs\\samplereverse_exact2_basin_smt_20260503\\reports\\tool_artifacts\\samplereverse\\smt\\samplereverse_compare_aware_smt_result.json",
-    "strata_summary": "solve_reports\\harness_runs\\samplereverse_exact2_basin_smt_20260503\\reports\\tool_artifacts\\samplereverse\\samplereverse_compare_aware_strata_summary.json",
-    "summary": "solve_reports\\harness_runs\\samplereverse_exact2_basin_smt_20260503\\summary.json"
+    "compare_aware_result": "solve_reports\\harness_runs\\samplereverse_exact2_basin_valuepool_eval_20260503\\reports\\tool_artifacts\\samplereverse\\frontier_refine_2\\samplereverse_compare_aware_result.json",
+    "compare_probe": "solve_reports\\harness_runs\\samplereverse_exact2_basin_valuepool_eval_20260503\\reports\\tool_artifacts\\samplereverse\\samplereverse_compare_probe.json",
+    "compare_probe_log": "solve_reports\\harness_runs\\samplereverse_exact2_basin_valuepool_eval_20260503\\reports\\tool_artifacts\\samplereverse\\samplereverse_compare_probe.log",
+    "frontier_summary": "solve_reports\\harness_runs\\samplereverse_exact2_basin_valuepool_eval_20260503\\reports\\tool_artifacts\\samplereverse\\samplereverse_compare_aware_frontier_summary.json",
+    "guided_pool_result": "solve_reports\\harness_runs\\samplereverse_exact2_basin_valuepool_eval_20260503\\reports\\tool_artifacts\\samplereverse\\frontier_guided_2_5a3f7f46ddd474d0\\samplereverse_compare_aware_guided_pool_result.json",
+    "guided_pool_validation": "solve_reports\\harness_runs\\samplereverse_exact2_basin_valuepool_eval_20260503\\reports\\tool_artifacts\\samplereverse\\frontier_guided_2_5a3f7f46ddd474d0\\guided_pool_validation\\samplereverse_compare_aware_guided_pool_validation.json",
+    "pairscan_summary": "solve_reports\\harness_runs\\samplereverse_exact2_basin_valuepool_eval_20260503\\reports\\tool_artifacts\\samplereverse\\bridge\\pairscan_summary.json",
+    "run_manifest": "solve_reports\\harness_runs\\samplereverse_exact2_basin_valuepool_eval_20260503\\run_manifest.json",
+    "exact2_basin_value_pool_result": "solve_reports\\harness_runs\\samplereverse_exact2_basin_valuepool_eval_20260503\\reports\\tool_artifacts\\samplereverse\\exact2_basin_value_pool\\samplereverse_exact2_basin_value_pool_result.json",
+    "exact2_basin_value_pool_validation": "solve_reports\\harness_runs\\samplereverse_exact2_basin_valuepool_eval_20260503\\reports\\tool_artifacts\\samplereverse\\exact2_basin_value_pool\\value_pool_validation\\samplereverse_exact2_basin_value_pool_validation.json",
+    "smt_exact2_basin_result": "solve_reports\\harness_runs\\samplereverse_exact2_basin_valuepool_eval_20260503\\reports\\tool_artifacts\\samplereverse\\smt_exact2_basin\\samplereverse_compare_aware_smt_result.json",
+    "smt_result": "solve_reports\\harness_runs\\samplereverse_exact2_basin_valuepool_eval_20260503\\reports\\tool_artifacts\\samplereverse\\smt\\samplereverse_compare_aware_smt_result.json",
+    "strata_summary": "solve_reports\\harness_runs\\samplereverse_exact2_basin_valuepool_eval_20260503\\reports\\tool_artifacts\\samplereverse\\samplereverse_compare_aware_strata_summary.json",
+    "summary": "solve_reports\\harness_runs\\samplereverse_exact2_basin_valuepool_eval_20260503\\summary.json"
   },
   "current_best": {
     "exact1": {
@@ -54,56 +56,63 @@
   },
   "current_bottleneck": {
     "confidence": "high",
-    "reason": "bounded_exact2_basin_smt_attempted_but_z3_unknown",
-    "stage": "smt_exact2_basin_unknown"
+    "reason": "exact2_basin_value_pools_exhausted_no_gain",
+    "stage": "candidate_quality_insufficient_after_exact2_value_pool_eval"
   },
   "do_not_do": [
     "do not return to old sample_solver blind search",
     "do not only increase beam or budget",
     "do not use compare_semantics_agree=false candidates as primary frontier",
     "do not commit full solve_reports directory",
-    "do not scan entire solve_reports unless explicitly needed",
+    "do not scan entire solve_reports unless explicitly needed"
+    ,
     "do not promote 5a3f7f46ddd474d0, 5a3f7fc2ddd474d0, or 343f7f46ddd474d0",
     "do not treat model-selected bare flag{ as runtime improvement",
-    "do not expand beam, budget, topN, timeout, or frontier iteration limit"
+    "do not expand beam, budget, topN, timeout, or frontier iteration limit",
+    "do not repeat exact2 basin value-pool evaluation unless diagnostics value pools change"
   ],
   "expected_gpt_output": "project_state/decision_packet.md",
-  "generated_at": "2026-05-03T09:15:30Z",
+  "generated_at": "2026-05-03T10:12:42Z",
   "included": [
     "current state",
     "best candidates",
     "stall reason",
     "negative results",
     "artifact references",
-    "bounded exact2 basin SMT result",
-    "value pool constrained z3 evidence"
+    "SMT unknown diagnostics",
+    "deterministic exact2 value-pool runtime validation result"
   ],
   "latest_audit_result": {
-    "classification": "candidate_quality_insufficient_after_exact2_basin_smt",
-    "code_fix_applied": "real bounded exact2 basin SMT pass plus value_pools constraints",
-    "new_harness_run": "samplereverse_exact2_basin_smt_20260503",
+    "classification": "exact2_basin_value_pools_exhausted_no_gain",
+    "code_fix_applied": "SMT unknown diagnostics plus deterministic exact2 basin value-pool evaluator",
+    "new_harness_run": "samplereverse_exact2_basin_valuepool_eval_20260503",
     "primary_smt_summary": "targeted z3 finished with unknown",
     "exact2_basin_smt": {
       "attempted": true,
-      "recommended": true,
       "base_anchor": "78d540b49c590770",
-      "primary_base_anchor": "5a3e7f46ddd474d0",
-      "variable_byte_positions": [1, 2, 3, 0, 4],
-      "variable_nibble_positions": [2, 3, 0, 1, 4],
-      "runtime_ci_exact_wchars": 2,
-      "runtime_ci_distance5": 246,
       "summary": "targeted z3 finished with unknown",
-      "validation_candidates": [],
-      "validations": []
+      "z3_reason_unknown": "unknown",
+      "estimated_value_pool_combinations": 18,
+      "validation_candidates": []
+    },
+    "exact2_basin_value_pool_eval": {
+      "attempted": true,
+      "generated_count": 18,
+      "unique_count": 18,
+      "validated_count": 18,
+      "best_candidate": "78d540b49c59077041414141414141",
+      "best_runtime_exact_wchars": 2,
+      "best_runtime_distance5": 246,
+      "improved_over_exact2": false
     },
     "runtime_best_improved": false
   },
   "model_gate": {
     "context_level": 2,
-    "reason": "bounded_exact2_basin_smt_attempted_but_z3_unknown",
+    "reason": "exact2_basin_value_pools_exhausted_no_gain",
     "should_call_model": true
   },
-  "next_local_action": "audit_smt_unknown_with_tiny_value_pools_without_timeout_expansion",
+  "next_local_action": "stop_exact2_basin_value_pool_branch_and_seek_new_bounded_profile_or_transform_hypothesis",
   "omitted": [
     {
       "name": "full PROJECT_PROGRESS_LOG.txt",
@@ -128,5 +137,5 @@
     "has_runtime_validation": true,
     "has_stall_stage": true
   },
-  "task": "Generate next decision for SMT unknown after real bounded exact2 basin pass"
+  "task": "Generate next decision after exact2 basin value-pool branch exhausted"
 }

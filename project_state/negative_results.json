@@ -30,5 +30,13 @@
     "override_reason_required": false,
     "reason": "solve_reports is runtime output and may contain bulky or local data",
     "severity": "hard_block"
+  },
+  {
+    "direction": "exact2 basin value-pool evaluation with pools 0:78 1:d5/3e/3c 2:40/7f/80 3:b4/8f 4:9c",
+    "do_not_repeat": true,
+    "override_allowed": true,
+    "override_reason_required": true,
+    "reason": "samplereverse_exact2_basin_valuepool_eval_20260503 generated and runtime-validated all 18 diagnostic combinations; best remained 78d540b49c59077041414141414141 exact2 / distance5 246 with no exact3+ or distance improvement",
+    "severity": "soft_block"
   }
 ]
