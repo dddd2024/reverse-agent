@@ -43,6 +43,7 @@ H1_H3_BOUNDARY_CANDIDATE_LIMIT = 8
 TRANSFORM_TRACE_CONSISTENCY_FILE_NAME = "transform_trace_consistency.json"
 DYNAMIC_COMPARE_PATH_PROBE_FILE_NAME = "dynamic_compare_path_probe.json"
 PRE_RC4_MATERIAL_PROBE_FILE_NAME = "pre_rc4_material_probe.json"
+BASE64_RC4_BREAKPOINT_PROBE_FILE_NAME = "base64_rc4_breakpoint_probe.json"
 
 DEFAULT_ANCHORS = (
     "78d540b49c590770",
@@ -174,6 +175,7 @@ DYNAMIC_COMPARE_PATH_PROBE_CANDIDATES = (
     "5a3e7f46ddd474d041414141414141",
 )
 PRE_RC4_MATERIAL_PROBE_CANDIDATES = DYNAMIC_COMPARE_PATH_PROBE_CANDIDATES
+BASE64_RC4_BREAKPOINT_PROBE_CANDIDATES = PRE_RC4_MATERIAL_PROBE_CANDIDATES
 PAIR_TAIL_FLAGLIKE_BYTES = set(b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_{}-")
 
 PAIRSCAN_TOOL = "pairscan"
@@ -198,6 +200,10 @@ def _compare_probe_script_path() -> Path:
 
 def _pre_rc4_material_probe_script_path() -> Path:
     return Path(__file__).resolve().parents[1] / "olly_scripts" / "pre_rc4_material_probe.py"
+
+
+def _base64_rc4_breakpoint_probe_script_path() -> Path:
+    return Path(__file__).resolve().parents[1] / "olly_scripts" / "base64_rc4_breakpoint_probe.py"
 
 
 def _tool_source_path(tool_name: str) -> Path:
@@ -3323,6 +3329,15 @@ def _prior_dynamic_probe_needs_pre_rc4() -> bool:
     )
 
 
+def _prior_pre_rc4_probe_needs_breakpoint() -> bool:
+    current_state = _project_state_json("current_state.json")
+    latest = current_state.get("latest_pre_rc4_material_probe", {})
+    if isinstance(latest, dict) and str(latest.get("classification", "")).strip() == "pre_rc4_probe_unavailable":
+        return True
+    payload, _ = _indexed_artifact_payload("pre_rc4_material_probe")
+    return str(payload.get("classification", "")).strip() == "pre_rc4_probe_unavailable"
+
+
 def _profile_audit_candidate_record(
     *,
     label: str,
@@ -4538,6 +4553,446 @@ def _exact2_failure_trace_from_expected(expected: dict[str, object]) -> dict[str
             "rc4_ksa_key_length": len(bytes.fromhex(str(expected.get("rc4_ksa_key_hex", "")))),
             "candidate_byte_dependencies": "RC4 KSA diffuses the full Base64-derived key; byte-local dependency requires a follow-up constraint diagnostic after runtime key confirmation.",
         },
+    }
+
+
+def _pe_sections_for_rva_mapping(data: bytes) -> list[dict[str, int]]:
+    try:
+        pe_offset = int.from_bytes(data[0x3C:0x40], "little")
+        if data[pe_offset:pe_offset + 4] != b"PE\0\0":
+            return []
+        number_of_sections = int.from_bytes(data[pe_offset + 6:pe_offset + 8], "little")
+        optional_header_size = int.from_bytes(data[pe_offset + 20:pe_offset + 22], "little")
+        section_offset = pe_offset + 24 + optional_header_size
+    except Exception:
+        return []
+    sections: list[dict[str, int]] = []
+    for idx in range(max(0, number_of_sections)):
+        base = section_offset + idx * 40
+        if base + 40 > len(data):
+            break
+        virtual_size = int.from_bytes(data[base + 8:base + 12], "little")
+        virtual_address = int.from_bytes(data[base + 12:base + 16], "little")
+        raw_size = int.from_bytes(data[base + 16:base + 20], "little")
+        raw_pointer = int.from_bytes(data[base + 20:base + 24], "little")
+        sections.append(
+            {
+                "virtual_size": virtual_size,
+                "virtual_address": virtual_address,
+                "raw_size": raw_size,
+                "raw_pointer": raw_pointer,
+            }
+        )
+    return sections
+
+
+def _file_offset_to_rva(file_offset: int, sections: Sequence[dict[str, int]]) -> int | None:
+    for section in sections:
+        raw_pointer = int(section.get("raw_pointer", 0))
+        raw_size = int(section.get("raw_size", 0))
+        virtual_address = int(section.get("virtual_address", 0))
+        virtual_size = int(section.get("virtual_size", 0))
+        span = max(raw_size, virtual_size, 1)
+        if raw_pointer <= file_offset < raw_pointer + span:
+            return virtual_address + (file_offset - raw_pointer)
+    return file_offset if file_offset >= 0 else None
+
+
+def _first_file_offset(data: bytes, needle: bytes) -> int | None:
+    if not needle:
+        return None
+    found = data.find(needle)
+    return found if found >= 0 else None
+
+
+def _static_point(
+    *,
+    kind: str,
+    name: str,
+    module_offset: int | None,
+    confidence: str,
+    evidence: Sequence[str],
+    hook_kind: str = "memory_access",
+    hookable: bool | None = None,
+    size: int = 1,
+) -> dict[str, object]:
+    is_hookable = bool(module_offset is not None) if hookable is None else bool(hookable)
+    return {
+        "kind": kind,
+        "name": name,
+        "address": f"module+0x{module_offset:x}" if module_offset is not None else "",
+        "module_offset": module_offset,
+        "confidence": confidence,
+        "evidence": list(evidence),
+        "hook_kind": hook_kind,
+        "hookable": is_hookable,
+        "size": max(1, int(size)),
+    }
+
+
+def _base64_rc4_static_points(target: Path) -> dict[str, list[dict[str, object]]]:
+    groups: dict[str, list[dict[str, object]]] = {
+        "utf16le": [],
+        "base64": [],
+        "rc4_ksa": [],
+        "rc4_prga": [],
+        "encrypted_const": [],
+    }
+    try:
+        data = target.read_bytes()
+    except OSError as exc:
+        reason = f"target_read_failed:{exc}"
+        for key in groups:
+            groups[key].append(
+                _static_point(
+                    kind=key,
+                    name=f"{key}_unavailable",
+                    module_offset=None,
+                    confidence="low",
+                    evidence=[reason],
+                    hookable=False,
+                )
+            )
+        return groups
+
+    sections = _pe_sections_for_rva_mapping(data)
+    base64_alphabet = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+    base64_offset = _first_file_offset(data, base64_alphabet)
+    if base64_offset is not None:
+        rva = _file_offset_to_rva(base64_offset, sections)
+        groups["base64"].append(
+            _static_point(
+                kind="base64",
+                name="standard_base64_alphabet",
+                module_offset=rva,
+                confidence="high",
+                evidence=[f"standard alphabet table file_offset=0x{base64_offset:x}"],
+                size=len(base64_alphabet),
+            )
+        )
+    else:
+        groups["base64"].append(
+            _static_point(
+                kind="base64",
+                name="standard_base64_alphabet_unavailable",
+                module_offset=None,
+                confidence="low",
+                evidence=["standard Base64 alphabet table not found in PE bytes"],
+                hookable=False,
+            )
+        )
+
+    encrypted_const = _samplereverse_enc_const()
+    const_probe = encrypted_const[: min(16, len(encrypted_const))]
+    const_offset = _first_file_offset(data, const_probe)
+    if const_offset is not None:
+        rva = _file_offset_to_rva(const_offset, sections)
+        groups["encrypted_const"].append(
+            _static_point(
+                kind="encrypted_const",
+                name="modeled_rc4_encrypted_const",
+                module_offset=rva,
+                confidence="high",
+                evidence=[f"modeled encrypted const prefix file_offset=0x{const_offset:x}"],
+                size=min(64, len(encrypted_const)),
+            )
+        )
+    else:
+        groups["encrypted_const"].append(
+            _static_point(
+                kind="encrypted_const",
+                name="modeled_rc4_encrypted_const_unavailable",
+                module_offset=None,
+                confidence="low",
+                evidence=["modeled encrypted const prefix not found in PE bytes"],
+                hookable=False,
+            )
+        )
+
+    groups["utf16le"].append(
+        _static_point(
+            kind="utf16le",
+            name="utf16le_expansion_site_unresolved",
+            module_offset=None,
+            confidence="low",
+            evidence=["no stable UTF-16LE construction instruction signature available from current artifacts"],
+            hookable=False,
+        )
+    )
+    groups["rc4_ksa"].append(
+        _static_point(
+            kind="rc4_ksa",
+            name="rc4_ksa_site_unresolved",
+            module_offset=None,
+            confidence="low",
+            evidence=["no stable RC4 KSA code signature available from current artifacts"],
+            hookable=False,
+        )
+    )
+    groups["rc4_prga"].append(
+        _static_point(
+            kind="rc4_prga",
+            name="rc4_prga_site_unresolved",
+            module_offset=None,
+            confidence="low",
+            evidence=["no stable RC4 PRGA code signature available from current artifacts"],
+            hookable=False,
+        )
+    )
+    return groups
+
+
+def _breakpoint_probe_entries(transform_model: SamplereverseTransformModel) -> list[dict[str, object]]:
+    _ = transform_model
+    roles = ("exact2_baseline", "near_suffix_control", "frontier_control")
+    entries: list[dict[str, object]] = []
+    for idx, candidate_hex in enumerate(BASE64_RC4_BREAKPOINT_PROBE_CANDIDATES, 1):
+        expected = _pre_rc4_expected_materials(candidate_hex)
+        trace = dict(expected.get("trace", {}))
+        compare_boundary = dict(trace.get("compare_boundary", {}))
+        entries.append(
+            {
+                "label": f"base64_rc4_breakpoint_probe_{idx}",
+                "candidate_hex": candidate_hex,
+                "cand8_hex": candidate_hex[:16],
+                "probe_role": roles[idx - 1],
+                "ci_exact_wchars": int(compare_boundary.get("ci_exact_wchars", 0) or 0),
+                "ci_distance5": int(compare_boundary.get("ci_distance5", 1 << 30) or (1 << 30)),
+                "expected_materials": expected,
+            }
+        )
+    return entries
+
+
+def _aggregate_breakpoint_hook_results(candidate_results: Sequence[dict[str, object]]) -> dict[str, str]:
+    keys = (
+        "utf16le_payload",
+        "base64_input",
+        "base64_output",
+        "rc4_key",
+        "rc4_input",
+        "rc4_output",
+        "compare_buffer",
+    )
+    out: dict[str, str] = {}
+    for key in keys:
+        values = [
+            str(dict(item.get("hook_results", {})).get(key, "unavailable"))
+            for item in candidate_results
+            if isinstance(item.get("hook_results"), dict)
+        ]
+        if "available" in values:
+            out[key] = "available"
+        elif "inferred" in values:
+            out[key] = "inferred"
+        else:
+            out[key] = "unavailable"
+    return out
+
+
+def _breakpoint_material_status(hook_results: dict[str, str], *keys: str) -> str:
+    values = [hook_results.get(key, "unavailable") for key in keys]
+    if "available" in values:
+        return "confirmed"
+    if "inferred" in values:
+        return "inferred"
+    return "unknown"
+
+
+def _breakpoint_exact2_failure_trace(
+    expected: dict[str, object],
+    hook_results: dict[str, str],
+) -> dict[str, object]:
+    trace = _exact2_failure_trace_from_expected(expected)
+    trace.update(
+        {
+            "prga_positions": [4, 5] if hook_results.get("rc4_output") in {"available", "inferred"} else [],
+            "candidate_byte_dependencies": [],
+            "bounded_constraint": (
+                "runtime RC4/Base64 construction evidence captured; derive byte constraints in the next bounded diagnostic"
+                if any(hook_results.get(key) in {"available", "inferred"} for key in ("base64_input", "base64_output", "rc4_key", "rc4_input", "rc4_output"))
+                else "RC4/Base64 construction point unavailable; key/input dependency model remains unknown"
+            ),
+        }
+    )
+    return trace
+
+
+def run_base64_rc4_breakpoint_probe(
+    *,
+    target: Path,
+    artifacts_dir: Path,
+    transform_model: SamplereverseTransformModel,
+    per_probe_timeout: float,
+    log,
+) -> dict[str, object]:
+    artifacts_dir.mkdir(parents=True, exist_ok=True)
+    result_path = artifacts_dir / BASE64_RC4_BREAKPOINT_PROBE_FILE_NAME
+    script_path = _base64_rc4_breakpoint_probe_script_path()
+    static_points = _base64_rc4_static_points(target)
+    entries = _breakpoint_probe_entries(transform_model)
+    payload: dict[str, object] = {
+        "artifact_kind": "base64_rc4_breakpoint_probe",
+        "profile": "samplereverse",
+        "attempted": True,
+        "candidate_generation_changed": False,
+        "ranking_changed": False,
+        "final_selection_changed": False,
+        "search_budget_changed": False,
+        "beam_budget_topn_timeout_frontier_limit_expanded": False,
+        "candidate_count": len(entries),
+        "candidate_limit": len(BASE64_RC4_BREAKPOINT_PROBE_CANDIDATES),
+        "validation_candidates": entries,
+        "static_points": static_points,
+        "promotable_validations": [],
+    }
+    _write_json(result_path, payload)
+    if not script_path.exists():
+        raise RuntimeError(f"Base64/RC4 breakpoint probe script missing: {script_path}")
+
+    candidate_results: list[dict[str, object]] = []
+    points_path = artifacts_dir / "static_points.json"
+    _write_json(points_path, {"static_points": static_points})
+    for idx, entry in enumerate(entries, 1):
+        candidate_hex = str(entry["candidate_hex"])
+        candidate_dir = artifacts_dir / f"candidate_{idx}"
+        candidate_dir.mkdir(parents=True, exist_ok=True)
+        compare_out = candidate_dir / "base64_rc4_breakpoint_probe_compare.json"
+        compare_log = candidate_dir / "base64_rc4_breakpoint_probe_compare.log"
+        command = [
+            sys.executable,
+            str(script_path),
+            "--target",
+            str(target),
+            "--out",
+            str(compare_out),
+            "--points",
+            str(points_path),
+            "--probe-hex",
+            candidate_hex,
+            "--per-probe-timeout",
+            str(per_probe_timeout),
+        ]
+        if log:
+            log(f"Base64RC4BreakpointProbe scripted breakpoints {idx}: {candidate_hex}")
+        proc = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+        )
+        compare_log.write_text(
+            f"[stdout]\n{proc.stdout or ''}\n\n[stderr]\n{proc.stderr or ''}",
+            encoding="utf-8",
+        )
+        compare_payload = _read_json_object(compare_out) if compare_out.exists() else {}
+        hook_events = [
+            dict(item)
+            for item in list(compare_payload.get("hook_events", []))
+            if isinstance(item, dict)
+        ]
+        hook_results = (
+            dict(compare_payload.get("hook_results", {}))
+            if isinstance(compare_payload.get("hook_results"), dict)
+            else {}
+        )
+        construction_hit = any(
+            str(item.get("point_kind", "")) in {"utf16le", "base64", "rc4_ksa", "rc4_prga", "encrypted_const"}
+            for item in hook_events
+        )
+        candidate_results.append(
+            {
+                "label": entry.get("label", f"base64_rc4_breakpoint_probe_{idx}"),
+                "candidate_hex": candidate_hex,
+                "probe_role": entry.get("probe_role", ""),
+                "runtime_backed": bool(hook_events),
+                "construction_hit": construction_hit,
+                "hook_results": hook_results,
+                "hook_events": hook_events[:20],
+                "result_path": str(compare_out),
+                "log_path": str(compare_log),
+                "success": bool(compare_payload.get("success")),
+                "error": str(compare_payload.get("error", "")),
+            }
+        )
+
+    runtime_backed_count = sum(1 for item in candidate_results if bool(item.get("runtime_backed")))
+    construction_hit_count = sum(1 for item in candidate_results if bool(item.get("construction_hit")))
+    hook_results = _aggregate_breakpoint_hook_results(candidate_results)
+    construction_statuses = [
+        hook_results.get(key, "unavailable")
+        for key in ("base64_input", "base64_output", "rc4_key", "rc4_input", "rc4_output")
+    ]
+    hookable_static_points = [
+        point
+        for values in static_points.values()
+        for point in values
+        if isinstance(point, dict) and bool(point.get("hookable"))
+    ]
+    classification = (
+        "breakpoint_probe_complete"
+        if any(value in {"available", "inferred"} for value in construction_statuses)
+        else "breakpoint_probe_partial"
+        if runtime_backed_count or hookable_static_points
+        else "breakpoint_probe_unavailable"
+    )
+    first_expected = dict(entries[0].get("expected_materials", {})) if entries else {}
+    findings = [
+        "scripted breakpoint/access probe captured Base64 or RC4 construction evidence"
+        if construction_hit_count
+        else "scripted breakpoint/access probe did not capture Base64 or RC4 construction evidence",
+        "candidate generation, ranking, final selection, and search budget were unchanged",
+    ]
+    payload.update(
+        {
+            "classification": classification,
+            "runtime_backed_count": runtime_backed_count,
+            "construction_hit_count": construction_hit_count,
+            "hook_results": hook_results,
+            "candidate_results": candidate_results,
+            "rc4_key": {
+                "status": _breakpoint_material_status(hook_results, "rc4_key"),
+                "key_ptr": "",
+                "key_len": None,
+                "key_preview_hex": "",
+                "source_hypothesis": "runtime_constructed" if hook_results.get("rc4_key") in {"available", "inferred"} else "unknown",
+            },
+            "rc4_input": {
+                "status": _breakpoint_material_status(hook_results, "rc4_input"),
+                "input_ptr": "",
+                "input_len": None,
+                "input_preview_hex": "",
+                "input_preview_ascii": "",
+                "matches_offline_base64": None,
+            },
+            "base64_material": {
+                "status": _breakpoint_material_status(hook_results, "base64_input", "base64_output"),
+                "input_preview_hex": "",
+                "output_preview_ascii": "",
+                "alphabet": "standard" if any(point.get("name") == "standard_base64_alphabet" for point in static_points.get("base64", [])) else "unknown",
+                "padding_behavior": "unknown",
+            },
+            "exact2_failure_trace": _breakpoint_exact2_failure_trace(first_expected, hook_results),
+            "findings": findings,
+            "next_bounded_action": (
+                "derive bounded exact3 constraints from captured Base64/RC4 construction evidence"
+                if classification == "breakpoint_probe_complete"
+                else "use manual IDA/x64dbg breakpoints with the recorded static offsets"
+                if hookable_static_points
+                else "use manual IDA/x64dbg to locate Base64/RC4 construction points; current static scan found no hookable offsets"
+            ),
+            "promotable_validations": [],
+        }
+    )
+    _write_json(result_path, payload)
+    if log:
+        log(f"Base64/RC4 breakpoint probe wrote {result_path}")
+    return {
+        "result_path": str(result_path),
+        "payload": payload,
+        "validations": candidate_results,
+        "promotable_validations": [],
     }
 
 
@@ -9308,6 +9763,8 @@ class CompareAwareSearchStrategy(SolverStrategy):
         dynamic_compare_path_probe_artifact: ToolRunArtifact | None = None
         pre_rc4_material_probe_run: dict[str, object] | None = None
         pre_rc4_material_probe_artifact: ToolRunArtifact | None = None
+        base64_rc4_breakpoint_probe_run: dict[str, object] | None = None
+        base64_rc4_breakpoint_probe_artifact: ToolRunArtifact | None = None
         h1_h3_boundary_validation_run: dict[str, object] | None = None
         h1_h3_boundary_validation_artifact: ToolRunArtifact | None = None
         h1_h3_boundary_runtime_artifact: ToolRunArtifact | None = None
@@ -9667,7 +10124,7 @@ class CompareAwareSearchStrategy(SolverStrategy):
                 and str(dynamic_probe_points.get("pre_rc4_runtime_material", "")) == "unavailable"
             )
             or _prior_dynamic_probe_needs_pre_rc4()
-        )
+        ) and not _prior_pre_rc4_probe_needs_breakpoint()
         if should_run_pre_rc4_probe:
             pre_rc4_material_probe_run = run_pre_rc4_material_probe(
                 target=file_path,
@@ -9689,6 +10146,35 @@ class CompareAwareSearchStrategy(SolverStrategy):
                 strategy_name=self.name,
                 evidence_kind="RuntimeCompareEvidence",
                 payload=pre_rc4_payload,
+                derived_entries=[],
+            )
+
+        pre_rc4_payload = dict(pre_rc4_material_probe_run.get("payload", {})) if pre_rc4_material_probe_run else {}
+        should_run_base64_rc4_breakpoint_probe = (
+            str(pre_rc4_payload.get("classification", "")) == "pre_rc4_probe_unavailable"
+            or _prior_pre_rc4_probe_needs_breakpoint()
+        )
+        if should_run_base64_rc4_breakpoint_probe:
+            base64_rc4_breakpoint_probe_run = run_base64_rc4_breakpoint_probe(
+                target=file_path,
+                artifacts_dir=artifacts_dir / "base64_rc4_breakpoint_probe",
+                transform_model=transform_model,
+                per_probe_timeout=per_probe_timeout,
+                log=log,
+            )
+            base64_rc4_payload = dict(base64_rc4_breakpoint_probe_run.get("payload", {}))
+            base64_rc4_breakpoint_probe_artifact = _make_search_artifact(
+                tool_name="Base64RC4BreakpointProbe",
+                output_path=Path(str(base64_rc4_breakpoint_probe_run["result_path"])),
+                summary=str(
+                    base64_rc4_payload.get(
+                        "classification",
+                        "Base64/RC4 breakpoint probe complete",
+                    )
+                ),
+                strategy_name=self.name,
+                evidence_kind="RuntimeCompareEvidence",
+                payload=base64_rc4_payload,
                 derived_entries=[],
             )
 
@@ -9777,6 +10263,8 @@ class CompareAwareSearchStrategy(SolverStrategy):
             artifacts.append(dynamic_compare_path_probe_artifact)
         if pre_rc4_material_probe_artifact is not None:
             artifacts.append(pre_rc4_material_probe_artifact)
+        if base64_rc4_breakpoint_probe_artifact is not None:
+            artifacts.append(base64_rc4_breakpoint_probe_artifact)
         if h1_h3_boundary_validation_artifact is not None:
             artifacts.append(h1_h3_boundary_validation_artifact)
         if h1_h3_boundary_runtime_artifact is not None:
@@ -9807,12 +10295,15 @@ class CompareAwareSearchStrategy(SolverStrategy):
                 "transform_trace_consistency": transform_trace_consistency_run or {},
                 "dynamic_compare_path_probe": dynamic_compare_path_probe_run or {},
                 "pre_rc4_material_probe": pre_rc4_material_probe_run or {},
+                "base64_rc4_breakpoint_probe": base64_rc4_breakpoint_probe_run or {},
                 "h1_h3_boundary_validation": h1_h3_boundary_validation_run or {},
                 "prefix_boundary_diagnostics": prefix_boundary_diagnostics,
                 "frontier_converged_reason": frontier_converged_reason,
                 "frontier_stall_stage": frontier_stall_stage,
                 "completed_stage": "h1_h3_boundary_validation"
                 if h1_h3_boundary_validation_run
+                else "base64_rc4_breakpoint_probe"
+                if base64_rc4_breakpoint_probe_run
                 else "pre_rc4_material_probe"
                 if pre_rc4_material_probe_run
                 else "dynamic_compare_path_probe"

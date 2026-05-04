@@ -56,11 +56,11 @@
     "severity": "soft_block"
   },
   {
-    "direction": "memory-scan lower-level pre-RC4/key material probe with current automatic harness",
+    "direction": "scripted Base64/RC4 breakpoint probe with current static access points",
     "do_not_repeat": true,
     "override_allowed": true,
     "override_reason_required": true,
-    "reason": "current memory-scan lower-level probe did not capture pre-RC4/Base64/RC4 key material; next evidence source should be IDA/x64dbg manual breakpoints around Base64/RC4 construction",
+    "reason": "scripted breakpoint/access probe did not capture Base64 or RC4 construction material; next evidence source should be manual IDA/x64dbg breakpoints with explicit addresses",
     "severity": "soft_block"
   }
 ]

@@ -10,6 +10,7 @@ from reverse_agent.samplereverse_z3 import _optimize_ready, solve_targeted_prefi
 from reverse_agent.strategies import compare_aware_search
 from reverse_agent.strategies.base import StrategyResult
 from reverse_agent.strategies.compare_aware_search import (
+    BASE64_RC4_BREAKPOINT_PROBE_FILE_NAME,
     BRIDGE_RESULT_FILE_NAME,
     CompareAwareSearchStrategy,
     DYNAMIC_COMPARE_PATH_PROBE_FILE_NAME,
@@ -49,6 +50,7 @@ from reverse_agent.strategies.compare_aware_search import (
     _select_smt_base_entry,
     _validated_projected_preserve_second_hop_candidates,
     run_compare_aware_smt,
+    run_base64_rc4_breakpoint_probe,
     run_dynamic_compare_path_probe,
     run_exact2_basin_value_pool_evaluation,
     run_h1_h3_boundary_validation,
@@ -776,6 +778,7 @@ def test_compare_aware_strategy_runs_refine_then_smt_and_uses_promoted_anchors(
         "transform_trace_consistency",
         "dynamic_compare_path_probe",
         "pre_rc4_material_probe",
+        "base64_rc4_breakpoint_probe",
         "h1_h3_boundary_validation",
     }
     assert result.metadata["smt"]["payload"]["exact2_basin_smt"]["base_anchor"] == "78d540b49c590770"
@@ -3526,6 +3529,192 @@ def test_pre_rc4_material_probe_exact2_failure_trace_has_offsets_and_dependencie
     assert failure["encrypted_const_bytes"]
     assert failure["keystream_bytes"]
     assert "candidate_byte_dependencies" in failure["base64_key_dependency"]
+
+
+def _fake_base64_rc4_static_points(target: Path) -> dict[str, list[dict[str, object]]]:
+    _ = target
+    return {
+        "utf16le": [
+            {
+                "kind": "utf16le",
+                "name": "utf16le_unresolved",
+                "address": "",
+                "module_offset": None,
+                "confidence": "low",
+                "evidence": ["not located"],
+                "hook_kind": "memory_access",
+                "hookable": False,
+                "size": 1,
+            }
+        ],
+        "base64": [
+            {
+                "kind": "base64",
+                "name": "standard_base64_alphabet",
+                "address": "module+0x3000",
+                "module_offset": 0x3000,
+                "confidence": "high",
+                "evidence": ["standard alphabet"],
+                "hook_kind": "memory_access",
+                "hookable": True,
+                "size": 64,
+            }
+        ],
+        "rc4_ksa": [],
+        "rc4_prga": [],
+        "encrypted_const": [
+            {
+                "kind": "encrypted_const",
+                "name": "modeled_rc4_encrypted_const",
+                "address": "module+0x4000",
+                "module_offset": 0x4000,
+                "confidence": "high",
+                "evidence": ["const prefix"],
+                "hook_kind": "memory_access",
+                "hookable": True,
+                "size": 64,
+            }
+        ],
+    }
+
+
+def _fake_base64_rc4_subprocess_run(*args, **kwargs):  # noqa: ANN002, ANN003
+    command = list(args[0])
+    out_path = Path(command[command.index("--out") + 1])
+    points_path = Path(command[command.index("--points") + 1])
+    points_payload = json.loads(points_path.read_text(encoding="utf-8"))
+    assert "base64" in points_payload["static_points"]
+    out_path.write_text(
+        json.dumps(
+            {
+                "success": True,
+                "summary": "breakpoint ok",
+                "candidate_hex": command[command.index("--probe-hex") + 1],
+                "static_points": points_payload["static_points"],
+                "hook_events": [
+                    {
+                        "point_kind": "base64",
+                        "point_name": "standard_base64_alphabet",
+                        "hook_kind": "memory_access",
+                        "address": "0x403000",
+                        "module_offset": "0x3000",
+                        "operation": "read",
+                        "from": "0x401234",
+                        "hit_count": 1,
+                        "buffer_preview_hex": "41424344",
+                        "buffer_preview_ascii": "ABCD",
+                    },
+                    {
+                        "point_kind": "compare",
+                        "point_name": "wide_flag_prefix_compare",
+                        "hook_kind": "interceptor",
+                        "address": "0x40258c",
+                        "module_offset": "0x258c",
+                        "hit_count": 1,
+                        "lhs_ptr": "0x1000",
+                        "rhs_ptr": "0x2000",
+                        "compare_count": 5,
+                    },
+                ],
+                "hook_results": {
+                    "utf16le_payload": "unavailable",
+                    "base64_input": "inferred",
+                    "base64_output": "inferred",
+                    "rc4_key": "unavailable",
+                    "rc4_input": "unavailable",
+                    "rc4_output": "unavailable",
+                    "compare_buffer": "available",
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    class _Proc:
+        returncode = 0
+        stdout = ""
+        stderr = ""
+
+    return _Proc()
+
+
+def test_base64_rc4_breakpoint_probe_has_bounded_candidate_count_and_schema(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    target = tmp_path / "samplereverse.exe"
+    target.write_bytes(b"MZ")
+    monkeypatch.setattr(compare_aware_search, "_base64_rc4_static_points", _fake_base64_rc4_static_points)
+    monkeypatch.setattr(compare_aware_search.subprocess, "run", _fake_base64_rc4_subprocess_run)
+
+    result = run_base64_rc4_breakpoint_probe(
+        target=target,
+        artifacts_dir=tmp_path / "base64_rc4_breakpoint_probe",
+        transform_model=SamplereverseTransformModel(),
+        per_probe_timeout=0.5,
+        log=lambda _: None,
+    )
+
+    payload = result["payload"]
+    assert Path(result["result_path"]).name == BASE64_RC4_BREAKPOINT_PROBE_FILE_NAME
+    assert payload["candidate_count"] == 3
+    assert payload["candidate_limit"] == 3
+    assert payload["classification"] == "breakpoint_probe_complete"
+    assert payload["static_points"]["base64"][0]["name"] == "standard_base64_alphabet"
+    assert payload["hook_results"]["base64_input"] == "inferred"
+    assert payload["hook_results"]["compare_buffer"] == "available"
+
+
+def test_base64_rc4_breakpoint_probe_does_not_expand_search_or_promote(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    target = tmp_path / "samplereverse.exe"
+    target.write_bytes(b"MZ")
+    monkeypatch.setattr(compare_aware_search, "_base64_rc4_static_points", _fake_base64_rc4_static_points)
+    monkeypatch.setattr(compare_aware_search.subprocess, "run", _fake_base64_rc4_subprocess_run)
+
+    result = run_base64_rc4_breakpoint_probe(
+        target=target,
+        artifacts_dir=tmp_path / "base64_rc4_breakpoint_probe",
+        transform_model=SamplereverseTransformModel(),
+        per_probe_timeout=0.5,
+        log=lambda _: None,
+    )
+
+    payload = result["payload"]
+    assert payload["candidate_generation_changed"] is False
+    assert payload["ranking_changed"] is False
+    assert payload["final_selection_changed"] is False
+    assert payload["beam_budget_topn_timeout_frontier_limit_expanded"] is False
+    assert payload["promotable_validations"] == []
+    assert result["promotable_validations"] == []
+
+
+def test_base64_rc4_breakpoint_probe_records_exact2_failure_trace(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    target = tmp_path / "samplereverse.exe"
+    target.write_bytes(b"MZ")
+    monkeypatch.setattr(compare_aware_search, "_base64_rc4_static_points", _fake_base64_rc4_static_points)
+    monkeypatch.setattr(compare_aware_search.subprocess, "run", _fake_base64_rc4_subprocess_run)
+
+    result = run_base64_rc4_breakpoint_probe(
+        target=target,
+        artifacts_dir=tmp_path / "base64_rc4_breakpoint_probe",
+        transform_model=SamplereverseTransformModel(),
+        per_probe_timeout=0.5,
+        log=lambda _: None,
+    )
+
+    failure = result["payload"]["exact2_failure_trace"]
+    assert failure["wchar_index"] == 2
+    assert failure["runtime_word"] == "4464"
+    assert failure["target_word"] == "6100"
+    assert failure["encrypted_const_bytes"] == "8f3b"
+    assert failure["keystream_bytes"] == "cb5f"
+    assert "bounded_constraint" in failure
 
 
 def test_h1_h3_boundary_validation_runtime_validates_fixed_contrast_set(

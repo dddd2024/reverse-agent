@@ -164,6 +164,56 @@ def test_project_state_indexes_pre_rc4_material_probe_and_negative_result(tmp_pa
     assert any("memory-scan lower-level pre-RC4" in item["direction"] for item in negative_results)
 
 
+def test_project_state_indexes_base64_rc4_breakpoint_probe_and_bottleneck(tmp_path: Path) -> None:
+    reports_dir = tmp_path / "solve_reports"
+    state_dir = tmp_path / "project_state"
+    run_dir = _make_minimal_harness_run(reports_dir, run_name="samplereverse_breakpoint")
+    artifacts_dir = run_dir / "reports" / "tool_artifacts" / "samplereverse"
+    _write_json(
+        artifacts_dir / "base64_rc4_breakpoint_probe" / "base64_rc4_breakpoint_probe.json",
+        {
+            "artifact_kind": "base64_rc4_breakpoint_probe",
+            "classification": "breakpoint_probe_partial",
+            "runtime_backed_count": 3,
+            "candidate_count": 3,
+            "static_points": {
+                "base64": [
+                    {
+                        "kind": "base64",
+                        "name": "standard_base64_alphabet",
+                        "module_offset": 0x3000,
+                        "confidence": "high",
+                    }
+                ],
+            },
+            "hook_results": {
+                "base64_input": "unavailable",
+                "base64_output": "unavailable",
+                "rc4_key": "unavailable",
+                "rc4_input": "unavailable",
+                "rc4_output": "unavailable",
+                "compare_buffer": "available",
+            },
+            "rc4_key": {"status": "unknown"},
+            "rc4_input": {"status": "unknown"},
+            "base64_material": {"status": "unknown"},
+            "next_bounded_action": "manual breakpoints",
+        },
+    )
+
+    build_project_state(reports_dir=reports_dir, state_dir=state_dir, sample="samplereverse")
+
+    artifact_index = _read_json(state_dir / "artifact_index.json")
+    current_state = _read_json(state_dir / "current_state.json")
+    negative_results = _read_json(state_dir / "negative_results.json")
+    assert artifact_index["latest_artifacts"]["base64_rc4_breakpoint_probe"].endswith(
+        "base64_rc4_breakpoint_probe.json"
+    )
+    assert current_state["current_bottleneck"]["stage"] == "base64_rc4_breakpoint_probe"
+    assert current_state["latest_base64_rc4_breakpoint_probe"]["classification"] == "breakpoint_probe_partial"
+    assert any("scripted Base64/RC4 breakpoint probe" in item["direction"] for item in negative_results)
+
+
 def test_build_generates_state_files_and_artifact_index(tmp_path: Path) -> None:
     reports_dir = tmp_path / "solve_reports"
     state_dir = tmp_path / "project_state"

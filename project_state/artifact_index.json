@@ -1,154 +1,155 @@
 {
-  "generated_at": "2026-05-04T13:00:06Z",
+  "generated_at": "2026-05-04T13:55:43Z",
   "latest_artifacts": {
-    "bridge_search_result": "solve_reports\\harness_runs\\samplereverse_pre_rc4_material_probe_20260504_rerun\\reports\\tool_artifacts\\samplereverse\\bridge\\bridge_search_result.json",
-    "bridge_validation": "solve_reports\\harness_runs\\samplereverse_pre_rc4_material_probe_20260504_rerun\\reports\\tool_artifacts\\samplereverse\\bridge\\bridge_validation\\bridge_validation.json",
+    "base64_rc4_breakpoint_probe": "solve_reports\\harness_runs\\samplereverse_base64_rc4_breakpoint_probe_20260504\\reports\\tool_artifacts\\samplereverse\\base64_rc4_breakpoint_probe\\base64_rc4_breakpoint_probe.json",
+    "bridge_search_result": "solve_reports\\harness_runs\\samplereverse_base64_rc4_breakpoint_probe_20260504\\reports\\tool_artifacts\\samplereverse\\bridge\\bridge_search_result.json",
+    "bridge_validation": "solve_reports\\harness_runs\\samplereverse_base64_rc4_breakpoint_probe_20260504\\reports\\tool_artifacts\\samplereverse\\bridge\\bridge_validation\\bridge_validation.json",
     "checkpoint": "solve_reports\\tool_artifacts\\samplereverse_optimizer_smoke\\samplereverse_search_checkpoint.json",
-    "compare_aware_result": "solve_reports\\harness_runs\\samplereverse_pre_rc4_material_probe_20260504_rerun\\reports\\tool_artifacts\\samplereverse\\frontier_refine_2\\samplereverse_compare_aware_result.json",
-    "compare_probe": "solve_reports\\harness_runs\\samplereverse_pre_rc4_material_probe_20260504_rerun\\reports\\tool_artifacts\\samplereverse\\samplereverse_compare_probe.json",
-    "compare_probe_log": "solve_reports\\harness_runs\\samplereverse_pre_rc4_material_probe_20260504_rerun\\reports\\tool_artifacts\\samplereverse\\samplereverse_compare_probe.log",
+    "compare_aware_result": "solve_reports\\harness_runs\\samplereverse_base64_rc4_breakpoint_probe_20260504\\reports\\tool_artifacts\\samplereverse\\frontier_refine_2\\samplereverse_compare_aware_result.json",
+    "compare_probe": "solve_reports\\harness_runs\\samplereverse_base64_rc4_breakpoint_probe_20260504\\reports\\tool_artifacts\\samplereverse\\samplereverse_compare_probe.json",
+    "compare_probe_log": "solve_reports\\harness_runs\\samplereverse_base64_rc4_breakpoint_probe_20260504\\reports\\tool_artifacts\\samplereverse\\samplereverse_compare_probe.log",
     "dynamic_compare_path_probe": null,
-    "exact2_basin_value_pool_result": "solve_reports\\harness_runs\\samplereverse_pre_rc4_material_probe_20260504_rerun\\reports\\tool_artifacts\\samplereverse\\exact2_basin_value_pool\\samplereverse_exact2_basin_value_pool_result.json",
-    "exact2_basin_value_pool_validation": "solve_reports\\harness_runs\\samplereverse_pre_rc4_material_probe_20260504_rerun\\reports\\tool_artifacts\\samplereverse\\exact2_basin_value_pool\\value_pool_validation\\samplereverse_exact2_basin_value_pool_validation.json",
-    "frontier_summary": "solve_reports\\harness_runs\\samplereverse_pre_rc4_material_probe_20260504_rerun\\reports\\tool_artifacts\\samplereverse\\samplereverse_compare_aware_frontier_summary.json",
-    "guided_pool_result": "solve_reports\\harness_runs\\samplereverse_pre_rc4_material_probe_20260504_rerun\\reports\\tool_artifacts\\samplereverse\\frontier_guided_2_5a3f7f46ddd474d0\\samplereverse_compare_aware_guided_pool_result.json",
-    "guided_pool_validation": "solve_reports\\harness_runs\\samplereverse_pre_rc4_material_probe_20260504_rerun\\reports\\tool_artifacts\\samplereverse\\frontier_guided_2_5a3f7f46ddd474d0\\guided_pool_validation\\samplereverse_compare_aware_guided_pool_validation.json",
+    "exact2_basin_value_pool_result": "solve_reports\\harness_runs\\samplereverse_base64_rc4_breakpoint_probe_20260504\\reports\\tool_artifacts\\samplereverse\\exact2_basin_value_pool\\samplereverse_exact2_basin_value_pool_result.json",
+    "exact2_basin_value_pool_validation": "solve_reports\\harness_runs\\samplereverse_base64_rc4_breakpoint_probe_20260504\\reports\\tool_artifacts\\samplereverse\\exact2_basin_value_pool\\value_pool_validation\\samplereverse_exact2_basin_value_pool_validation.json",
+    "frontier_summary": "solve_reports\\harness_runs\\samplereverse_base64_rc4_breakpoint_probe_20260504\\reports\\tool_artifacts\\samplereverse\\samplereverse_compare_aware_frontier_summary.json",
+    "guided_pool_result": "solve_reports\\harness_runs\\samplereverse_base64_rc4_breakpoint_probe_20260504\\reports\\tool_artifacts\\samplereverse\\frontier_guided_2_5a3f7f46ddd474d0\\samplereverse_compare_aware_guided_pool_result.json",
+    "guided_pool_validation": "solve_reports\\harness_runs\\samplereverse_base64_rc4_breakpoint_probe_20260504\\reports\\tool_artifacts\\samplereverse\\frontier_guided_2_5a3f7f46ddd474d0\\guided_pool_validation\\samplereverse_compare_aware_guided_pool_validation.json",
     "h1_h3_boundary_validation": null,
-    "pairscan_summary": "solve_reports\\harness_runs\\samplereverse_pre_rc4_material_probe_20260504_rerun\\reports\\tool_artifacts\\samplereverse\\bridge\\pairscan_summary.json",
-    "pre_rc4_material_probe": "solve_reports\\harness_runs\\samplereverse_pre_rc4_material_probe_20260504_rerun\\reports\\tool_artifacts\\samplereverse\\pre_rc4_material_probe\\pre_rc4_material_probe.json",
-    "profile_transform_hypothesis_matrix": "solve_reports\\harness_runs\\samplereverse_pre_rc4_material_probe_20260504_rerun\\reports\\tool_artifacts\\samplereverse\\profile_transform_hypothesis_matrix.json",
-    "run_manifest": "solve_reports\\harness_runs\\samplereverse_pre_rc4_material_probe_20260504_rerun\\run_manifest.json",
-    "smt_result": "solve_reports\\harness_runs\\samplereverse_pre_rc4_material_probe_20260504_rerun\\reports\\tool_artifacts\\samplereverse\\smt\\samplereverse_compare_aware_smt_result.json",
+    "pairscan_summary": "solve_reports\\harness_runs\\samplereverse_base64_rc4_breakpoint_probe_20260504\\reports\\tool_artifacts\\samplereverse\\bridge\\pairscan_summary.json",
+    "pre_rc4_material_probe": null,
+    "profile_transform_hypothesis_matrix": "solve_reports\\harness_runs\\samplereverse_base64_rc4_breakpoint_probe_20260504\\reports\\tool_artifacts\\samplereverse\\profile_transform_hypothesis_matrix.json",
+    "run_manifest": "solve_reports\\harness_runs\\samplereverse_base64_rc4_breakpoint_probe_20260504\\run_manifest.json",
+    "smt_result": "solve_reports\\harness_runs\\samplereverse_base64_rc4_breakpoint_probe_20260504\\reports\\tool_artifacts\\samplereverse\\smt\\samplereverse_compare_aware_smt_result.json",
     "smt_validation": null,
-    "strata_summary": "solve_reports\\harness_runs\\samplereverse_pre_rc4_material_probe_20260504_rerun\\reports\\tool_artifacts\\samplereverse\\samplereverse_compare_aware_strata_summary.json",
-    "summary": "solve_reports\\harness_runs\\samplereverse_pre_rc4_material_probe_20260504_rerun\\summary.json",
-    "transform_trace_consistency": "solve_reports\\harness_runs\\samplereverse_pre_rc4_material_probe_20260504_rerun\\reports\\tool_artifacts\\samplereverse\\transform_trace_consistency\\transform_trace_consistency.json"
+    "strata_summary": "solve_reports\\harness_runs\\samplereverse_base64_rc4_breakpoint_probe_20260504\\reports\\tool_artifacts\\samplereverse\\samplereverse_compare_aware_strata_summary.json",
+    "summary": "solve_reports\\harness_runs\\samplereverse_base64_rc4_breakpoint_probe_20260504\\summary.json",
+    "transform_trace_consistency": "solve_reports\\harness_runs\\samplereverse_base64_rc4_breakpoint_probe_20260504\\reports\\tool_artifacts\\samplereverse\\transform_trace_consistency\\transform_trace_consistency.json"
   },
   "latest_case_results": [
-    "solve_reports\\harness_runs\\samplereverse_pre_rc4_material_probe_20260504_rerun\\case_results\\samplereverse-exact1-projected-vs-neighbor.json"
+    "solve_reports\\harness_runs\\samplereverse_base64_rc4_breakpoint_probe_20260504\\case_results\\samplereverse-exact1-projected-vs-neighbor.json"
   ],
-  "latest_harness_run": "solve_reports\\harness_runs\\samplereverse_pre_rc4_material_probe_20260504_rerun",
-  "latest_summary": "solve_reports\\harness_runs\\samplereverse_pre_rc4_material_probe_20260504_rerun\\summary.json",
+  "latest_harness_run": "solve_reports\\harness_runs\\samplereverse_base64_rc4_breakpoint_probe_20260504",
+  "latest_summary": "solve_reports\\harness_runs\\samplereverse_base64_rc4_breakpoint_probe_20260504\\summary.json",
   "missing": [],
   "recent_artifacts": [
     {
       "kind": "summary",
-      "modified_at": "2026-05-04T12:59:53Z",
-      "path": "solve_reports\\harness_runs\\samplereverse_pre_rc4_material_probe_20260504_rerun\\summary.json",
-      "size_bytes": 1000
+      "modified_at": "2026-05-04T13:54:32Z",
+      "path": "solve_reports\\harness_runs\\samplereverse_base64_rc4_breakpoint_probe_20260504\\summary.json",
+      "size_bytes": 995
     },
     {
       "kind": "run_manifest",
-      "modified_at": "2026-05-04T12:59:53Z",
-      "path": "solve_reports\\harness_runs\\samplereverse_pre_rc4_material_probe_20260504_rerun\\run_manifest.json",
-      "size_bytes": 2159
+      "modified_at": "2026-05-04T13:54:32Z",
+      "path": "solve_reports\\harness_runs\\samplereverse_base64_rc4_breakpoint_probe_20260504\\run_manifest.json",
+      "size_bytes": 2156
     },
     {
-      "kind": "pre_rc4_material_probe",
-      "modified_at": "2026-05-04T12:58:11Z",
-      "path": "solve_reports\\harness_runs\\samplereverse_pre_rc4_material_probe_20260504_rerun\\reports\\tool_artifacts\\samplereverse\\pre_rc4_material_probe\\pre_rc4_material_probe.json",
-      "size_bytes": 60290
+      "kind": "base64_rc4_breakpoint_probe",
+      "modified_at": "2026-05-04T13:50:35Z",
+      "path": "solve_reports\\harness_runs\\samplereverse_base64_rc4_breakpoint_probe_20260504\\reports\\tool_artifacts\\samplereverse\\base64_rc4_breakpoint_probe\\base64_rc4_breakpoint_probe.json",
+      "size_bytes": 58357
     },
     {
       "kind": "profile_transform_hypothesis_matrix",
-      "modified_at": "2026-05-04T12:58:03Z",
-      "path": "solve_reports\\harness_runs\\samplereverse_pre_rc4_material_probe_20260504_rerun\\reports\\tool_artifacts\\samplereverse\\profile_transform_hypothesis_matrix.json",
-      "size_bytes": 107661
+      "modified_at": "2026-05-04T13:50:21Z",
+      "path": "solve_reports\\harness_runs\\samplereverse_base64_rc4_breakpoint_probe_20260504\\reports\\tool_artifacts\\samplereverse\\profile_transform_hypothesis_matrix.json",
+      "size_bytes": 107639
     },
     {
       "kind": "exact2_basin_value_pool_result",
-      "modified_at": "2026-05-04T12:58:03Z",
-      "path": "solve_reports\\harness_runs\\samplereverse_pre_rc4_material_probe_20260504_rerun\\reports\\tool_artifacts\\samplereverse\\exact2_basin_value_pool\\samplereverse_exact2_basin_value_pool_result.json",
-      "size_bytes": 123514
+      "modified_at": "2026-05-04T13:50:21Z",
+      "path": "solve_reports\\harness_runs\\samplereverse_base64_rc4_breakpoint_probe_20260504\\reports\\tool_artifacts\\samplereverse\\exact2_basin_value_pool\\samplereverse_exact2_basin_value_pool_result.json",
+      "size_bytes": 123475
     },
     {
       "kind": "transform_trace_consistency",
-      "modified_at": "2026-05-04T12:58:03Z",
-      "path": "solve_reports\\harness_runs\\samplereverse_pre_rc4_material_probe_20260504_rerun\\reports\\tool_artifacts\\samplereverse\\transform_trace_consistency\\transform_trace_consistency.json",
-      "size_bytes": 60791
+      "modified_at": "2026-05-04T13:50:21Z",
+      "path": "solve_reports\\harness_runs\\samplereverse_base64_rc4_breakpoint_probe_20260504\\reports\\tool_artifacts\\samplereverse\\transform_trace_consistency\\transform_trace_consistency.json",
+      "size_bytes": 60787
     },
     {
       "kind": "exact2_basin_value_pool_validation",
-      "modified_at": "2026-05-04T12:58:03Z",
-      "path": "solve_reports\\harness_runs\\samplereverse_pre_rc4_material_probe_20260504_rerun\\reports\\tool_artifacts\\samplereverse\\exact2_basin_value_pool\\value_pool_validation\\samplereverse_exact2_basin_value_pool_validation.json",
-      "size_bytes": 94792
+      "modified_at": "2026-05-04T13:50:21Z",
+      "path": "solve_reports\\harness_runs\\samplereverse_base64_rc4_breakpoint_probe_20260504\\reports\\tool_artifacts\\samplereverse\\exact2_basin_value_pool\\value_pool_validation\\samplereverse_exact2_basin_value_pool_validation.json",
+      "size_bytes": 94755
     },
     {
       "kind": "smt_result",
-      "modified_at": "2026-05-04T12:57:18Z",
-      "path": "solve_reports\\harness_runs\\samplereverse_pre_rc4_material_probe_20260504_rerun\\reports\\tool_artifacts\\samplereverse\\smt\\samplereverse_compare_aware_smt_result.json",
-      "size_bytes": 8452
+      "modified_at": "2026-05-04T13:49:35Z",
+      "path": "solve_reports\\harness_runs\\samplereverse_base64_rc4_breakpoint_probe_20260504\\reports\\tool_artifacts\\samplereverse\\smt\\samplereverse_compare_aware_smt_result.json",
+      "size_bytes": 8451
     },
     {
       "kind": "smt_result",
-      "modified_at": "2026-05-04T12:57:18Z",
-      "path": "solve_reports\\harness_runs\\samplereverse_pre_rc4_material_probe_20260504_rerun\\reports\\tool_artifacts\\samplereverse\\smt_exact2_basin\\samplereverse_compare_aware_smt_result.json",
-      "size_bytes": 8411
+      "modified_at": "2026-05-04T13:49:35Z",
+      "path": "solve_reports\\harness_runs\\samplereverse_base64_rc4_breakpoint_probe_20260504\\reports\\tool_artifacts\\samplereverse\\smt_exact2_basin\\samplereverse_compare_aware_smt_result.json",
+      "size_bytes": 8410
     },
     {
       "kind": "frontier_summary",
-      "modified_at": "2026-05-04T12:57:05Z",
-      "path": "solve_reports\\harness_runs\\samplereverse_pre_rc4_material_probe_20260504_rerun\\reports\\tool_artifacts\\samplereverse\\samplereverse_compare_aware_frontier_summary.json",
-      "size_bytes": 682113
+      "modified_at": "2026-05-04T13:49:29Z",
+      "path": "solve_reports\\harness_runs\\samplereverse_base64_rc4_breakpoint_probe_20260504\\reports\\tool_artifacts\\samplereverse\\samplereverse_compare_aware_frontier_summary.json",
+      "size_bytes": 682055
     },
     {
       "kind": "strata_summary",
-      "modified_at": "2026-05-04T12:57:05Z",
-      "path": "solve_reports\\harness_runs\\samplereverse_pre_rc4_material_probe_20260504_rerun\\reports\\tool_artifacts\\samplereverse\\samplereverse_compare_aware_strata_summary.json",
-      "size_bytes": 78054
+      "modified_at": "2026-05-04T13:49:29Z",
+      "path": "solve_reports\\harness_runs\\samplereverse_base64_rc4_breakpoint_probe_20260504\\reports\\tool_artifacts\\samplereverse\\samplereverse_compare_aware_strata_summary.json",
+      "size_bytes": 78049
     },
     {
       "kind": "compare_aware_result",
-      "modified_at": "2026-05-04T12:56:45Z",
-      "path": "solve_reports\\harness_runs\\samplereverse_pre_rc4_material_probe_20260504_rerun\\reports\\tool_artifacts\\samplereverse\\frontier_refine_2\\samplereverse_compare_aware_result.json",
+      "modified_at": "2026-05-04T13:49:09Z",
+      "path": "solve_reports\\harness_runs\\samplereverse_base64_rc4_breakpoint_probe_20260504\\reports\\tool_artifacts\\samplereverse\\frontier_refine_2\\samplereverse_compare_aware_result.json",
       "size_bytes": 25001
     },
     {
       "kind": "guided_pool_validation",
-      "modified_at": "2026-05-04T12:53:52Z",
-      "path": "solve_reports\\harness_runs\\samplereverse_pre_rc4_material_probe_20260504_rerun\\reports\\tool_artifacts\\samplereverse\\frontier_guided_2_5a3f7f46ddd474d0\\guided_pool_validation\\samplereverse_compare_aware_guided_pool_validation.json",
-      "size_bytes": 42970
+      "modified_at": "2026-05-04T13:47:05Z",
+      "path": "solve_reports\\harness_runs\\samplereverse_base64_rc4_breakpoint_probe_20260504\\reports\\tool_artifacts\\samplereverse\\frontier_guided_2_5a3f7f46ddd474d0\\guided_pool_validation\\samplereverse_compare_aware_guided_pool_validation.json",
+      "size_bytes": 42953
     },
     {
       "kind": "guided_pool_result",
-      "modified_at": "2026-05-04T12:53:31Z",
-      "path": "solve_reports\\harness_runs\\samplereverse_pre_rc4_material_probe_20260504_rerun\\reports\\tool_artifacts\\samplereverse\\frontier_guided_2_5a3f7f46ddd474d0\\samplereverse_compare_aware_guided_pool_result.json",
+      "modified_at": "2026-05-04T13:46:44Z",
+      "path": "solve_reports\\harness_runs\\samplereverse_base64_rc4_breakpoint_probe_20260504\\reports\\tool_artifacts\\samplereverse\\frontier_guided_2_5a3f7f46ddd474d0\\samplereverse_compare_aware_guided_pool_result.json",
       "size_bytes": 922514
     },
     {
       "kind": "compare_aware_result",
-      "modified_at": "2026-05-04T12:53:09Z",
-      "path": "solve_reports\\harness_runs\\samplereverse_pre_rc4_material_probe_20260504_rerun\\reports\\tool_artifacts\\samplereverse\\frontier_refine_1\\samplereverse_compare_aware_result.json",
+      "modified_at": "2026-05-04T13:46:22Z",
+      "path": "solve_reports\\harness_runs\\samplereverse_base64_rc4_breakpoint_probe_20260504\\reports\\tool_artifacts\\samplereverse\\frontier_refine_1\\samplereverse_compare_aware_result.json",
       "size_bytes": 24749
     },
     {
       "kind": "guided_pool_validation",
-      "modified_at": "2026-05-04T12:50:18Z",
-      "path": "solve_reports\\harness_runs\\samplereverse_pre_rc4_material_probe_20260504_rerun\\reports\\tool_artifacts\\samplereverse\\frontier_guided_1_5a3e7f46ddd474d0\\guided_pool_validation\\samplereverse_compare_aware_guided_pool_validation.json",
-      "size_bytes": 41989
+      "modified_at": "2026-05-04T13:43:38Z",
+      "path": "solve_reports\\harness_runs\\samplereverse_base64_rc4_breakpoint_probe_20260504\\reports\\tool_artifacts\\samplereverse\\frontier_guided_1_5a3e7f46ddd474d0\\guided_pool_validation\\samplereverse_compare_aware_guided_pool_validation.json",
+      "size_bytes": 41972
     },
     {
       "kind": "guided_pool_result",
-      "modified_at": "2026-05-04T12:49:57Z",
-      "path": "solve_reports\\harness_runs\\samplereverse_pre_rc4_material_probe_20260504_rerun\\reports\\tool_artifacts\\samplereverse\\frontier_guided_1_5a3e7f46ddd474d0\\samplereverse_compare_aware_guided_pool_result.json",
+      "modified_at": "2026-05-04T13:43:17Z",
+      "path": "solve_reports\\harness_runs\\samplereverse_base64_rc4_breakpoint_probe_20260504\\reports\\tool_artifacts\\samplereverse\\frontier_guided_1_5a3e7f46ddd474d0\\samplereverse_compare_aware_guided_pool_result.json",
       "size_bytes": 1028799
     },
     {
       "kind": "compare_aware_result",
-      "modified_at": "2026-05-04T12:49:35Z",
-      "path": "solve_reports\\harness_runs\\samplereverse_pre_rc4_material_probe_20260504_rerun\\reports\\tool_artifacts\\samplereverse\\samplereverse_compare_aware_result.json",
+      "modified_at": "2026-05-04T13:42:55Z",
+      "path": "solve_reports\\harness_runs\\samplereverse_base64_rc4_breakpoint_probe_20260504\\reports\\tool_artifacts\\samplereverse\\samplereverse_compare_aware_result.json",
       "size_bytes": 23144
     },
     {
       "kind": "guided_pool_validation",
-      "modified_at": "2026-05-04T12:46:45Z",
-      "path": "solve_reports\\harness_runs\\samplereverse_pre_rc4_material_probe_20260504_rerun\\reports\\tool_artifacts\\samplereverse\\guided_pool\\guided_pool_validation\\samplereverse_compare_aware_guided_pool_validation.json",
-      "size_bytes": 26283
+      "modified_at": "2026-05-04T13:40:05Z",
+      "path": "solve_reports\\harness_runs\\samplereverse_base64_rc4_breakpoint_probe_20260504\\reports\\tool_artifacts\\samplereverse\\guided_pool\\guided_pool_validation\\samplereverse_compare_aware_guided_pool_validation.json",
+      "size_bytes": 26272
     },
     {
       "kind": "guided_pool_result",
-      "modified_at": "2026-05-04T12:46:32Z",
-      "path": "solve_reports\\harness_runs\\samplereverse_pre_rc4_material_probe_20260504_rerun\\reports\\tool_artifacts\\samplereverse\\guided_pool\\samplereverse_compare_aware_guided_pool_result.json",
+      "modified_at": "2026-05-04T13:39:53Z",
+      "path": "solve_reports\\harness_runs\\samplereverse_base64_rc4_breakpoint_probe_20260504\\reports\\tool_artifacts\\samplereverse\\guided_pool\\samplereverse_compare_aware_guided_pool_result.json",
       "size_bytes": 38696
     }
   ],

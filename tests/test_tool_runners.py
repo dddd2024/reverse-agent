@@ -219,6 +219,43 @@ def test_pre_rc4_material_probe_unavailable_fallback() -> None:
     assert payload["probe_points"]["compare_buffer"] == "unavailable"
 
 
+def test_base64_rc4_breakpoint_probe_payload_records_hook_results() -> None:
+    from reverse_agent.olly_scripts.base64_rc4_breakpoint_probe import _build_payload
+
+    payload = _build_payload(
+        success=True,
+        summary="ok",
+        candidate_hex="78d540b49c59077041414141414141",
+        hook_events=[
+            {
+                "point_kind": "base64",
+                "point_name": "standard_base64_alphabet",
+                "hook_kind": "memory_access",
+                "address": "0x403000",
+                "module_offset": "0x3000",
+                "operation": "read",
+                "hit_count": 1,
+            },
+            {
+                "point_kind": "compare",
+                "point_name": "wide_flag_prefix_compare",
+                "hook_kind": "interceptor",
+                "address": "0x40258c",
+                "module_offset": "0x258c",
+                "hit_count": 1,
+                "lhs_ptr": "0x1000",
+                "rhs_ptr": "0x2000",
+                "compare_count": 5,
+            },
+        ],
+    )
+
+    assert payload["hook_results"]["base64_input"] == "inferred"
+    assert payload["hook_results"]["base64_output"] == "inferred"
+    assert payload["hook_results"]["compare_buffer"] == "available"
+    assert payload["hook_events"][1]["compare_count"] == 5
+
+
 def test_ollydbg_requires_script_for_automation(tmp_path: Path) -> None:
     target = tmp_path / "demo.exe"
     target.write_bytes(b"MZ")

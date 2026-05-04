@@ -20,6 +20,7 @@ IMPORTANT_ARTIFACTS = {
     "transform_trace_consistency": "transform_trace_consistency.json",
     "dynamic_compare_path_probe": "dynamic_compare_path_probe.json",
     "pre_rc4_material_probe": "pre_rc4_material_probe.json",
+    "base64_rc4_breakpoint_probe": "base64_rc4_breakpoint_probe.json",
     "profile_transform_hypothesis_matrix": "profile_transform_hypothesis_matrix.json",
     "h1_h3_boundary_validation": "h1_h3_boundary_validation.json",
     "exact2_basin_value_pool_result": "samplereverse_exact2_basin_value_pool_result.json",
@@ -46,6 +47,7 @@ RUNTIME_VALIDATION_KEYS = {
     "compare_probe",
     "dynamic_compare_path_probe",
     "pre_rc4_material_probe",
+    "base64_rc4_breakpoint_probe",
 }
 
 STATE_JSON_NAMES = (
@@ -410,6 +412,7 @@ def build_current_state(*, artifact_index: dict[str, Any], sample: str) -> dict[
     transform_trace_consistency = _read_json(artifact_refs.get("transform_trace_consistency"))
     dynamic_compare_path_probe = _read_json(artifact_refs.get("dynamic_compare_path_probe"))
     pre_rc4_material_probe = _read_json(artifact_refs.get("pre_rc4_material_probe"))
+    base64_rc4_breakpoint_probe = _read_json(artifact_refs.get("base64_rc4_breakpoint_probe"))
     uncertainty: list[str] = []
 
     exact2 = _compact_candidate(strata_summary.get("best_exact2_runtime"))
@@ -460,6 +463,10 @@ def build_current_state(*, artifact_index: dict[str, Any], sample: str) -> dict[
     if pre_rc4_classification:
         stage = "pre_rc4_material_probe"
         reason = pre_rc4_classification
+    breakpoint_classification = str(base64_rc4_breakpoint_probe.get("classification") or "").strip()
+    if breakpoint_classification:
+        stage = "base64_rc4_breakpoint_probe"
+        reason = breakpoint_classification
     if stage is None:
         uncertainty.append("current_bottleneck.stage")
     if reason is None:
@@ -523,6 +530,20 @@ def build_current_state(*, artifact_index: dict[str, Any], sample: str) -> dict[
             "next_bounded_action": pre_rc4_material_probe.get("next_bounded_action"),
         }
         if pre_rc4_material_probe
+        else {},
+        "latest_base64_rc4_breakpoint_probe": {
+            "classification": breakpoint_classification or None,
+            "artifact": artifact_refs.get("base64_rc4_breakpoint_probe"),
+            "runtime_backed_count": base64_rc4_breakpoint_probe.get("runtime_backed_count"),
+            "candidate_count": base64_rc4_breakpoint_probe.get("candidate_count"),
+            "static_points": base64_rc4_breakpoint_probe.get("static_points"),
+            "hook_results": base64_rc4_breakpoint_probe.get("hook_results"),
+            "rc4_key": base64_rc4_breakpoint_probe.get("rc4_key"),
+            "rc4_input": base64_rc4_breakpoint_probe.get("rc4_input"),
+            "base64_material": base64_rc4_breakpoint_probe.get("base64_material"),
+            "next_bounded_action": base64_rc4_breakpoint_probe.get("next_bounded_action"),
+        }
+        if base64_rc4_breakpoint_probe
         else {},
         "uncertainty": sorted(set(uncertainty)),
         "artifact_refs": artifact_refs,
@@ -633,6 +654,30 @@ def build_negative_results(artifact_index: dict[str, Any] | None = None) -> list
                 "reason": (
                     "current memory-scan lower-level probe did not capture pre-RC4/Base64/RC4 key material; "
                     "next evidence source should be IDA/x64dbg manual breakpoints around Base64/RC4 construction"
+                ),
+                "override_allowed": True,
+                "override_reason_required": True,
+            }
+        )
+    breakpoint_probe = _read_json(artifacts.get("base64_rc4_breakpoint_probe"))
+    breakpoint_classification = str(breakpoint_probe.get("classification") or "").strip()
+    hook_results = breakpoint_probe.get("hook_results", {})
+    hook_results = hook_results if isinstance(hook_results, dict) else {}
+    construction_unavailable = all(
+        str(hook_results.get(key, "unavailable")) == "unavailable"
+        for key in ("base64_input", "base64_output", "rc4_key", "rc4_input", "rc4_output")
+    )
+    if breakpoint_classification == "breakpoint_probe_unavailable" or (
+        breakpoint_classification == "breakpoint_probe_partial" and construction_unavailable
+    ):
+        results.append(
+            {
+                "direction": "scripted Base64/RC4 breakpoint probe with current static access points",
+                "severity": "soft_block",
+                "do_not_repeat": True,
+                "reason": (
+                    "scripted breakpoint/access probe did not capture Base64 or RC4 construction material; "
+                    "next evidence source should be manual IDA/x64dbg breakpoints with explicit addresses"
                 ),
                 "override_allowed": True,
                 "override_reason_required": True,

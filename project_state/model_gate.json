@@ -1,9 +1,9 @@
 {
   "context_level": 2,
-  "generated_at": "2026-05-04T13:00:06Z",
+  "generated_at": "2026-05-04T13:55:43Z",
   "missing_evidence": [],
   "next_local_action": "",
-  "reason": "pre_rc4_probe_unavailable",
+  "reason": "breakpoint_probe_partial",
   "recommended_packet": "project_state/task_packet.json",
   "should_call_model": true
 }
