@@ -170,6 +170,55 @@ def test_compare_probe_payload_exposes_compare_count_and_ptrs() -> None:
     assert payload["compare_count"] == 5
 
 
+def test_pre_rc4_material_probe_payload_normalizes_matches() -> None:
+    from reverse_agent.olly_scripts.pre_rc4_material_probe import _build_payload
+
+    payload = _build_payload(
+        success=True,
+        summary="ok",
+        candidate_hex="78d540b49c59077041414141414141",
+        compare_hit=True,
+        matches=[
+            {
+                "material": "base64_ascii",
+                "status": "available",
+                "match_kind": "prefix",
+                "address": "0x1000",
+                "protection": "rw-",
+                "size": 16,
+                "preview_hex": "66774343",
+            }
+        ],
+    )
+
+    assert payload["matches"][0]["material"] == "base64_ascii"
+    assert payload["matches"][0]["status"] == "available"
+    assert payload["probe_points"]["base64_material"] == "available"
+    assert payload["probe_points"]["rc4_ksa_key"] == "unavailable"
+
+
+def test_pre_rc4_material_probe_unavailable_fallback() -> None:
+    from reverse_agent.olly_scripts.pre_rc4_material_probe import _build_payload
+
+    payload = _build_payload(
+        success=False,
+        summary="no hit",
+        candidate_hex="78d540b49c59077041414141414141",
+        compare_hit=False,
+        matches=[
+            {
+                "material": "rc4_ksa_key",
+                "status": "unavailable",
+            }
+        ],
+        error="no_compare_hit",
+    )
+
+    assert payload["error"] == "no_compare_hit"
+    assert payload["probe_points"]["rc4_ksa_key"] == "unavailable"
+    assert payload["probe_points"]["compare_buffer"] == "unavailable"
+
+
 def test_ollydbg_requires_script_for_automation(tmp_path: Path) -> None:
     target = tmp_path / "demo.exe"
     target.write_bytes(b"MZ")

@@ -19,6 +19,7 @@ IMPORTANT_ARTIFACTS = {
     "smt_validation": "samplereverse_compare_aware_smt_validation.json",
     "transform_trace_consistency": "transform_trace_consistency.json",
     "dynamic_compare_path_probe": "dynamic_compare_path_probe.json",
+    "pre_rc4_material_probe": "pre_rc4_material_probe.json",
     "profile_transform_hypothesis_matrix": "profile_transform_hypothesis_matrix.json",
     "h1_h3_boundary_validation": "h1_h3_boundary_validation.json",
     "exact2_basin_value_pool_result": "samplereverse_exact2_basin_value_pool_result.json",
@@ -44,6 +45,7 @@ RUNTIME_VALIDATION_KEYS = {
     "bridge_validation",
     "compare_probe",
     "dynamic_compare_path_probe",
+    "pre_rc4_material_probe",
 }
 
 STATE_JSON_NAMES = (
@@ -407,6 +409,7 @@ def build_current_state(*, artifact_index: dict[str, Any], sample: str) -> dict[
     frontier_summary = _read_json(artifact_refs.get("frontier_summary"))
     transform_trace_consistency = _read_json(artifact_refs.get("transform_trace_consistency"))
     dynamic_compare_path_probe = _read_json(artifact_refs.get("dynamic_compare_path_probe"))
+    pre_rc4_material_probe = _read_json(artifact_refs.get("pre_rc4_material_probe"))
     uncertainty: list[str] = []
 
     exact2 = _compact_candidate(strata_summary.get("best_exact2_runtime"))
@@ -453,6 +456,10 @@ def build_current_state(*, artifact_index: dict[str, Any], sample: str) -> dict[
     if dynamic_classification:
         stage = "dynamic_compare_path_probe"
         reason = dynamic_classification
+    pre_rc4_classification = str(pre_rc4_material_probe.get("classification") or "").strip()
+    if pre_rc4_classification:
+        stage = "pre_rc4_material_probe"
+        reason = pre_rc4_classification
     if stage is None:
         uncertainty.append("current_bottleneck.stage")
     if reason is None:
@@ -504,6 +511,18 @@ def build_current_state(*, artifact_index: dict[str, Any], sample: str) -> dict[
             "next_bounded_action": dynamic_compare_path_probe.get("next_bounded_action"),
         }
         if dynamic_compare_path_probe
+        else {},
+        "latest_pre_rc4_material_probe": {
+            "classification": pre_rc4_classification or None,
+            "artifact": artifact_refs.get("pre_rc4_material_probe"),
+            "runtime_backed_count": pre_rc4_material_probe.get("runtime_backed_count"),
+            "candidate_count": pre_rc4_material_probe.get("candidate_count"),
+            "probe_points": pre_rc4_material_probe.get("probe_points"),
+            "rc4_key_status": pre_rc4_material_probe.get("rc4_key_status"),
+            "rc4_input_status": pre_rc4_material_probe.get("rc4_input_status"),
+            "next_bounded_action": pre_rc4_material_probe.get("next_bounded_action"),
+        }
+        if pre_rc4_material_probe
         else {},
         "uncertainty": sorted(set(uncertainty)),
         "artifact_refs": artifact_refs,
@@ -598,6 +617,22 @@ def build_negative_results(artifact_index: dict[str, Any] | None = None) -> list
                 "reason": (
                     "dynamic compare-path probe captured compare-site evidence but did not directly expose "
                     "pre-RC4/Base64/RC4 key material; next evidence source should be lower-level instrumentation"
+                ),
+                "override_allowed": True,
+                "override_reason_required": True,
+            }
+        )
+    pre_rc4_probe = _read_json(artifacts.get("pre_rc4_material_probe"))
+    pre_rc4_classification = str(pre_rc4_probe.get("classification") or "").strip()
+    if pre_rc4_classification == "pre_rc4_probe_unavailable":
+        results.append(
+            {
+                "direction": "memory-scan lower-level pre-RC4/key material probe with current automatic harness",
+                "severity": "soft_block",
+                "do_not_repeat": True,
+                "reason": (
+                    "current memory-scan lower-level probe did not capture pre-RC4/Base64/RC4 key material; "
+                    "next evidence source should be IDA/x64dbg manual breakpoints around Base64/RC4 construction"
                 ),
                 "override_allowed": True,
                 "override_reason_required": True,

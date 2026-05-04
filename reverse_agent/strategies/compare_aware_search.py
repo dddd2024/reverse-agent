@@ -15,6 +15,7 @@ from ..samplereverse_z3 import solve_targeted_prefix8
 from ..tool_runners import ToolRunArtifact
 from ..transforms.samplereverse import (
     SamplereverseTransformModel,
+    _samplereverse_enc_const,
     score_compare_prefix,
     trace_candidate_transform,
 )
@@ -41,6 +42,7 @@ H1_H3_BOUNDARY_VALIDATION_FILE_NAME = "h1_h3_boundary_validation.json"
 H1_H3_BOUNDARY_CANDIDATE_LIMIT = 8
 TRANSFORM_TRACE_CONSISTENCY_FILE_NAME = "transform_trace_consistency.json"
 DYNAMIC_COMPARE_PATH_PROBE_FILE_NAME = "dynamic_compare_path_probe.json"
+PRE_RC4_MATERIAL_PROBE_FILE_NAME = "pre_rc4_material_probe.json"
 
 DEFAULT_ANCHORS = (
     "78d540b49c590770",
@@ -171,6 +173,7 @@ DYNAMIC_COMPARE_PATH_PROBE_CANDIDATES = (
     "78d540b49c59077040414141414141",
     "5a3e7f46ddd474d041414141414141",
 )
+PRE_RC4_MATERIAL_PROBE_CANDIDATES = DYNAMIC_COMPARE_PATH_PROBE_CANDIDATES
 PAIR_TAIL_FLAGLIKE_BYTES = set(b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_{}-")
 
 PAIRSCAN_TOOL = "pairscan"
@@ -191,6 +194,10 @@ def _repo_root() -> Path:
 
 def _compare_probe_script_path() -> Path:
     return Path(__file__).resolve().parents[1] / "olly_scripts" / "compare_probe.py"
+
+
+def _pre_rc4_material_probe_script_path() -> Path:
+    return Path(__file__).resolve().parents[1] / "olly_scripts" / "pre_rc4_material_probe.py"
 
 
 def _tool_source_path(tool_name: str) -> Path:
@@ -3297,6 +3304,25 @@ def _prior_transform_model_confirmed() -> bool:
     return False
 
 
+def _prior_dynamic_probe_needs_pre_rc4() -> bool:
+    current_state = _project_state_json("current_state.json")
+    latest = current_state.get("latest_dynamic_compare_path_probe", {})
+    if isinstance(latest, dict):
+        probe_points = latest.get("probe_points", {})
+        return (
+            str(latest.get("classification", "")).strip() == "dynamic_probe_complete"
+            and isinstance(probe_points, dict)
+            and str(probe_points.get("pre_rc4_runtime_material", "")).strip() == "unavailable"
+        )
+    payload, _ = _indexed_artifact_payload("dynamic_compare_path_probe")
+    probe_points = payload.get("probe_points", {})
+    return (
+        str(payload.get("classification", "")).strip() == "dynamic_probe_complete"
+        and isinstance(probe_points, dict)
+        and str(probe_points.get("pre_rc4_runtime_material", "")).strip() == "unavailable"
+    )
+
+
 def _profile_audit_candidate_record(
     *,
     label: str,
@@ -4305,6 +4331,380 @@ def run_dynamic_compare_path_probe(
         "validation_path": str(validation_path),
         "payload": payload,
         "validations": validations,
+        "promotable_validations": [],
+    }
+
+
+def _material_hex_prefix(value: bytes, min_prefix: int = 16) -> str:
+    if not value:
+        return ""
+    return value[: min(len(value), max(1, min_prefix))].hex()
+
+
+def _pre_rc4_expected_materials(candidate_hex: str) -> dict[str, object]:
+    normalized = str(candidate_hex).strip().lower()
+    trace = trace_candidate_transform(normalized)
+    candidate = bytes.fromhex(normalized)
+    expanded_hex = str(dict(trace.get("nibble_expansion", {})).get("expanded_hex", ""))
+    utf16_hex = str(dict(trace.get("utf16_payload", {})).get("raw_hex", ""))
+    base64_text = str(dict(trace.get("base64_boundary", {})).get("base64_prefix", ""))
+    base64_bytes = base64_text.encode("ascii", errors="ignore")
+    rc4_ksa_key = base64_text.encode("utf-16le")[: len(base64_text)]
+    rc4_output = bytes.fromhex(str(dict(trace.get("rc4", {})).get("decrypt_prefix_hex", "")))
+    encrypted_const = _samplereverse_enc_const()[: len(rc4_output)]
+    keystream = bytes(left ^ right for left, right in zip(encrypted_const, rc4_output))
+
+    materials = [
+        {
+            "name": "raw_input",
+            "hex": candidate.hex(),
+            "prefix_hex": _material_hex_prefix(candidate, 8),
+            "length": len(candidate),
+            "description": "raw candidate bytes",
+        },
+        {
+            "name": "expanded_bytes",
+            "hex": expanded_hex,
+            "prefix_hex": expanded_hex[:32],
+            "length": len(bytes.fromhex(expanded_hex)) if expanded_hex else 0,
+            "description": "nibble-expanded candidate bytes",
+        },
+        {
+            "name": "utf16le_payload",
+            "hex": utf16_hex,
+            "prefix_hex": utf16_hex[:32],
+            "length": len(bytes.fromhex(utf16_hex)) if utf16_hex else 0,
+            "description": "expanded bytes interleaved as UTF-16LE low bytes",
+        },
+        {
+            "name": "base64_ascii",
+            "hex": base64_bytes.hex(),
+            "prefix_hex": _material_hex_prefix(base64_bytes),
+            "length": len(base64_bytes),
+            "description": "standard Base64 text before UTF-16LE key derivation",
+        },
+        {
+            "name": "rc4_ksa_key",
+            "hex": rc4_ksa_key.hex(),
+            "prefix_hex": _material_hex_prefix(rc4_ksa_key),
+            "length": len(rc4_ksa_key),
+            "description": "Base64 text encoded UTF-16LE and truncated to Base64 char count",
+        },
+        {
+            "name": "rc4_encrypted_const",
+            "hex": encrypted_const.hex(),
+            "prefix_hex": _material_hex_prefix(encrypted_const),
+            "length": len(encrypted_const),
+            "description": "static encrypted const consumed by RC4 keystream xor",
+        },
+        {
+            "name": "rc4_output",
+            "hex": rc4_output.hex(),
+            "prefix_hex": _material_hex_prefix(rc4_output),
+            "length": len(rc4_output),
+            "description": "modeled post-RC4 output prefix",
+        },
+        {
+            "name": "compare_buffer",
+            "hex": rc4_output[:RUNTIME_PREFIX_BYTES].hex(),
+            "prefix_hex": rc4_output[: len(TARGET_PREFIX)].hex(),
+            "length": min(len(rc4_output), RUNTIME_PREFIX_BYTES),
+            "description": "post-RC4 buffer used as compare LHS",
+        },
+        {
+            "name": "compare_target",
+            "hex": TARGET_PREFIX.hex(),
+            "prefix_hex": TARGET_PREFIX.hex(),
+            "length": len(TARGET_PREFIX),
+            "description": "wide flag{ compare RHS",
+        },
+    ]
+    return {
+        "candidate_hex": normalized,
+        "trace": trace,
+        "materials": materials,
+        "base64_text": base64_text,
+        "rc4_ksa_key_hex": rc4_ksa_key.hex(),
+        "rc4_encrypted_const_hex": encrypted_const.hex(),
+        "rc4_output_hex": rc4_output.hex(),
+        "rc4_keystream_hex": keystream.hex(),
+    }
+
+
+def _pre_rc4_probe_entries(transform_model: SamplereverseTransformModel) -> list[dict[str, object]]:
+    _ = transform_model
+    entries: list[dict[str, object]] = []
+    roles = ("exact2_baseline", "near_suffix_control", "frontier_control")
+    for idx, candidate_hex in enumerate(PRE_RC4_MATERIAL_PROBE_CANDIDATES, 1):
+        expected = _pre_rc4_expected_materials(candidate_hex)
+        trace = dict(expected.get("trace", {}))
+        compare_boundary = dict(trace.get("compare_boundary", {}))
+        entries.append(
+            {
+                "label": f"pre_rc4_material_probe_{idx}",
+                "candidate_hex": candidate_hex,
+                "cand8_hex": candidate_hex[:16],
+                "probe_role": roles[idx - 1],
+                "ci_exact_wchars": int(compare_boundary.get("ci_exact_wchars", 0) or 0),
+                "ci_distance5": int(compare_boundary.get("ci_distance5", 1 << 30) or (1 << 30)),
+                "raw_prefix_hex": str(compare_boundary.get("raw_prefix_hex", "")),
+                "raw_prefix_hex_64": str(compare_boundary.get("raw_prefix_hex_64", "")),
+                "expected_materials": expected,
+            }
+        )
+    return entries
+
+
+def _match_statuses(matches: Sequence[dict[str, object]]) -> dict[str, str]:
+    by_name = {str(item.get("material", "")): str(item.get("status", "")) for item in matches}
+
+    def status(name: str) -> str:
+        return "available" if by_name.get(name) == "available" else "unavailable"
+
+    return {
+        "raw_input": status("raw_input"),
+        "expanded_bytes": status("expanded_bytes"),
+        "utf16le_payload": status("utf16le_payload"),
+        "base64_material": status("base64_ascii"),
+        "rc4_ksa_key": status("rc4_ksa_key"),
+        "rc4_encrypted_const": status("rc4_encrypted_const"),
+        "rc4_output": status("rc4_output"),
+        "compare_buffer": status("compare_buffer"),
+    }
+
+
+def _aggregate_pre_rc4_probe_points(candidate_results: Sequence[dict[str, object]]) -> dict[str, str]:
+    keys = (
+        "raw_input",
+        "expanded_bytes",
+        "utf16le_payload",
+        "base64_material",
+        "rc4_ksa_key",
+        "rc4_encrypted_const",
+        "rc4_output",
+        "compare_buffer",
+    )
+    return {
+        key: (
+            "available"
+            if any(dict(item.get("probe_points", {})).get(key) == "available" for item in candidate_results)
+            else "unavailable"
+        )
+        for key in keys
+    }
+
+
+def _availability_status(
+    *,
+    direct_key: str,
+    fallback_key: str,
+    probe_points: dict[str, str],
+    runtime_backed_count: int,
+) -> str:
+    if probe_points.get(direct_key) == "available":
+        return "confirmed"
+    if probe_points.get(fallback_key) == "available":
+        return "inferred"
+    if runtime_backed_count:
+        return "unknown"
+    return "unknown"
+
+
+def _exact2_failure_trace_from_expected(expected: dict[str, object]) -> dict[str, object]:
+    trace = dict(expected.get("trace", {}))
+    compare_boundary = dict(trace.get("compare_boundary", {}))
+    deltas = compare_boundary.get("wchar_deltas", [])
+    failing = {}
+    if isinstance(deltas, list):
+        for item in deltas:
+            if isinstance(item, dict) and int(item.get("index", -1) or -1) == 2:
+                failing = item
+                break
+    output_offsets = [4, 5]
+    encrypted_const = bytes.fromhex(str(expected.get("rc4_encrypted_const_hex", "")))
+    rc4_output = bytes.fromhex(str(expected.get("rc4_output_hex", "")))
+    keystream = bytes.fromhex(str(expected.get("rc4_keystream_hex", "")))
+    return {
+        "wchar_index": 2,
+        "runtime_word": str(failing.get("raw_pair_hex", rc4_output[4:6].hex() if len(rc4_output) >= 6 else "")),
+        "target_word": str(failing.get("target_pair_hex", TARGET_PREFIX[4:6].hex())),
+        "rc4_output_offsets": output_offsets,
+        "encrypted_const_bytes": encrypted_const[4:6].hex(),
+        "keystream_bytes": keystream[4:6].hex(),
+        "rc4_output_bytes": rc4_output[4:6].hex(),
+        "base64_key_dependency": {
+            "model": "Base64(UTF-16LE expanded candidate) -> UTF-16LE bytes truncated to Base64 char count -> RC4 KSA key",
+            "base64_preview": str(expected.get("base64_text", ""))[:48],
+            "rc4_ksa_key_length": len(bytes.fromhex(str(expected.get("rc4_ksa_key_hex", "")))),
+            "candidate_byte_dependencies": "RC4 KSA diffuses the full Base64-derived key; byte-local dependency requires a follow-up constraint diagnostic after runtime key confirmation.",
+        },
+    }
+
+
+def run_pre_rc4_material_probe(
+    *,
+    target: Path,
+    artifacts_dir: Path,
+    transform_model: SamplereverseTransformModel,
+    per_probe_timeout: float,
+    log,
+) -> dict[str, object]:
+    artifacts_dir.mkdir(parents=True, exist_ok=True)
+    result_path = artifacts_dir / PRE_RC4_MATERIAL_PROBE_FILE_NAME
+    script_path = _pre_rc4_material_probe_script_path()
+    entries = _pre_rc4_probe_entries(transform_model)
+    payload: dict[str, object] = {
+        "artifact_kind": "pre_rc4_material_probe",
+        "profile": "samplereverse",
+        "attempted": True,
+        "candidate_generation_changed": False,
+        "ranking_changed": False,
+        "final_selection_changed": False,
+        "search_budget_changed": False,
+        "beam_budget_topn_timeout_frontier_limit_expanded": False,
+        "candidate_count": len(entries),
+        "candidate_limit": len(PRE_RC4_MATERIAL_PROBE_CANDIDATES),
+        "validation_candidates": entries,
+        "promotable_validations": [],
+    }
+    _write_json(result_path, payload)
+    if not script_path.exists():
+        raise RuntimeError(f"pre-RC4 material probe script missing: {script_path}")
+
+    candidate_results: list[dict[str, object]] = []
+    for idx, entry in enumerate(entries, 1):
+        candidate_hex = str(entry["candidate_hex"])
+        candidate_dir = artifacts_dir / f"candidate_{idx}"
+        candidate_dir.mkdir(parents=True, exist_ok=True)
+        materials_path = candidate_dir / "expected_materials.json"
+        compare_out = candidate_dir / "pre_rc4_material_probe_compare.json"
+        compare_log = candidate_dir / "pre_rc4_material_probe_compare.log"
+        expected = dict(entry.get("expected_materials", {}))
+        _write_json(
+            materials_path,
+            {
+                "candidate_hex": candidate_hex,
+                "materials": list(expected.get("materials", [])),
+            },
+        )
+        command = [
+            sys.executable,
+            str(script_path),
+            "--target",
+            str(target),
+            "--out",
+            str(compare_out),
+            "--materials",
+            str(materials_path),
+            "--probe-hex",
+            candidate_hex,
+            "--per-probe-timeout",
+            str(per_probe_timeout),
+        ]
+        if log:
+            log(f"PreRC4MaterialProbe memory scan {idx}: {candidate_hex}")
+        proc = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+        )
+        compare_log.write_text(
+            f"[stdout]\n{proc.stdout or ''}\n\n[stderr]\n{proc.stderr or ''}",
+            encoding="utf-8",
+        )
+        compare_payload = _read_json_object(compare_out) if compare_out.exists() else {}
+        matches = [
+            dict(item)
+            for item in list(compare_payload.get("matches", []))
+            if isinstance(item, dict)
+        ]
+        probe_points = (
+            dict(compare_payload.get("probe_points", {}))
+            if isinstance(compare_payload.get("probe_points"), dict)
+            else _match_statuses(matches)
+        )
+        candidate_results.append(
+            {
+                "label": entry.get("label", f"pre_rc4_material_probe_{idx}"),
+                "candidate_hex": candidate_hex,
+                "probe_role": entry.get("probe_role", ""),
+                "runtime_backed": bool(compare_payload.get("compare_hit")) or any(
+                    str(item.get("status", "")) == "available" for item in matches
+                ),
+                "probe_points": probe_points,
+                "matches": matches,
+                "result_path": str(compare_out),
+                "log_path": str(compare_log),
+                "expected_material_summary": {
+                    "base64_preview": str(expected.get("base64_text", ""))[:64],
+                    "rc4_ksa_key_length": len(bytes.fromhex(str(expected.get("rc4_ksa_key_hex", "")))),
+                    "rc4_output_prefix": str(expected.get("rc4_output_hex", ""))[:128],
+                },
+                "success": bool(compare_payload.get("success")),
+                "error": str(compare_payload.get("error", "")),
+            }
+        )
+
+    runtime_backed_count = sum(1 for item in candidate_results if bool(item.get("runtime_backed")))
+    probe_points = _aggregate_pre_rc4_probe_points(candidate_results)
+    has_pre_rc4 = any(
+        probe_points.get(key) == "available"
+        for key in ("utf16le_payload", "base64_material", "rc4_ksa_key")
+    )
+    has_any_material = any(value == "available" for value in probe_points.values())
+    classification = (
+        "pre_rc4_probe_complete"
+        if has_pre_rc4
+        else "pre_rc4_probe_partial"
+        if has_any_material
+        else "pre_rc4_probe_unavailable"
+    )
+    first_expected = dict(entries[0].get("expected_materials", {})) if entries else {}
+    rc4_key_status = _availability_status(
+        direct_key="rc4_ksa_key",
+        fallback_key="rc4_output",
+        probe_points=probe_points,
+        runtime_backed_count=runtime_backed_count,
+    )
+    rc4_input_status = _availability_status(
+        direct_key="base64_material",
+        fallback_key="rc4_output",
+        probe_points=probe_points,
+        runtime_backed_count=runtime_backed_count,
+    )
+    findings = [
+        "memory scan observed pre-RC4/Base64/key material"
+        if has_pre_rc4
+        else "memory scan did not observe pre-RC4/Base64/key material",
+        "candidate generation, ranking, final selection, and search budget were unchanged",
+    ]
+    payload.update(
+        {
+            "classification": classification,
+            "runtime_backed_count": runtime_backed_count,
+            "probe_points": probe_points,
+            "rc4_key_status": rc4_key_status,
+            "rc4_input_status": rc4_input_status,
+            "candidate_results": candidate_results,
+            "exact2_failure_trace": _exact2_failure_trace_from_expected(first_expected),
+            "findings": findings,
+            "next_bounded_action": (
+                "derive bounded exact3 constraints from confirmed pre-RC4 material"
+                if classification == "pre_rc4_probe_complete"
+                else "switch to IDA/x64dbg manual breakpoints for Base64/RC4 construction points"
+            ),
+            "promotable_validations": [],
+        }
+    )
+    _write_json(result_path, payload)
+    if log:
+        log(f"pre-RC4 material probe wrote {result_path}")
+    return {
+        "result_path": str(result_path),
+        "payload": payload,
+        "validations": candidate_results,
         "promotable_validations": [],
     }
 
@@ -8906,6 +9306,8 @@ class CompareAwareSearchStrategy(SolverStrategy):
         transform_trace_consistency_artifact: ToolRunArtifact | None = None
         dynamic_compare_path_probe_run: dict[str, object] | None = None
         dynamic_compare_path_probe_artifact: ToolRunArtifact | None = None
+        pre_rc4_material_probe_run: dict[str, object] | None = None
+        pre_rc4_material_probe_artifact: ToolRunArtifact | None = None
         h1_h3_boundary_validation_run: dict[str, object] | None = None
         h1_h3_boundary_validation_artifact: ToolRunArtifact | None = None
         h1_h3_boundary_runtime_artifact: ToolRunArtifact | None = None
@@ -9226,8 +9628,11 @@ class CompareAwareSearchStrategy(SolverStrategy):
         )
 
         should_run_dynamic_probe = (
-            str(transform_trace_consistency_payload.get("classification", "")) == "transform_model_confirmed"
-            or _prior_transform_model_confirmed()
+            (
+                str(transform_trace_consistency_payload.get("classification", "")) == "transform_model_confirmed"
+                or _prior_transform_model_confirmed()
+            )
+            and not _prior_dynamic_probe_needs_pre_rc4()
         )
         if should_run_dynamic_probe:
             dynamic_compare_path_probe_run = run_dynamic_compare_path_probe(
@@ -9250,6 +9655,40 @@ class CompareAwareSearchStrategy(SolverStrategy):
                 strategy_name=self.name,
                 evidence_kind="RuntimeCompareEvidence",
                 payload=dynamic_compare_path_probe_payload,
+                derived_entries=[],
+            )
+
+        dynamic_probe_payload = dict(dynamic_compare_path_probe_run.get("payload", {})) if dynamic_compare_path_probe_run else {}
+        dynamic_probe_points = dynamic_probe_payload.get("probe_points", {})
+        should_run_pre_rc4_probe = (
+            (
+                str(dynamic_probe_payload.get("classification", "")) == "dynamic_probe_complete"
+                and isinstance(dynamic_probe_points, dict)
+                and str(dynamic_probe_points.get("pre_rc4_runtime_material", "")) == "unavailable"
+            )
+            or _prior_dynamic_probe_needs_pre_rc4()
+        )
+        if should_run_pre_rc4_probe:
+            pre_rc4_material_probe_run = run_pre_rc4_material_probe(
+                target=file_path,
+                artifacts_dir=artifacts_dir / "pre_rc4_material_probe",
+                transform_model=transform_model,
+                per_probe_timeout=per_probe_timeout,
+                log=log,
+            )
+            pre_rc4_payload = dict(pre_rc4_material_probe_run.get("payload", {}))
+            pre_rc4_material_probe_artifact = _make_search_artifact(
+                tool_name="PreRC4MaterialProbe",
+                output_path=Path(str(pre_rc4_material_probe_run["result_path"])),
+                summary=str(
+                    pre_rc4_payload.get(
+                        "classification",
+                        "pre-RC4 material probe complete",
+                    )
+                ),
+                strategy_name=self.name,
+                evidence_kind="RuntimeCompareEvidence",
+                payload=pre_rc4_payload,
                 derived_entries=[],
             )
 
@@ -9336,6 +9775,8 @@ class CompareAwareSearchStrategy(SolverStrategy):
             artifacts.append(transform_trace_consistency_artifact)
         if dynamic_compare_path_probe_artifact is not None:
             artifacts.append(dynamic_compare_path_probe_artifact)
+        if pre_rc4_material_probe_artifact is not None:
+            artifacts.append(pre_rc4_material_probe_artifact)
         if h1_h3_boundary_validation_artifact is not None:
             artifacts.append(h1_h3_boundary_validation_artifact)
         if h1_h3_boundary_runtime_artifact is not None:
@@ -9365,12 +9806,15 @@ class CompareAwareSearchStrategy(SolverStrategy):
                 "profile_transform_hypothesis_audit": profile_transform_audit_run or {},
                 "transform_trace_consistency": transform_trace_consistency_run or {},
                 "dynamic_compare_path_probe": dynamic_compare_path_probe_run or {},
+                "pre_rc4_material_probe": pre_rc4_material_probe_run or {},
                 "h1_h3_boundary_validation": h1_h3_boundary_validation_run or {},
                 "prefix_boundary_diagnostics": prefix_boundary_diagnostics,
                 "frontier_converged_reason": frontier_converged_reason,
                 "frontier_stall_stage": frontier_stall_stage,
                 "completed_stage": "h1_h3_boundary_validation"
                 if h1_h3_boundary_validation_run
+                else "pre_rc4_material_probe"
+                if pre_rc4_material_probe_run
                 else "dynamic_compare_path_probe"
                 if dynamic_compare_path_probe_run
                 else "transform_trace_consistency"

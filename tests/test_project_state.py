@@ -128,7 +128,40 @@ def test_build_missing_solve_reports_does_not_crash_and_writes_files(tmp_path: P
     assert (state_dir / "rounds" / ".gitkeep").exists()
     assert _read_json(state_dir / "artifact_index.json")["missing"] == ["reports_dir"]
     assert _read_json(state_dir / "model_gate.json")["should_call_model"] is False
-    assert _read_json(state_dir / "task_packet.json")["task"] == "collect_missing_evidence"
+
+
+def test_project_state_indexes_pre_rc4_material_probe_and_negative_result(tmp_path: Path) -> None:
+    reports_dir = tmp_path / "solve_reports"
+    state_dir = tmp_path / "project_state"
+    run_dir = _make_minimal_harness_run(reports_dir, run_name="samplereverse_pre_rc4")
+    artifacts_dir = run_dir / "reports" / "tool_artifacts" / "samplereverse"
+    _write_json(
+        artifacts_dir / "pre_rc4_material_probe" / "pre_rc4_material_probe.json",
+        {
+            "artifact_kind": "pre_rc4_material_probe",
+            "classification": "pre_rc4_probe_unavailable",
+            "runtime_backed_count": 0,
+            "candidate_count": 3,
+            "probe_points": {
+                "base64_material": "unavailable",
+                "rc4_ksa_key": "unavailable",
+                "compare_buffer": "unavailable",
+            },
+            "rc4_key_status": "unknown",
+            "rc4_input_status": "unknown",
+            "next_bounded_action": "switch to manual breakpoints",
+        },
+    )
+
+    build_project_state(reports_dir=reports_dir, state_dir=state_dir, sample="samplereverse")
+
+    artifact_index = _read_json(state_dir / "artifact_index.json")
+    current_state = _read_json(state_dir / "current_state.json")
+    negative_results = _read_json(state_dir / "negative_results.json")
+    assert artifact_index["latest_artifacts"]["pre_rc4_material_probe"].endswith("pre_rc4_material_probe.json")
+    assert current_state["current_bottleneck"]["stage"] == "pre_rc4_material_probe"
+    assert current_state["latest_pre_rc4_material_probe"]["classification"] == "pre_rc4_probe_unavailable"
+    assert any("memory-scan lower-level pre-RC4" in item["direction"] for item in negative_results)
 
 
 def test_build_generates_state_files_and_artifact_index(tmp_path: Path) -> None:

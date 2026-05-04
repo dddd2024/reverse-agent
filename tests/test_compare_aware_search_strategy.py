@@ -21,6 +21,7 @@ from reverse_agent.strategies.compare_aware_search import (
     GUIDED_POOL_TOP_VALUES,
     H1_H3_BOUNDARY_CANDIDATE_LIMIT,
     H1_H3_BOUNDARY_VALIDATION_FILE_NAME,
+    PRE_RC4_MATERIAL_PROBE_FILE_NAME,
     PROFILE_TRANSFORM_AUDIT_CANDIDATE_LIMIT,
     PROFILE_TRANSFORM_HYPOTHESIS_MATRIX_FILE_NAME,
     PROJECTED_PRESERVE_SECOND_HOP_ROLE,
@@ -51,6 +52,7 @@ from reverse_agent.strategies.compare_aware_search import (
     run_dynamic_compare_path_probe,
     run_exact2_basin_value_pool_evaluation,
     run_h1_h3_boundary_validation,
+    run_pre_rc4_material_probe,
     run_profile_transform_hypothesis_audit,
     run_transform_trace_consistency_diagnostic,
     validate_compare_aware_results,
@@ -773,6 +775,7 @@ def test_compare_aware_strategy_runs_refine_then_smt_and_uses_promoted_anchors(
     assert result.metadata["completed_stage"] in {
         "transform_trace_consistency",
         "dynamic_compare_path_probe",
+        "pre_rc4_material_probe",
         "h1_h3_boundary_validation",
     }
     assert result.metadata["smt"]["payload"]["exact2_basin_smt"]["base_anchor"] == "78d540b49c590770"
@@ -3395,6 +3398,134 @@ def test_dynamic_compare_path_probe_preserves_existing_selection_behavior(
     assert payload["promotable_validations"] == []
     assert result["promotable_validations"] == []
     assert payload["final_selection_changed"] is False
+
+
+def _fake_pre_rc4_subprocess_run(*args, **kwargs):  # noqa: ANN002, ANN003
+    command = list(args[0])
+    out_path = Path(command[command.index("--out") + 1])
+    materials_path = Path(command[command.index("--materials") + 1])
+    materials = json.loads(materials_path.read_text(encoding="utf-8"))
+    material_names = [item["name"] for item in materials["materials"]]
+    matches = [
+        {
+            "material": name,
+            "status": "available" if name in {"base64_ascii", "rc4_output", "compare_buffer"} else "unavailable",
+            "match_kind": "prefix" if name in {"base64_ascii", "rc4_output", "compare_buffer"} else "",
+            "address": "0x1000" if name in {"base64_ascii", "rc4_output", "compare_buffer"} else "",
+            "protection": "rw-" if name in {"base64_ascii", "rc4_output", "compare_buffer"} else "",
+            "size": 16 if name in {"base64_ascii", "rc4_output", "compare_buffer"} else 0,
+            "preview_hex": "666f6f",
+        }
+        for name in material_names
+    ]
+    out_path.write_text(
+        json.dumps(
+            {
+                "success": True,
+                "summary": "pre rc4 ok",
+                "candidate_hex": command[command.index("--probe-hex") + 1],
+                "compare_hit": True,
+                "matches": matches,
+                "probe_points": {
+                    "raw_input": "unavailable",
+                    "expanded_bytes": "unavailable",
+                    "utf16le_payload": "unavailable",
+                    "base64_material": "available",
+                    "rc4_ksa_key": "unavailable",
+                    "rc4_encrypted_const": "unavailable",
+                    "rc4_output": "available",
+                    "compare_buffer": "available",
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    class _Proc:
+        returncode = 0
+        stdout = ""
+        stderr = ""
+
+    return _Proc()
+
+
+def test_pre_rc4_material_probe_has_bounded_candidate_count_and_schema(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    target = tmp_path / "samplereverse.exe"
+    target.write_bytes(b"MZ")
+    monkeypatch.setattr(compare_aware_search.subprocess, "run", _fake_pre_rc4_subprocess_run)
+
+    result = run_pre_rc4_material_probe(
+        target=target,
+        artifacts_dir=tmp_path / "pre_rc4_material_probe",
+        transform_model=SamplereverseTransformModel(),
+        per_probe_timeout=0.5,
+        log=lambda _: None,
+    )
+
+    payload = result["payload"]
+    assert Path(result["result_path"]).name == PRE_RC4_MATERIAL_PROBE_FILE_NAME
+    assert payload["candidate_count"] == 3
+    assert payload["candidate_limit"] == 3
+    assert payload["runtime_backed_count"] == 3
+    assert payload["classification"] == "pre_rc4_probe_complete"
+    assert payload["probe_points"]["base64_material"] == "available"
+    assert payload["probe_points"]["rc4_output"] == "available"
+    assert payload["rc4_key_status"] == "inferred"
+    assert payload["rc4_input_status"] == "confirmed"
+    assert payload["promotable_validations"] == []
+
+
+def test_pre_rc4_material_probe_does_not_expand_search_or_promote(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    target = tmp_path / "samplereverse.exe"
+    target.write_bytes(b"MZ")
+    monkeypatch.setattr(compare_aware_search.subprocess, "run", _fake_pre_rc4_subprocess_run)
+
+    result = run_pre_rc4_material_probe(
+        target=target,
+        artifacts_dir=tmp_path / "pre_rc4_material_probe",
+        transform_model=SamplereverseTransformModel(),
+        per_probe_timeout=0.5,
+        log=lambda _: None,
+    )
+
+    payload = result["payload"]
+    assert payload["candidate_generation_changed"] is False
+    assert payload["ranking_changed"] is False
+    assert payload["final_selection_changed"] is False
+    assert payload["beam_budget_topn_timeout_frontier_limit_expanded"] is False
+    assert result["promotable_validations"] == []
+
+
+def test_pre_rc4_material_probe_exact2_failure_trace_has_offsets_and_dependencies(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    target = tmp_path / "samplereverse.exe"
+    target.write_bytes(b"MZ")
+    monkeypatch.setattr(compare_aware_search.subprocess, "run", _fake_pre_rc4_subprocess_run)
+
+    result = run_pre_rc4_material_probe(
+        target=target,
+        artifacts_dir=tmp_path / "pre_rc4_material_probe",
+        transform_model=SamplereverseTransformModel(),
+        per_probe_timeout=0.5,
+        log=lambda _: None,
+    )
+
+    failure = result["payload"]["exact2_failure_trace"]
+    assert failure["wchar_index"] == 2
+    assert failure["runtime_word"] == "4464"
+    assert failure["target_word"] == "6100"
+    assert failure["rc4_output_offsets"] == [4, 5]
+    assert failure["encrypted_const_bytes"]
+    assert failure["keystream_bytes"]
+    assert "candidate_byte_dependencies" in failure["base64_key_dependency"]
 
 
 def test_h1_h3_boundary_validation_runtime_validates_fixed_contrast_set(

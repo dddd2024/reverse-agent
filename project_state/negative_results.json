@@ -56,11 +56,11 @@
     "severity": "soft_block"
   },
   {
-    "direction": "focused dynamic compare-path probe with current compare-site hook",
+    "direction": "memory-scan lower-level pre-RC4/key material probe with current automatic harness",
     "do_not_repeat": true,
     "override_allowed": true,
     "override_reason_required": true,
-    "reason": "dynamic compare-path probe captured compare-site evidence but did not directly expose pre-RC4/Base64/RC4 key material; next evidence source should be lower-level instrumentation",
+    "reason": "current memory-scan lower-level probe did not capture pre-RC4/Base64/RC4 key material; next evidence source should be IDA/x64dbg manual breakpoints around Base64/RC4 construction",
     "severity": "soft_block"
   }
 ]

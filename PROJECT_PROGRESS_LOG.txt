@@ -2978,3 +2978,67 @@ Reverse Agent 项目进展日志（截至 2026-04-16）
 - 下一步应转向 lower-level dynamic instrumentation 或 manual reversing，目标是 pre-RC4/Base64/RC4 key material。
 - 不扩大 timeout/beam/budget/topN/frontier iteration limit；不回 blind search。
 
+## 2026-05-04 pre-RC4 material probe
+
+1) 执行范围
+- 按 `decision_packet.md` 执行 lower-level `pre_rc4_material_probe`。
+- 新增固定 3 个 probe candidates，并通过 compare trigger 后的 Frida memory scan 查找 expected materials。
+- 明确区分 `base64_ascii`、`rc4_ksa_key`、`rc4_encrypted_const`、`rc4_output/compare_buffer`。
+- 没有新增 candidate generator；没有改变 ranking、final selection、promotion。
+- 没有扩大 beam、budget、topN、timeout、frontier iteration limit。
+- 没有重复当前 compare-site-only `dynamic_compare_path_probe` 作为推进方向。
+
+2) 代码改动
+- `reverse_agent/olly_scripts/pre_rc4_material_probe.py`
+  - 新增 standalone Frida/UI probe。
+  - compare hook 仅用于触发时机；hook 命中后扫描 readable runtime ranges。
+  - 对 raw input、expanded bytes、UTF-16LE payload、Base64 ASCII、RC4 KSA key、encrypted const、RC4 output、compare buffer 输出 available/unavailable。
+- `reverse_agent/strategies/compare_aware_search.py`
+  - 新增 `PRE_RC4_MATERIAL_PROBE_FILE_NAME`、固定 3-candidate probe set。
+  - 新增 expected material generation 和 `run_pre_rc4_material_probe()`。
+  - 输出 `exact2_failure_trace`，包含 wchar index 2、runtime word `4464`、target `6100`、RC4 output offsets 4-5、encrypted const bytes、keystream bytes。
+  - diagnostic 不产生 promotable candidates。
+- `reverse_agent/project_state.py`
+  - artifact index/current_state/model_gate 识别 `pre_rc4_material_probe`。
+  - negative_results 记录当前 automatic memory-scan lower-level probe 未捕获 pre-RC4/key material。
+- `tests/test_compare_aware_search_strategy.py`、`tests/test_tool_runners.py`、`tests/test_project_state.py`
+  - 覆盖 bounded candidate count、schema、probe point availability、no-promotion/no-budget-expansion、failure trace、project_state indexing。
+
+3) 自动化验证
+- `python -m pytest -q tests/test_compare_aware_search_strategy.py` -> `73 passed`
+- `python -m pytest -q tests/test_tool_runners.py` -> `9 passed`
+- `python -m pytest -q tests/test_project_state.py` -> `10 passed`
+- `python -m pytest -q` -> `159 passed`
+
+4) Harness
+- First run `samplereverse_pre_rc4_material_probe_20260504` completed but classification wording was tightened afterward from partial to unavailable when no material matched.
+- Final run: `samplereverse_pre_rc4_material_probe_20260504_rerun`
+- Summary: `solve_reports\harness_runs\samplereverse_pre_rc4_material_probe_20260504_rerun\summary.json`
+- Artifact:
+  - `solve_reports\harness_runs\samplereverse_pre_rc4_material_probe_20260504_rerun\reports\tool_artifacts\samplereverse\pre_rc4_material_probe\pre_rc4_material_probe.json`
+- Harness completed 1 case, 0 errors.
+
+5) 结论
+- Classification: `pre_rc4_probe_unavailable`
+- 3 个 diagnostic candidates 全部命中 compare trigger，但 memory scan 未捕获任何 expected materials：
+  - `raw_input=unavailable`
+  - `expanded_bytes=unavailable`
+  - `utf16le_payload=unavailable`
+  - `base64_material=unavailable`
+  - `rc4_ksa_key=unavailable`
+  - `rc4_encrypted_const=unavailable`
+  - `rc4_output=unavailable`
+  - `compare_buffer=unavailable`
+- `rc4_key_status=unknown`，`rc4_input_status=unknown`。
+- 当前 runtime best 未改善：
+  - exact2 仍为 `78d540b49c59077041414141414141`，runtime exact2 / distance5 246。
+- exact2 failure trace:
+  - wchar index 2：runtime `4464` vs target `6100`。
+  - RC4 output offsets 4-5。
+  - encrypted const bytes `8f3b`。
+  - keystream bytes `cb5f`。
+
+6) 下一轮默认方向
+- 停止在当前 automatic harness memory-scan 路径继续寻找 pre-RC4/Base64/RC4 key material，除非 hook 点或 scanner 策略发生实质变化。
+- 下一步转 IDA/x64dbg manual breakpoints，定位 Base64/RC4 construction points。
+- 不扩大 timeout/beam/budget/topN/frontier iteration limit；不回 blind search。
