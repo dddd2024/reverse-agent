@@ -1,24 +1,22 @@
 {
   "active_strategy": "CompareAwareSearchStrategy",
   "artifact_refs": {
-    "bridge_search_result": "solve_reports\\harness_runs\\samplereverse_profile_transform_hypothesis_audit_20260503\\reports\\tool_artifacts\\samplereverse\\bridge\\bridge_search_result.json",
-    "bridge_validation": "solve_reports\\harness_runs\\samplereverse_profile_transform_hypothesis_audit_20260503\\reports\\tool_artifacts\\samplereverse\\bridge\\bridge_validation\\bridge_validation.json",
+    "bridge_search_result": "solve_reports\\harness_runs\\samplereverse_h1_h3_boundary_validation_20260504\\reports\\tool_artifacts\\samplereverse\\bridge\\bridge_search_result.json",
+    "bridge_validation": "solve_reports\\harness_runs\\samplereverse_h1_h3_boundary_validation_20260504\\reports\\tool_artifacts\\samplereverse\\bridge\\bridge_validation\\bridge_validation.json",
     "checkpoint": "solve_reports\\tool_artifacts\\samplereverse_optimizer_smoke\\samplereverse_search_checkpoint.json",
-    "compare_aware_result": "solve_reports\\harness_runs\\samplereverse_profile_transform_hypothesis_audit_20260503\\reports\\tool_artifacts\\samplereverse\\frontier_refine_2\\samplereverse_compare_aware_result.json",
-    "compare_probe": "solve_reports\\harness_runs\\samplereverse_profile_transform_hypothesis_audit_20260503\\reports\\tool_artifacts\\samplereverse\\samplereverse_compare_probe.json",
-    "compare_probe_log": "solve_reports\\harness_runs\\samplereverse_profile_transform_hypothesis_audit_20260503\\reports\\tool_artifacts\\samplereverse\\samplereverse_compare_probe.log",
-    "frontier_summary": "solve_reports\\harness_runs\\samplereverse_profile_transform_hypothesis_audit_20260503\\reports\\tool_artifacts\\samplereverse\\samplereverse_compare_aware_frontier_summary.json",
-    "guided_pool_result": "solve_reports\\harness_runs\\samplereverse_profile_transform_hypothesis_audit_20260503\\reports\\tool_artifacts\\samplereverse\\frontier_guided_2_5a3f7f46ddd474d0\\samplereverse_compare_aware_guided_pool_result.json",
-    "guided_pool_validation": "solve_reports\\harness_runs\\samplereverse_profile_transform_hypothesis_audit_20260503\\reports\\tool_artifacts\\samplereverse\\frontier_guided_2_5a3f7f46ddd474d0\\guided_pool_validation\\samplereverse_compare_aware_guided_pool_validation.json",
-    "pairscan_summary": "solve_reports\\harness_runs\\samplereverse_profile_transform_hypothesis_audit_20260503\\reports\\tool_artifacts\\samplereverse\\bridge\\pairscan_summary.json",
-    "run_manifest": "solve_reports\\harness_runs\\samplereverse_profile_transform_hypothesis_audit_20260503\\run_manifest.json",
-    "smt_result": "solve_reports\\harness_runs\\samplereverse_profile_transform_hypothesis_audit_20260503\\reports\\tool_artifacts\\samplereverse\\smt\\samplereverse_compare_aware_smt_result.json",
-    "strata_summary": "solve_reports\\harness_runs\\samplereverse_profile_transform_hypothesis_audit_20260503\\reports\\tool_artifacts\\samplereverse\\samplereverse_compare_aware_strata_summary.json",
-    "summary": "solve_reports\\harness_runs\\samplereverse_profile_transform_hypothesis_audit_20260503\\summary.json",
-    "profile_transform_hypothesis_matrix": "solve_reports\\harness_runs\\samplereverse_profile_transform_hypothesis_audit_20260503\\reports\\tool_artifacts\\samplereverse\\profile_transform_hypothesis_matrix.json",
-    "exact2_basin_value_pool_result": "solve_reports\\harness_runs\\samplereverse_profile_transform_hypothesis_audit_20260503\\reports\\tool_artifacts\\samplereverse\\exact2_basin_value_pool\\samplereverse_exact2_basin_value_pool_result.json",
-    "exact2_basin_value_pool_validation": "solve_reports\\harness_runs\\samplereverse_profile_transform_hypothesis_audit_20260503\\reports\\tool_artifacts\\samplereverse\\exact2_basin_value_pool\\value_pool_validation\\samplereverse_exact2_basin_value_pool_validation.json",
-    "smt_exact2_basin_result": "solve_reports\\harness_runs\\samplereverse_profile_transform_hypothesis_audit_20260503\\reports\\tool_artifacts\\samplereverse\\smt_exact2_basin\\samplereverse_compare_aware_smt_result.json"
+    "compare_aware_result": "solve_reports\\harness_runs\\samplereverse_h1_h3_boundary_validation_20260504\\reports\\tool_artifacts\\samplereverse\\frontier_refine_2\\samplereverse_compare_aware_result.json",
+    "compare_probe": "solve_reports\\harness_runs\\samplereverse_h1_h3_boundary_validation_20260504\\reports\\tool_artifacts\\samplereverse\\samplereverse_compare_probe.json",
+    "frontier_summary": "solve_reports\\harness_runs\\samplereverse_h1_h3_boundary_validation_20260504\\reports\\tool_artifacts\\samplereverse\\samplereverse_compare_aware_frontier_summary.json",
+    "guided_pool_validation": "solve_reports\\harness_runs\\samplereverse_h1_h3_boundary_validation_20260504\\reports\\tool_artifacts\\samplereverse\\frontier_guided_2_5a3f7f46ddd474d0\\guided_pool_validation\\samplereverse_compare_aware_guided_pool_validation.json",
+    "pairscan_summary": "solve_reports\\harness_runs\\samplereverse_h1_h3_boundary_validation_20260504\\reports\\tool_artifacts\\samplereverse\\bridge\\pairscan_summary.json",
+    "profile_transform_hypothesis_matrix": "solve_reports\\harness_runs\\samplereverse_h1_h3_boundary_validation_20260504\\reports\\tool_artifacts\\samplereverse\\profile_transform_hypothesis_matrix.json",
+    "h1_h3_boundary_validation": "solve_reports\\harness_runs\\samplereverse_h1_h3_boundary_validation_20260504\\reports\\tool_artifacts\\samplereverse\\h1_h3_boundary_validation\\h1_h3_boundary_validation.json",
+    "h1_h3_boundary_validation_runtime": "solve_reports\\harness_runs\\samplereverse_h1_h3_boundary_validation_20260504\\reports\\tool_artifacts\\samplereverse\\h1_h3_boundary_validation\\validation\\h1_h3_boundary_validation.json",
+    "exact2_basin_value_pool_result": "solve_reports\\harness_runs\\samplereverse_h1_h3_boundary_validation_20260504\\reports\\tool_artifacts\\samplereverse\\exact2_basin_value_pool\\samplereverse_exact2_basin_value_pool_result.json",
+    "exact2_basin_value_pool_validation": "solve_reports\\harness_runs\\samplereverse_h1_h3_boundary_validation_20260504\\reports\\tool_artifacts\\samplereverse\\exact2_basin_value_pool\\value_pool_validation\\samplereverse_exact2_basin_value_pool_validation.json",
+    "run_manifest": "solve_reports\\harness_runs\\samplereverse_h1_h3_boundary_validation_20260504\\run_manifest.json",
+    "smt_exact2_basin_result": "solve_reports\\harness_runs\\samplereverse_h1_h3_boundary_validation_20260504\\reports\\tool_artifacts\\samplereverse\\smt_exact2_basin\\samplereverse_compare_aware_smt_result.json",
+    "summary": "solve_reports\\harness_runs\\samplereverse_h1_h3_boundary_validation_20260504\\summary.json"
   },
   "current_best": {
     "exact1": {
@@ -41,7 +39,7 @@
       "frontier_submode": null,
       "runtime_ci_distance5": 246,
       "runtime_ci_exact_wchars": 2,
-      "source": "pairscan"
+      "source": "pairscan / H1_H3_boundary_runtime"
     },
     "frontier": {
       "anchor_mode": "frontier",
@@ -57,8 +55,8 @@
   },
   "current_bottleneck": {
     "confidence": "high",
-    "reason": "profile_transform_hypothesis_audit_complete_exact2_value_pool_stopped",
-    "stage": "profile_transform_hypothesis_audit"
+    "reason": "h1_h3_boundary_contrast_exhausted_no_gain",
+    "stage": "validation"
   },
   "do_not_do": [
     "do not return to old sample_solver blind search",
@@ -69,22 +67,39 @@
     "do not promote 5a3f7f46ddd474d0, 5a3f7fc2ddd474d0, or 343f7f46ddd474d0",
     "do not treat model-selected bare flag{ as runtime improvement",
     "do not expand beam, budget, topN, timeout, or frontier iteration limit",
-    "do not repeat exact2 basin value-pool evaluation unless diagnostics value pools change"
+    "do not repeat exact2 basin value-pool evaluation unless diagnostics value pools change",
+    "do not repeat the fixed 8-candidate H1/H3 boundary contrast set unless the transform trace or candidate set changes"
   ],
   "expected_gpt_output": "project_state/decision_packet.md",
-  "generated_at": "2026-05-03T13:58:12Z",
+  "generated_at": "2026-05-04T08:15:57Z",
   "included": [
     "current state",
     "best candidates",
     "stall reason",
     "negative results",
     "artifact references",
-    "profile transform hypothesis matrix",
+    "H1/H3 boundary validation result",
     "exact2 value-pool stop confirmation"
   ],
+  "latest_h1_h3_boundary_validation": {
+    "classification": "h1_h3_boundary_contrast_exhausted_no_gain",
+    "harness_run": "samplereverse_h1_h3_boundary_validation_20260504",
+    "candidate_count": 8,
+    "validated_count": 8,
+    "baseline_candidate": "78d540b49c59077041414141414141",
+    "baseline_exact_wchars": 2,
+    "baseline_distance5": 246,
+    "best_runtime_candidate": "78d540b49c59077040414141414141",
+    "best_runtime_exact_wchars": 2,
+    "best_runtime_distance5": 246,
+    "compare_semantics_agree": true,
+    "improved_over_exact2": false,
+    "negative_result_recorded": true,
+    "do_not_repeat": true
+  },
   "model_gate": {
     "context_level": 2,
-    "reason": "profile_transform_hypothesis_audit_complete_exact2_value_pool_stopped",
+    "reason": "h1_h3_boundary_contrast_exhausted_no_gain",
     "should_call_model": true
   },
   "omitted": [
@@ -111,55 +126,6 @@
     "has_runtime_validation": true,
     "has_stall_stage": true
   },
-  "task": "Generate next decision after profile/transform hypothesis audit",
-  "latest_audit_result": {
-    "classification": "profile_transform_hypothesis_audit_complete",
-    "harness_run": "samplereverse_profile_transform_hypothesis_audit_20260503",
-    "profile_transform_hypothesis_matrix": "solve_reports\\harness_runs\\samplereverse_profile_transform_hypothesis_audit_20260503\\reports\\tool_artifacts\\samplereverse\\profile_transform_hypothesis_matrix.json",
-    "exact2_basin_value_pool_eval": {
-      "attempted": true,
-      "generated_count": 18,
-      "unique_count": 18,
-      "validated_count": 18,
-      "best_candidate": "78d540b49c59077041414141414141",
-      "best_runtime_exact_wchars": 2,
-      "best_runtime_distance5": 246,
-      "improved_over_exact2": false,
-      "negative_result_recorded": true,
-      "do_not_repeat": true
-    },
-    "profile_transform_audit": {
-      "audit_only": true,
-      "candidate_count": 8,
-      "candidate_limit": 8,
-      "hypotheses": [
-        "H1",
-        "H2",
-        "H3",
-        "H4",
-        "H5",
-        "H6"
-      ],
-      "exact2_offline_runtime_prefix_agree_10": true,
-      "exact2_offline_prefix_hex_10": "46006c004464830d311c",
-      "exact2_runtime_prefix_hex_10": "46006c004464830d311c",
-      "prefix8_base64_boundary_remainder": 2,
-      "prefix8_ends_on_base64_chunk_boundary": false,
-      "next_bounded_validation_target": {
-        "selected_hypotheses": [
-          "H1",
-          "H3"
-        ],
-        "reason": "helper/runtime prefix is consistent, while prefix8 raw bytes end inside a Base64 chunk boundary.",
-        "bounded_validation": "Next run should use a tiny hand-picked contrast set around prefix8 + Base64 chunk boundary; this run only emits trace metadata.",
-        "candidate_count_allowed": 8,
-        "runtime_validation_required": true,
-        "expected_improvement_signal": "runtime_ci_exact_wchars > 2 or runtime_ci_distance5 < 246 without compare_semantics disagreement",
-        "stop_condition": "Do not expand beam/budget/topN/timeout/frontier iterations; stop if trace shows helper/runtime mismatch."
-      }
-    },
-    "runtime_best_improved": false,
-    "selected_flag_note": "case selected_flag remained model-scored flag{; compare-aware runtime best remains exact2 78d540b49c59077041414141414141"
-  },
-  "next_local_action": "run_selected_bounded_profile_transform_validation_for_H1_H3"
+  "task": "Generate next decision after H1/H3 boundary contrast exhaustion",
+  "next_local_action": "choose_single_new_bounded_hypothesis_after_h1_h3_exhausted"
 }

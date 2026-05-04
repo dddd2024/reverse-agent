@@ -18,6 +18,8 @@ from reverse_agent.strategies.compare_aware_search import (
     FRONTIER_MAX_ANCHORS,
     GUIDED_POOL_EXPLORATION_SLOTS,
     GUIDED_POOL_TOP_VALUES,
+    H1_H3_BOUNDARY_CANDIDATE_LIMIT,
+    H1_H3_BOUNDARY_VALIDATION_FILE_NAME,
     PROFILE_TRANSFORM_AUDIT_CANDIDATE_LIMIT,
     PROFILE_TRANSFORM_HYPOTHESIS_MATRIX_FILE_NAME,
     PROJECTED_PRESERVE_SECOND_HOP_ROLE,
@@ -45,6 +47,7 @@ from reverse_agent.strategies.compare_aware_search import (
     _validated_projected_preserve_second_hop_candidates,
     run_compare_aware_smt,
     run_exact2_basin_value_pool_evaluation,
+    run_h1_h3_boundary_validation,
     run_profile_transform_hypothesis_audit,
     validate_compare_aware_results,
     resolve_compare_aware_anchors,
@@ -755,8 +758,12 @@ def test_compare_aware_strategy_runs_refine_then_smt_and_uses_promoted_anchors(
         "95a3f65dcedb6290",
     ]
     assert captured["smt_base"] == "78d540b49c590770"
-    assert result.metadata["completed_stage"] == "smt"
+    assert result.metadata["completed_stage"] == "h1_h3_boundary_validation"
     assert result.metadata["smt"]["payload"]["exact2_basin_smt"]["base_anchor"] == "78d540b49c590770"
+    assert result.metadata["h1_h3_boundary_validation"]["payload"]["classification"] in {
+        "h1_h3_boundary_contrast_exhausted_no_gain",
+        "h1_h3_boundary_contrast_improved",
+    }
     smt_payload = json.loads((tmp_path / "smt_result.json").read_text(encoding="utf-8"))
     assert smt_payload["exact2_basin_smt"]["base_anchor"] == "78d540b49c590770"
     assert smt_payload["exact2_basin_smt"]["prefix_boundary"]["ci_exact_wchars"] == 2
@@ -3101,6 +3108,129 @@ def test_profile_transform_hypothesis_audit_writes_bounded_metadata_only_matrix(
     assert exact2["trace"]["rc4"]["decrypt_prefix_hex"].startswith("46006c004464830d311c")
     assert any(item["promotion_allowed"] is False for item in payload["candidates"])
     assert payload["next_bounded_validation_target"]["selected_hypotheses"] == ["H1", "H3"]
+
+
+def test_h1_h3_boundary_validation_runtime_validates_fixed_contrast_set(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    target = tmp_path / "samplereverse.exe"
+    target.write_bytes(b"MZ")
+    captured: dict[str, object] = {}
+
+    def fake_validate_compare_aware_results(**kwargs):
+        payload = json.loads(Path(kwargs["result_path"]).read_text(encoding="utf-8"))
+        candidates = list(payload["validation_candidates"])
+        captured["validate_top"] = kwargs["validate_top"]
+        captured["candidate_count"] = len(candidates)
+        captured["output_file_name"] = kwargs["output_file_name"]
+        captured["artifacts_dir_name"] = Path(kwargs["artifacts_dir"]).name
+        validations = []
+        for entry in candidates:
+            candidate_hex = str(entry["candidate_hex"])
+            validations.append(
+                {
+                    **entry,
+                    "candidate_hex": candidate_hex,
+                    "cand8_hex": candidate_hex[:16],
+                    "compare_semantics_agree": True,
+                    "runtime_ci_exact_wchars": 2,
+                    "runtime_ci_distance5": 246,
+                    "offline_ci_distance5": int(entry.get("ci_distance5", 1 << 30) or (1 << 30)),
+                    "offline_raw_distance10": int(entry.get("raw_distance10", 1 << 30) or (1 << 30)),
+                }
+            )
+        return tmp_path / "h1_h3_validation.json", validations
+
+    monkeypatch.setattr(
+        compare_aware_search,
+        "validate_compare_aware_results",
+        fake_validate_compare_aware_results,
+    )
+
+    result = run_h1_h3_boundary_validation(
+        target=target,
+        artifacts_dir=tmp_path / "h1_h3_boundary_validation",
+        transform_model=SamplereverseTransformModel(),
+        per_probe_timeout=0.5,
+        log=lambda _: None,
+    )
+
+    payload = result["payload"]
+    candidates = payload["validation_candidates"]
+    assert Path(result["result_path"]).name == H1_H3_BOUNDARY_VALIDATION_FILE_NAME
+    assert captured["validate_top"] == H1_H3_BOUNDARY_CANDIDATE_LIMIT
+    assert captured["candidate_count"] == H1_H3_BOUNDARY_CANDIDATE_LIMIT
+    assert captured["output_file_name"] == H1_H3_BOUNDARY_VALIDATION_FILE_NAME
+    assert captured["artifacts_dir_name"] == "validation"
+    assert payload["candidate_count"] == H1_H3_BOUNDARY_CANDIDATE_LIMIT
+    assert candidates[0]["candidate_hex"] == "78d540b49c59077041414141414141"
+    assert {item["candidate_hex"] for item in candidates} == {
+        "78d540b49c59077041414141414141",
+        "78d540b49c59076f41414141414141",
+        "78d540b49c59077141414141414141",
+        "78d540b49c5907b041414141414141",
+        "78d540b49c5907d041414141414141",
+        "78d540b49c59077040414141414141",
+        "78d540b49c59077042414141414141",
+        "78d540b49c59076f42414141414141",
+    }
+    first = candidates[0]
+    assert first["trace_prefix7"]["base64_boundary"]["prefix_last_chunk_raw_remainder"] == 1
+    assert first["trace_prefix8"]["base64_boundary"]["prefix_last_chunk_raw_remainder"] == 2
+    assert first["trace_prefix9"]["base64_boundary"]["prefix_last_chunk_raw_remainder"] == 0
+    assert payload["improved_over_exact2"] is False
+    assert payload["classification"] == "h1_h3_boundary_contrast_exhausted_no_gain"
+    assert result["promotable_validations"] == []
+
+
+def test_h1_h3_boundary_validation_promotes_runtime_improvement_only(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    target = tmp_path / "samplereverse.exe"
+    target.write_bytes(b"MZ")
+
+    def fake_validate_compare_aware_results(**kwargs):
+        payload = json.loads(Path(kwargs["result_path"]).read_text(encoding="utf-8"))
+        validations = []
+        for entry in payload["validation_candidates"]:
+            candidate_hex = str(entry["candidate_hex"])
+            improved = candidate_hex == "78d540b49c59077042414141414141"
+            validations.append(
+                {
+                    **entry,
+                    "candidate_hex": candidate_hex,
+                    "cand8_hex": candidate_hex[:16],
+                    "compare_semantics_agree": True,
+                    "runtime_ci_exact_wchars": 3 if improved else 2,
+                    "runtime_ci_distance5": 200 if improved else 246,
+                    "offline_ci_distance5": int(entry.get("ci_distance5", 1 << 30) or (1 << 30)),
+                    "offline_raw_distance10": int(entry.get("raw_distance10", 1 << 30) or (1 << 30)),
+                }
+            )
+        return tmp_path / "h1_h3_validation.json", validations
+
+    monkeypatch.setattr(
+        compare_aware_search,
+        "validate_compare_aware_results",
+        fake_validate_compare_aware_results,
+    )
+
+    result = run_h1_h3_boundary_validation(
+        target=target,
+        artifacts_dir=tmp_path / "h1_h3_boundary_validation",
+        transform_model=SamplereverseTransformModel(),
+        per_probe_timeout=0.5,
+        log=lambda _: None,
+    )
+
+    payload = result["payload"]
+    assert payload["classification"] == "h1_h3_boundary_contrast_improved"
+    assert payload["improved_over_exact2"] is True
+    assert [item["candidate_hex"] for item in result["promotable_validations"]] == [
+        "78d540b49c59077042414141414141"
+    ]
 
 
 def test_compare_aware_strategy_runs_second_frontier_guided_round_on_improved_frontier(

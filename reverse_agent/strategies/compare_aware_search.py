@@ -37,6 +37,8 @@ EXACT2_BASIN_VALUE_POOL_VALIDATION_FILE_NAME = "samplereverse_exact2_basin_value
 FRONTIER_SUMMARY_FILE_NAME = "samplereverse_compare_aware_frontier_summary.json"
 PROFILE_TRANSFORM_HYPOTHESIS_MATRIX_FILE_NAME = "profile_transform_hypothesis_matrix.json"
 PROFILE_TRANSFORM_AUDIT_CANDIDATE_LIMIT = 8
+H1_H3_BOUNDARY_VALIDATION_FILE_NAME = "h1_h3_boundary_validation.json"
+H1_H3_BOUNDARY_CANDIDATE_LIMIT = 8
 
 DEFAULT_ANCHORS = (
     "78d540b49c590770",
@@ -104,6 +106,56 @@ DO_NOT_PROMOTE_PROJECTED_ANCHORS = (
     "5a3f7f46ddd474d0",
     "5a3f7fc2ddd474d0",
     "343f7f46ddd474d0",
+)
+H1_H3_BOUNDARY_CANDIDATES = (
+    (
+        "baseline_exact2",
+        "78d540b49c59077041414141414141",
+        "baseline exact2",
+        "prefix8 raw remainder 2 baseline",
+    ),
+    (
+        "last_prefix_byte_minus_1",
+        "78d540b49c59076f41414141414141",
+        "last prefix byte -1",
+        "prefix8 byte immediately before suffix boundary",
+    ),
+    (
+        "last_prefix_byte_plus_1",
+        "78d540b49c59077141414141414141",
+        "last prefix byte +1",
+        "prefix8 byte immediately before suffix boundary",
+    ),
+    (
+        "last_prefix_byte_secondary_exact2",
+        "78d540b49c5907b041414141414141",
+        "last prefix byte = secondary exact2 boundary value",
+        "prefix8 byte borrowed from secondary exact2 boundary",
+    ),
+    (
+        "last_prefix_byte_exact1_frontier",
+        "78d540b49c5907d041414141414141",
+        "last prefix byte = exact1 frontier boundary value",
+        "prefix8 byte borrowed from exact1 frontier boundary",
+    ),
+    (
+        "first_suffix_byte_minus_1",
+        "78d540b49c59077040414141414141",
+        "first suffix byte -1",
+        "suffix byte sharing the Base64 chunk with prefix8",
+    ),
+    (
+        "first_suffix_byte_plus_1",
+        "78d540b49c59077042414141414141",
+        "first suffix byte +1",
+        "suffix byte sharing the Base64 chunk with prefix8",
+    ),
+    (
+        "straddling_prefix_suffix_contrast",
+        "78d540b49c59076f42414141414141",
+        "straddling prefix/suffix contrast",
+        "simultaneous last-prefix and first-suffix boundary perturbation",
+    ),
 )
 PAIR_TAIL_FLAGLIKE_BYTES = set(b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_{}-")
 
@@ -2565,6 +2617,12 @@ def validate_compare_aware_results(
             "label": entry.get("label", f"top{idx}"),
             "candidate_hex": candidate_hex,
             "cand8_hex": str(entry.get("cand8_hex", "")),
+            "layout_hypothesis": str(entry.get("layout_hypothesis", "")),
+            "boundary_focus": str(entry.get("boundary_focus", "")),
+            "trace_prefix7": entry.get("trace_prefix7", {}),
+            "trace_prefix8": entry.get("trace_prefix8", {}),
+            "trace_prefix9": entry.get("trace_prefix9", {}),
+            "offline_prefix_hex_10": str(entry.get("offline_prefix_hex_10", "")),
             "offline_ci_exact_wchars": offline_ci_exact_wchars,
             "offline_ci_distance5": offline_ci_distance5,
             "offline_raw_distance10": int(entry.get("raw_distance10", 1 << 30) or (1 << 30)),
@@ -3604,6 +3662,160 @@ def run_profile_transform_hypothesis_audit(
     if log:
         log(f"profile transform hypothesis audit wrote {output_path}")
     return {"result_path": str(output_path), "payload": payload}
+
+
+def _h1_h3_boundary_validation_entries(
+    transform_model: SamplereverseTransformModel,
+) -> list[dict[str, object]]:
+    entries: list[dict[str, object]] = []
+    seen: set[str] = set()
+    for label, candidate_hex, layout_hypothesis, boundary_focus in H1_H3_BOUNDARY_CANDIDATES:
+        normalized = str(candidate_hex).strip().lower()
+        if normalized in seen or len(normalized) != INPUT_LENGTH * 2:
+            continue
+        seen.add(normalized)
+        entry = _evaluate_candidate_hex(normalized, transform_model)
+        trace_prefix7 = trace_candidate_transform(normalized, prefix_bytes=7)
+        trace_prefix8 = trace_candidate_transform(normalized, prefix_bytes=8)
+        trace_prefix9 = trace_candidate_transform(normalized, prefix_bytes=9)
+        compare_boundary = (
+            dict(trace_prefix8.get("compare_boundary", {}))
+            if isinstance(trace_prefix8.get("compare_boundary"), dict)
+            else {}
+        )
+        offline_prefix_hex_10 = str(compare_boundary.get("raw_prefix_hex_10", "")).strip().lower()
+        entry.update(
+            {
+                "label": label,
+                "stage": "h1_h3_boundary_validation",
+                "frontier_role": "h1_h3_boundary_contrast",
+                "anchor_mode": EXACT2_ANCHOR_MODE,
+                "source_anchor": "78d540b49c590770",
+                "base_anchor": "78d540b49c590770",
+                "anchor_lineage": "exact2_seed(78d540b49c590770) -> h1_h3_boundary_validation",
+                "layout_hypothesis": layout_hypothesis,
+                "boundary_focus": boundary_focus,
+                "trace_prefix7": trace_prefix7,
+                "trace_prefix8": trace_prefix8,
+                "trace_prefix9": trace_prefix9,
+                "offline_prefix_hex_10": offline_prefix_hex_10,
+                "base64_remainders": {
+                    "prefix7": dict(trace_prefix7.get("base64_boundary", {})).get(
+                        "prefix_last_chunk_raw_remainder"
+                    ),
+                    "prefix8": dict(trace_prefix8.get("base64_boundary", {})).get(
+                        "prefix_last_chunk_raw_remainder"
+                    ),
+                    "prefix9": dict(trace_prefix9.get("base64_boundary", {})).get(
+                        "prefix_last_chunk_raw_remainder"
+                    ),
+                },
+            }
+        )
+        entries.append(entry)
+    return entries[:H1_H3_BOUNDARY_CANDIDATE_LIMIT]
+
+
+def _selected_h1_h3_target(profile_transform_audit_run: dict[str, object] | None) -> bool:
+    payload = dict((profile_transform_audit_run or {}).get("payload", {}))
+    target = dict(payload.get("next_bounded_validation_target", {}))
+    selected = [str(item) for item in target.get("selected_hypotheses", [])]
+    return selected == ["H1", "H3"]
+
+
+def run_h1_h3_boundary_validation(
+    *,
+    target: Path,
+    artifacts_dir: Path,
+    transform_model: SamplereverseTransformModel,
+    per_probe_timeout: float,
+    log,
+    baseline_exact: int = 2,
+    baseline_distance: int = DEFAULT_BRIDGE_BASELINE_DISTANCE5,
+) -> dict[str, object]:
+    artifacts_dir.mkdir(parents=True, exist_ok=True)
+    result_path = artifacts_dir / H1_H3_BOUNDARY_VALIDATION_FILE_NAME
+    entries = _h1_h3_boundary_validation_entries(transform_model)
+    payload: dict[str, object] = {
+        "artifact_kind": "h1_h3_boundary_validation",
+        "profile": "samplereverse",
+        "attempted": True,
+        "classification": "h1_h3_boundary_validation_pending",
+        "selected_hypotheses": ["H1", "H3"],
+        "candidate_limit": H1_H3_BOUNDARY_CANDIDATE_LIMIT,
+        "candidate_count": len(entries),
+        "baseline_candidate": "78d540b49c59077041414141414141",
+        "baseline_exact_wchars": int(baseline_exact),
+        "baseline_distance5": int(baseline_distance),
+        "candidate_generation": "fixed_hand_picked_contrast_set",
+        "search_budget_changed": False,
+        "beam_budget_topn_timeout_frontier_limit_expanded": False,
+        "validation_required": True,
+        "success_signal": "runtime_ci_exact_wchars > 2 or runtime_ci_distance5 < 246 with compare_semantics_agree=true",
+        "validation_candidates": entries,
+        "validations": [],
+        "best_runtime_candidate": {},
+        "promotable_validations": [],
+        "improved_over_exact2": False,
+    }
+    _write_json(result_path, payload)
+
+    validation_path: Path | None = None
+    validations: list[dict[str, object]] = []
+    if entries:
+        validation_path, validations = validate_compare_aware_results(
+            target=target,
+            artifacts_dir=artifacts_dir / "validation",
+            result_path=result_path,
+            transform_model=transform_model,
+            validate_top=len(entries),
+            per_probe_timeout=per_probe_timeout,
+            log=log,
+            output_file_name=H1_H3_BOUNDARY_VALIDATION_FILE_NAME,
+            compare_output_prefix="h1_h3_boundary_compare_aware",
+        )
+
+    compare_agree_validations = [
+        item for item in validations if bool(item.get("compare_semantics_agree"))
+    ]
+    best_runtime_candidate = (
+        sorted(compare_agree_validations, key=_runtime_validation_sort_key)[0]
+        if compare_agree_validations
+        else {}
+    )
+    promotable_validations = [
+        item
+        for item in validations
+        if _exact2_basin_runtime_improved(
+            item,
+            baseline_exact=int(baseline_exact),
+            baseline_distance=int(baseline_distance),
+        )
+    ]
+    improved = bool(promotable_validations)
+    payload.update(
+        {
+            "classification": (
+                "h1_h3_boundary_contrast_improved"
+                if improved
+                else "h1_h3_boundary_contrast_exhausted_no_gain"
+            ),
+            "validated_count": len(validations),
+            "validation_path": str(validation_path) if validation_path else "",
+            "validations": validations,
+            "best_runtime_candidate": best_runtime_candidate,
+            "promotable_validations": promotable_validations,
+            "improved_over_exact2": improved,
+        }
+    )
+    _write_json(result_path, payload)
+    return {
+        "result_path": str(result_path),
+        "validation_path": str(validation_path) if validation_path else "",
+        "payload": payload,
+        "validations": validations,
+        "promotable_validations": promotable_validations,
+    }
 
 
 def _mutated_candidate_hex(base_anchor: str, position: int, value: int) -> str:
@@ -8199,6 +8411,9 @@ class CompareAwareSearchStrategy(SolverStrategy):
         exact2_basin_value_pool_validation_artifact: ToolRunArtifact | None = None
         profile_transform_audit_run: dict[str, object] | None = None
         profile_transform_audit_artifact: ToolRunArtifact | None = None
+        h1_h3_boundary_validation_run: dict[str, object] | None = None
+        h1_h3_boundary_validation_artifact: ToolRunArtifact | None = None
+        h1_h3_boundary_runtime_artifact: ToolRunArtifact | None = None
         if not _bridge_progress(final_validations):
             comparison_entries = _unique_candidate_entries(
                 [
@@ -8485,6 +8700,39 @@ class CompareAwareSearchStrategy(SolverStrategy):
             derived_entries=[],
         )
 
+        if _selected_h1_h3_target(profile_transform_audit_run):
+            h1_h3_boundary_validation_run = run_h1_h3_boundary_validation(
+                target=file_path,
+                artifacts_dir=artifacts_dir / "h1_h3_boundary_validation",
+                transform_model=transform_model,
+                per_probe_timeout=per_probe_timeout,
+                log=log,
+                baseline_exact=2,
+                baseline_distance=DEFAULT_BRIDGE_BASELINE_DISTANCE5,
+            )
+            h1_h3_payload = dict(h1_h3_boundary_validation_run.get("payload", {}))
+            h1_h3_boundary_validation_artifact = _make_search_artifact(
+                tool_name="H1H3BoundaryValidation",
+                output_path=Path(str(h1_h3_boundary_validation_run["result_path"])),
+                summary=str(
+                    h1_h3_payload.get(
+                        "classification",
+                        "h1/h3 boundary validation complete",
+                    )
+                ),
+                strategy_name=self.name,
+                evidence_kind="TransformEvidence",
+                payload=h1_h3_payload,
+                derived_entries=list(h1_h3_payload.get("promotable_validations", [])),
+            )
+            if h1_h3_boundary_validation_run.get("validation_path"):
+                h1_h3_boundary_runtime_artifact = _make_validation_artifact(
+                    tool_name="H1H3BoundaryRuntimeValidation",
+                    output_path=Path(str(h1_h3_boundary_validation_run["validation_path"])),
+                    validations=list(h1_h3_boundary_validation_run.get("validations", [])),
+                    strategy_name=self.name,
+                )
+
         candidates = _validated_candidates_from_runs(
             bridge_validations,
             guided_validations,
@@ -8494,6 +8742,9 @@ class CompareAwareSearchStrategy(SolverStrategy):
             list(exact2_basin_smt_run["validations"]) if exact2_basin_smt_run else [],
             list(exact2_basin_value_pool_run.get("promotable_validations", []))
             if exact2_basin_value_pool_run
+            else [],
+            list(h1_h3_boundary_validation_run.get("promotable_validations", []))
+            if h1_h3_boundary_validation_run
             else [],
         )
         artifacts = [
@@ -8522,6 +8773,10 @@ class CompareAwareSearchStrategy(SolverStrategy):
             artifacts.append(exact2_basin_value_pool_validation_artifact)
         if profile_transform_audit_artifact is not None:
             artifacts.append(profile_transform_audit_artifact)
+        if h1_h3_boundary_validation_artifact is not None:
+            artifacts.append(h1_h3_boundary_validation_artifact)
+        if h1_h3_boundary_runtime_artifact is not None:
+            artifacts.append(h1_h3_boundary_runtime_artifact)
         return StrategyResult(
             strategy_name=self.name,
             summary=search_artifact.summary,
@@ -8545,9 +8800,14 @@ class CompareAwareSearchStrategy(SolverStrategy):
                 "exact2_basin_smt": exact2_basin_smt_run or {},
                 "exact2_basin_value_pool": exact2_basin_value_pool_run or {},
                 "profile_transform_hypothesis_audit": profile_transform_audit_run or {},
+                "h1_h3_boundary_validation": h1_h3_boundary_validation_run or {},
                 "prefix_boundary_diagnostics": prefix_boundary_diagnostics,
                 "frontier_converged_reason": frontier_converged_reason,
                 "frontier_stall_stage": frontier_stall_stage,
-                "completed_stage": "smt" if smt_run else "refine",
+                "completed_stage": "h1_h3_boundary_validation"
+                if h1_h3_boundary_validation_run
+                else "smt"
+                if smt_run
+                else "refine",
             },
         )

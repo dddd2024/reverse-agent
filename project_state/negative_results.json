@@ -36,7 +36,15 @@
     "do_not_repeat": true,
     "override_allowed": true,
     "override_reason_required": true,
-    "reason": "samplereverse_profile_transform_hypothesis_audit_20260503 confirmed the pool is still exhausted: 18 generated, 18 unique, 18 runtime validated; best remained 78d540b49c59077041414141414141 exact2 / distance5 246 with no exact3+ or distance improvement",
+    "reason": "samplereverse_h1_h3_boundary_validation_20260504 reconfirmed the pool is exhausted before H1/H3 validation: 18 generated, 18 unique, 18 runtime validated; best remained 78d540b49c59077041414141414141 exact2 / distance5 246 with no exact3+ or distance improvement",
+    "severity": "soft_block"
+  },
+  {
+    "direction": "H1/H3 fixed 8-candidate prefix8 plus Base64 boundary contrast set: 78d540b49c59077041414141414141, 78d540b49c59076f41414141414141, 78d540b49c59077141414141414141, 78d540b49c5907b041414141414141, 78d540b49c5907d041414141414141, 78d540b49c59077040414141414141, 78d540b49c59077042414141414141, 78d540b49c59076f42414141414141",
+    "do_not_repeat": true,
+    "override_allowed": true,
+    "override_reason_required": true,
+    "reason": "samplereverse_h1_h3_boundary_validation_20260504 runtime-validated all 8 fixed candidates with compare_semantics_agree=true; best stayed exact2 / distance5 246, improved_over_exact2=false, classification h1_h3_boundary_contrast_exhausted_no_gain",
     "severity": "soft_block"
   }
 ]
