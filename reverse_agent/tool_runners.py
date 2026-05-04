@@ -83,6 +83,9 @@ def _structured_evidence_from_json(tool_name: str, data: dict[str, object]) -> l
         payload = {
             "compare_site": str(data.get("compare_site", "")).strip(),
             "input_text": str(data.get("input_text", "")),
+            "lhs_ptr": str(data.get("lhs_ptr", "")),
+            "rhs_ptr": str(data.get("rhs_ptr", "")),
+            "compare_count": data.get("compare_count"),
             "lhs_wide_text": str(data.get("lhs_wide_text", "")),
             "lhs_wide_hex": str(data.get("lhs_wide_hex", "")),
             "rhs_wide_text": str(data.get("rhs_wide_text", "")),

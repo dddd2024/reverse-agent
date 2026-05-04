@@ -54,5 +54,13 @@
     "override_reason_required": true,
     "reason": "transform trace consistency diagnostic confirmed five runtime-backed candidates agree with offline UTF-16LE/Base64/RC4/compare trace; next work needs a different bounded evidence source",
     "severity": "soft_block"
+  },
+  {
+    "direction": "focused dynamic compare-path probe with current compare-site hook",
+    "do_not_repeat": true,
+    "override_allowed": true,
+    "override_reason_required": true,
+    "reason": "dynamic compare-path probe captured compare-site evidence but did not directly expose pre-RC4/Base64/RC4 key material; next evidence source should be lower-level instrumentation",
+    "severity": "soft_block"
   }
 ]

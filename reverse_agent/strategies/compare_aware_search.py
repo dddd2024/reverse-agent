@@ -40,6 +40,7 @@ PROFILE_TRANSFORM_AUDIT_CANDIDATE_LIMIT = 8
 H1_H3_BOUNDARY_VALIDATION_FILE_NAME = "h1_h3_boundary_validation.json"
 H1_H3_BOUNDARY_CANDIDATE_LIMIT = 8
 TRANSFORM_TRACE_CONSISTENCY_FILE_NAME = "transform_trace_consistency.json"
+DYNAMIC_COMPARE_PATH_PROBE_FILE_NAME = "dynamic_compare_path_probe.json"
 
 DEFAULT_ANCHORS = (
     "78d540b49c590770",
@@ -163,6 +164,11 @@ TRANSFORM_TRACE_CONSISTENCY_CANDIDATES = (
     "78d540b49c59077040414141414141",
     "78d540b49c59077042414141414141",
     "78d540b49c59077141414141414141",
+    "5a3e7f46ddd474d041414141414141",
+)
+DYNAMIC_COMPARE_PATH_PROBE_CANDIDATES = (
+    "78d540b49c59077041414141414141",
+    "78d540b49c59077040414141414141",
     "5a3e7f46ddd474d041414141414141",
 )
 PAIR_TAIL_FLAGLIKE_BYTES = set(b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_{}-")
@@ -2682,6 +2688,12 @@ def validate_compare_aware_results(
                     "runtime_lhs_prefix_hex_10": runtime_lhs_prefix_hex_10,
                     "runtime_lhs_prefix_hex_16": runtime_lhs_prefix_hex_16,
                     "runtime_lhs_prefix_bytes_captured": compare_payload.get("runtime_lhs_prefix_bytes_captured"),
+                    "runtime_lhs_ptr": str(compare_payload.get("lhs_ptr", "")),
+                    "runtime_rhs_ptr": str(compare_payload.get("rhs_ptr", "")),
+                    "runtime_compare_count": compare_payload.get("compare_count"),
+                    "runtime_rhs_prefix_hex": str(compare_payload.get("rhs_wide_hex", "")).strip().lower()[:20],
+                    "runtime_rhs_wide_text": str(compare_payload.get("rhs_wide_text", "")),
+                    "runtime_lhs_wide_text": str(compare_payload.get("lhs_wide_text", "")),
                     "runtime_ci_exact_wchars": runtime_ci_exact_wchars,
                     "runtime_ci_distance5": runtime_ci_distance5,
                     "compare_semantics_agree": compare_semantics_agree,
@@ -2703,6 +2715,12 @@ def validate_compare_aware_results(
                     "runtime_lhs_prefix_hex_10": "",
                     "runtime_lhs_prefix_hex_16": "",
                     "runtime_lhs_prefix_bytes_captured": 0,
+                    "runtime_lhs_ptr": "",
+                    "runtime_rhs_ptr": "",
+                    "runtime_compare_count": None,
+                    "runtime_rhs_prefix_hex": "",
+                    "runtime_rhs_wide_text": "",
+                    "runtime_lhs_wide_text": "",
                     "runtime_ci_exact_wchars": 0,
                     "runtime_ci_distance5": 1 << 30,
                     "compare_semantics_agree": False,
@@ -3265,6 +3283,17 @@ def _negative_h1_h3_boundary_recorded() -> bool:
         direction = str(item.get("direction", "")).lower()
         if "h1/h3 fixed 8-candidate" in direction and bool(item.get("do_not_repeat")):
             return True
+    return False
+
+
+def _prior_transform_model_confirmed() -> bool:
+    current_state = _project_state_json("current_state.json")
+    latest = current_state.get("latest_transform_trace_consistency", {})
+    if isinstance(latest, dict) and str(latest.get("classification", "")).strip() == "transform_model_confirmed":
+        return True
+    bottleneck = current_state.get("current_bottleneck", {})
+    if isinstance(bottleneck, dict):
+        return str(bottleneck.get("reason", "")).strip() == "transform_model_confirmed"
     return False
 
 
@@ -4067,6 +4096,216 @@ def run_h1_h3_boundary_validation(
         "payload": payload,
         "validations": validations,
         "promotable_validations": promotable_validations,
+    }
+
+
+def _dynamic_compare_path_probe_entries(
+    transform_model: SamplereverseTransformModel,
+) -> list[dict[str, object]]:
+    _ = transform_model
+    entries: list[dict[str, object]] = []
+    for idx, candidate_hex in enumerate(DYNAMIC_COMPARE_PATH_PROBE_CANDIDATES, 1):
+        trace = trace_candidate_transform(candidate_hex)
+        compare_boundary = dict(trace.get("compare_boundary", {})) if isinstance(trace, dict) else {}
+        entries.append(
+            {
+                "label": f"dynamic_compare_path_probe_{idx}",
+                "candidate_hex": candidate_hex,
+                "cand8_hex": candidate_hex[:16],
+                "ci_exact_wchars": int(compare_boundary.get("ci_exact_wchars", 0) or 0),
+                "ci_distance5": int(compare_boundary.get("ci_distance5", 1 << 30) or (1 << 30)),
+                "raw_distance10": int(compare_boundary.get("raw_distance10", 1 << 30) or (1 << 30)),
+                "raw_prefix_hex": str(compare_boundary.get("raw_prefix_hex", "")),
+                "raw_prefix_hex_64": str(compare_boundary.get("raw_prefix_hex_64", "")),
+                "trace": trace,
+                "probe_role": (
+                    "exact2_baseline"
+                    if idx == 1
+                    else "near_suffix_control"
+                    if idx == 2
+                    else "frontier_control"
+                ),
+            }
+        )
+    return entries
+
+
+def _runtime_probe_backed(validation: dict[str, object]) -> bool:
+    return bool(
+        str(validation.get("runtime_lhs_prefix_hex_10", "")).strip()
+        or str(validation.get("runtime_lhs_prefix_hex", "")).strip()
+    )
+
+
+def _probe_point_statuses(validations: Sequence[dict[str, object]]) -> dict[str, str]:
+    runtime_backed = [item for item in validations if _runtime_probe_backed(item)]
+    has_target = any(str(item.get("runtime_rhs_prefix_hex", "")).strip() for item in runtime_backed)
+    has_count = any(item.get("runtime_compare_count") not in (None, "") for item in runtime_backed)
+    has_wide_target = any(
+        str(item.get("runtime_rhs_prefix_hex", "")).lower().startswith(TARGET_PREFIX.hex())
+        for item in runtime_backed
+    )
+    return {
+        "raw_input": "available" if validations else "unavailable",
+        "utf16le_payload": "inferred",
+        "base64_material": "inferred",
+        "rc4_input": "inferred",
+        "rc4_key": "inferred",
+        "pre_rc4_runtime_material": "unavailable",
+        "post_rc4_compare_buffer": "available" if runtime_backed else "unavailable",
+        "compare_target": "available" if has_target else "unavailable",
+        "compare_length": "available" if has_count else "unavailable",
+        "compare_unit": "available" if has_count and has_wide_target else "inferred",
+    }
+
+
+def _first_failing_wchar(validation: dict[str, object]) -> dict[str, object]:
+    boundary = dict(validation.get("prefix_boundary", {}))
+    deltas = boundary.get("wchar_deltas", [])
+    if not isinstance(deltas, list):
+        return {}
+    for item in deltas:
+        if not isinstance(item, dict):
+            continue
+        if not bool(item.get("exact_ci")):
+            return {
+                "index": item.get("index"),
+                "raw_pair_hex": item.get("raw_pair_hex", ""),
+                "target_pair_hex": item.get("target_pair_hex", ""),
+                "distance": item.get("distance"),
+            }
+    return {}
+
+
+def _dynamic_probe_candidate_result(validation: dict[str, object]) -> dict[str, object]:
+    return {
+        "candidate_hex": str(validation.get("candidate_hex", "")),
+        "probe_role": str(validation.get("probe_role", "")),
+        "runtime_backed": _runtime_probe_backed(validation),
+        "runtime_exact_wchars": int(validation.get("runtime_ci_exact_wchars", 0) or 0),
+        "runtime_distance5": int(validation.get("runtime_ci_distance5", 1 << 30) or (1 << 30)),
+        "compare_semantics_agree": bool(validation.get("compare_semantics_agree")),
+        "runtime_compare_buffer_preview": str(validation.get("runtime_lhs_prefix_hex", "")),
+        "runtime_compare_target_preview": str(validation.get("runtime_rhs_prefix_hex", "")),
+        "runtime_compare_length": validation.get("runtime_compare_count"),
+        "runtime_compare_unit": "wchar" if validation.get("runtime_compare_count") == 5 else "inferred_wchar",
+        "lhs_ptr": str(validation.get("runtime_lhs_ptr", "")),
+        "rhs_ptr": str(validation.get("runtime_rhs_ptr", "")),
+        "pre_rc4_material": "unavailable",
+        "rc4_key_material": "inferred_from_offline_trace",
+        "first_failing_wchar": _first_failing_wchar(validation),
+        "evidence_explains_exact2_plateau": (
+            "runtime compare buffer matches modeled post-RC4 bytes; plateau is first visible at the first nonmatching wchar"
+            if _runtime_probe_backed(validation) and bool(validation.get("compare_semantics_agree"))
+            else "runtime evidence unavailable or offline/runtime compare semantics disagree"
+        ),
+        "trace": validation.get("trace", {}),
+    }
+
+
+def run_dynamic_compare_path_probe(
+    *,
+    target: Path,
+    artifacts_dir: Path,
+    transform_model: SamplereverseTransformModel,
+    per_probe_timeout: float,
+    log,
+) -> dict[str, object]:
+    artifacts_dir.mkdir(parents=True, exist_ok=True)
+    result_path = artifacts_dir / DYNAMIC_COMPARE_PATH_PROBE_FILE_NAME
+    entries = _dynamic_compare_path_probe_entries(transform_model)
+    payload: dict[str, object] = {
+        "artifact_kind": "dynamic_compare_path_probe",
+        "profile": "samplereverse",
+        "attempted": True,
+        "candidate_generation_changed": False,
+        "ranking_changed": False,
+        "final_selection_changed": False,
+        "search_budget_changed": False,
+        "beam_budget_topn_timeout_frontier_limit_expanded": False,
+        "candidate_count": len(entries),
+        "candidate_limit": len(DYNAMIC_COMPARE_PATH_PROBE_CANDIDATES),
+        "validation_candidates": entries,
+        "promotable_validations": [],
+    }
+    _write_json(result_path, payload)
+
+    validation_kwargs = {
+        "target": target,
+        "artifacts_dir": artifacts_dir / "validation",
+        "result_path": result_path,
+        "transform_model": transform_model,
+        "validate_top": len(entries),
+        "per_probe_timeout": per_probe_timeout,
+        "log": log,
+        "output_file_name": DYNAMIC_COMPARE_PATH_PROBE_FILE_NAME,
+        "compare_output_prefix": "dynamic_compare_path_probe_compare",
+        "capture_prefix_bytes": RUNTIME_PREFIX_BYTES,
+    }
+    try:
+        validation_path, validations = validate_compare_aware_results(**validation_kwargs)
+    except TypeError as exc:
+        if "capture_prefix_bytes" not in str(exc):
+            raise
+        validation_kwargs.pop("capture_prefix_bytes", None)
+        validation_path, validations = validate_compare_aware_results(**validation_kwargs)
+    runtime_backed_count = sum(1 for item in validations if _runtime_probe_backed(item))
+    probe_points = _probe_point_statuses(validations)
+    complete = runtime_backed_count >= len(entries) and all(
+        probe_points.get(key) == "available"
+        for key in ("post_rc4_compare_buffer", "compare_target", "compare_length")
+    )
+    classification = (
+        "dynamic_probe_complete"
+        if complete
+        else "dynamic_probe_partial"
+        if runtime_backed_count
+        else "dynamic_probe_unavailable"
+    )
+    findings = [
+        "compare-site runtime LHS/RHS/count capture is available"
+        if runtime_backed_count
+        else "compare-site runtime capture is unavailable",
+        "pre-RC4/Base64/RC4 key material is not directly captured by the current compare-site hook",
+    ]
+    if probe_points.get("compare_target") == "available" and probe_points.get("compare_length") == "available":
+        findings.append("compare target and compare length are runtime-backed at the compare call")
+
+    payload.update(
+        {
+            "classification": classification,
+            "runtime_backed_count": runtime_backed_count,
+            "validation_path": str(validation_path),
+            "probe_points": probe_points,
+            "candidate_results": [_dynamic_probe_candidate_result(item) for item in validations],
+            "findings": findings,
+            "compare_path_assessment": {
+                "rc4_key_fully_confirmed": False,
+                "rc4_input_confirmed_as_base64_ascii_bytes": False,
+                "compare_target_confirmed_as_flag_prefix": probe_points.get("compare_target") == "available",
+                "compare_start_byte_zero_supported": bool(runtime_backed_count),
+                "offset_prefix_skip_stride_or_null_stop_evidence": (
+                    "none_observed_at_compare_site" if runtime_backed_count else "unavailable"
+                ),
+                "first_runtime_failure_after_exact2": _first_failing_wchar(validations[0]) if validations else {},
+            },
+            "next_bounded_action": (
+                "move to lower-level dynamic instrumentation/manual reversing for pre-RC4 or key material"
+                if classification == "dynamic_probe_complete"
+                else "repair compare-site runtime capture before continuing local compare-aware search"
+            ),
+            "promotable_validations": [],
+        }
+    )
+    _write_json(result_path, payload)
+    if log:
+        log(f"dynamic compare-path probe wrote {result_path}")
+    return {
+        "result_path": str(result_path),
+        "validation_path": str(validation_path),
+        "payload": payload,
+        "validations": validations,
+        "promotable_validations": [],
     }
 
 
@@ -8665,6 +8904,8 @@ class CompareAwareSearchStrategy(SolverStrategy):
         profile_transform_audit_artifact: ToolRunArtifact | None = None
         transform_trace_consistency_run: dict[str, object] | None = None
         transform_trace_consistency_artifact: ToolRunArtifact | None = None
+        dynamic_compare_path_probe_run: dict[str, object] | None = None
+        dynamic_compare_path_probe_artifact: ToolRunArtifact | None = None
         h1_h3_boundary_validation_run: dict[str, object] | None = None
         h1_h3_boundary_validation_artifact: ToolRunArtifact | None = None
         h1_h3_boundary_runtime_artifact: ToolRunArtifact | None = None
@@ -8984,6 +9225,34 @@ class CompareAwareSearchStrategy(SolverStrategy):
             derived_entries=[],
         )
 
+        should_run_dynamic_probe = (
+            str(transform_trace_consistency_payload.get("classification", "")) == "transform_model_confirmed"
+            or _prior_transform_model_confirmed()
+        )
+        if should_run_dynamic_probe:
+            dynamic_compare_path_probe_run = run_dynamic_compare_path_probe(
+                target=file_path,
+                artifacts_dir=artifacts_dir / "dynamic_compare_path_probe",
+                transform_model=transform_model,
+                per_probe_timeout=per_probe_timeout,
+                log=log,
+            )
+            dynamic_compare_path_probe_payload = dict(dynamic_compare_path_probe_run.get("payload", {}))
+            dynamic_compare_path_probe_artifact = _make_search_artifact(
+                tool_name="DynamicComparePathProbe",
+                output_path=Path(str(dynamic_compare_path_probe_run["result_path"])),
+                summary=str(
+                    dynamic_compare_path_probe_payload.get(
+                        "classification",
+                        "dynamic compare-path probe complete",
+                    )
+                ),
+                strategy_name=self.name,
+                evidence_kind="RuntimeCompareEvidence",
+                payload=dynamic_compare_path_probe_payload,
+                derived_entries=[],
+            )
+
         should_run_h1_h3 = (
             _selected_h1_h3_target(profile_transform_audit_run)
             and not _negative_h1_h3_boundary_recorded()
@@ -9065,6 +9334,8 @@ class CompareAwareSearchStrategy(SolverStrategy):
             artifacts.append(profile_transform_audit_artifact)
         if transform_trace_consistency_artifact is not None:
             artifacts.append(transform_trace_consistency_artifact)
+        if dynamic_compare_path_probe_artifact is not None:
+            artifacts.append(dynamic_compare_path_probe_artifact)
         if h1_h3_boundary_validation_artifact is not None:
             artifacts.append(h1_h3_boundary_validation_artifact)
         if h1_h3_boundary_runtime_artifact is not None:
@@ -9093,12 +9364,15 @@ class CompareAwareSearchStrategy(SolverStrategy):
                 "exact2_basin_value_pool": exact2_basin_value_pool_run or {},
                 "profile_transform_hypothesis_audit": profile_transform_audit_run or {},
                 "transform_trace_consistency": transform_trace_consistency_run or {},
+                "dynamic_compare_path_probe": dynamic_compare_path_probe_run or {},
                 "h1_h3_boundary_validation": h1_h3_boundary_validation_run or {},
                 "prefix_boundary_diagnostics": prefix_boundary_diagnostics,
                 "frontier_converged_reason": frontier_converged_reason,
                 "frontier_stall_stage": frontier_stall_stage,
                 "completed_stage": "h1_h3_boundary_validation"
                 if h1_h3_boundary_validation_run
+                else "dynamic_compare_path_probe"
+                if dynamic_compare_path_probe_run
                 else "transform_trace_consistency"
                 if transform_trace_consistency_run
                 else "smt"

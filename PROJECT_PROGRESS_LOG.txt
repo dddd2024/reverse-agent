@@ -2911,3 +2911,70 @@ Reverse Agent 项目进展日志（截至 2026-04-16）
 - 下一步需要不同 bounded evidence source；建议做 focused dynamic probe，捕获 compare path 附近的 pre-RC4/Base64/key material。
 - 不扩大 timeout/beam/budget/topN/frontier iteration limit。
 
+## 2026-05-04 focused dynamic compare-path probe
+
+1) 执行范围
+- 按 `decision_packet.md` 执行 focused dynamic compare-path probe。
+- 新增固定 3 个 probe candidates，并全部走现有 compare-site runtime capture。
+- 没有新增搜索器；没有改变 candidate generation、ranking、final selection、promotion。
+- 没有扩大 beam、budget、topN、timeout、frontier iteration limit。
+- 没有重复 H1/H3 fixed boundary validation 或 exact2 value-pool branch 作为推进方向。
+
+2) 代码改动
+- `reverse_agent/olly_scripts/compare_probe.py`
+  - payload 顶层新增 `lhs_ptr`、`rhs_ptr`、`compare_count`。
+- `reverse_agent/tool_runners.py`
+  - `RuntimeCompareEvidence` payload 保留 compare ptr/count 字段。
+- `reverse_agent/strategies/compare_aware_search.py`
+  - 新增 `DYNAMIC_COMPARE_PATH_PROBE_FILE_NAME` 和固定 3-candidate probe set。
+  - 新增 `run_dynamic_compare_path_probe()`，输出 `dynamic_compare_path_probe.json`。
+  - probe point 明确区分 `available`、`inferred`、`unavailable`。
+  - diagnostic 不产生 promotable candidates。
+  - 当本轮或 handoff 状态已确认 transform model 时运行 dynamic probe。
+- `reverse_agent/project_state.py`
+  - artifact index/current_state/model_gate 识别 dynamic compare-path probe。
+  - negative_results 记录当前 compare-site hook 无法直接暴露 pre-RC4/Base64/RC4 key material。
+- `tests/test_compare_aware_search_strategy.py`、`tests/test_tool_runners.py`
+  - 覆盖 bounded candidate count、budget 不扩张、probe point availability、selection 不变、compare ptr/count payload。
+
+3) 自动化验证
+- `python -m pytest -q tests/test_compare_aware_search_strategy.py -k "dynamic_compare_path_probe or transform_trace or h1_h3"` -> `8 passed, 62 deselected`
+- `python -m pytest -q tests/test_tool_runners.py -k "compare_probe"` -> `2 passed, 5 deselected`
+- `python -m pytest -q tests/test_compare_aware_search_strategy.py` -> `70 passed`
+- `python -m pytest -q tests/test_project_state.py tests/test_tool_runners.py` -> `16 passed`
+- `python -m pytest -q` -> `153 passed`
+
+4) Harness
+- First attempted run name `samplereverse_dynamic_compare_path_probe_20260504` completed but did not emit dynamic probe because the current-run transform consistency diagnostic was `evidence_insufficient`.
+- Re-run used non-overwriting run name: `samplereverse_dynamic_compare_path_probe_20260504_rerun`
+- Summary: `solve_reports\harness_runs\samplereverse_dynamic_compare_path_probe_20260504_rerun\summary.json`
+- Artifact:
+  - `solve_reports\harness_runs\samplereverse_dynamic_compare_path_probe_20260504_rerun\reports\tool_artifacts\samplereverse\dynamic_compare_path_probe\dynamic_compare_path_probe.json`
+- Harness completed 1 case, 0 errors.
+
+5) 结论
+- Classification: `dynamic_probe_complete`
+- 3 个 diagnostic candidates 全部 runtime-backed。
+- Probe point status:
+  - `raw_input=available`
+  - `post_rc4_compare_buffer=available`
+  - `compare_target=available`
+  - `compare_length=available`
+  - `compare_unit=available`
+  - `utf16le_payload=inferred`
+  - `base64_material=inferred`
+  - `rc4_input=inferred`
+  - `rc4_key=inferred`
+  - `pre_rc4_runtime_material=unavailable`
+- 当前 runtime best 未改善：
+  - exact2 仍为 `78d540b49c59077041414141414141`，runtime exact2 / distance5 246。
+- compare target 确认为 wide `flag{`，compare length 为 5 wchar。
+- exact2 baseline 的第一处 runtime failure 在 wchar index 2：raw `4464` vs target `6100`，distance 103。
+- 当前 compare-site hook 未发现 offset/prefix skip/stride/null-stop 行为证据，也不能直接暴露 pre-RC4/Base64/RC4 key material。
+
+6) 下一轮默认方向
+- 停止把当前 plateau 归因于 compare offset/length/unit/stride 问题，除非出现新 compare-site evidence。
+- 停止重复当前 focused dynamic compare-path probe，除非 hook 点或 runtime evidence source 发生实质变化。
+- 下一步应转向 lower-level dynamic instrumentation 或 manual reversing，目标是 pre-RC4/Base64/RC4 key material。
+- 不扩大 timeout/beam/budget/topN/frontier iteration limit；不回 blind search。
+

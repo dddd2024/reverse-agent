@@ -18,6 +18,7 @@ IMPORTANT_ARTIFACTS = {
     "smt_result": "samplereverse_compare_aware_smt_result.json",
     "smt_validation": "samplereverse_compare_aware_smt_validation.json",
     "transform_trace_consistency": "transform_trace_consistency.json",
+    "dynamic_compare_path_probe": "dynamic_compare_path_probe.json",
     "profile_transform_hypothesis_matrix": "profile_transform_hypothesis_matrix.json",
     "h1_h3_boundary_validation": "h1_h3_boundary_validation.json",
     "exact2_basin_value_pool_result": "samplereverse_exact2_basin_value_pool_result.json",
@@ -42,6 +43,7 @@ RUNTIME_VALIDATION_KEYS = {
     "smt_validation",
     "bridge_validation",
     "compare_probe",
+    "dynamic_compare_path_probe",
 }
 
 STATE_JSON_NAMES = (
@@ -404,6 +406,7 @@ def build_current_state(*, artifact_index: dict[str, Any], sample: str) -> dict[
     strata_summary = _read_json(artifact_refs.get("strata_summary"))
     frontier_summary = _read_json(artifact_refs.get("frontier_summary"))
     transform_trace_consistency = _read_json(artifact_refs.get("transform_trace_consistency"))
+    dynamic_compare_path_probe = _read_json(artifact_refs.get("dynamic_compare_path_probe"))
     uncertainty: list[str] = []
 
     exact2 = _compact_candidate(strata_summary.get("best_exact2_runtime"))
@@ -446,6 +449,10 @@ def build_current_state(*, artifact_index: dict[str, Any], sample: str) -> dict[
     if transform_classification:
         stage = "transform_consistency"
         reason = transform_classification
+    dynamic_classification = str(dynamic_compare_path_probe.get("classification") or "").strip()
+    if dynamic_classification:
+        stage = "dynamic_compare_path_probe"
+        reason = dynamic_classification
     if stage is None:
         uncertainty.append("current_bottleneck.stage")
     if reason is None:
@@ -488,14 +495,24 @@ def build_current_state(*, artifact_index: dict[str, Any], sample: str) -> dict[
         }
         if transform_trace_consistency
         else {},
+        "latest_dynamic_compare_path_probe": {
+            "classification": dynamic_classification or None,
+            "artifact": artifact_refs.get("dynamic_compare_path_probe"),
+            "runtime_backed_count": dynamic_compare_path_probe.get("runtime_backed_count"),
+            "candidate_count": dynamic_compare_path_probe.get("candidate_count"),
+            "probe_points": dynamic_compare_path_probe.get("probe_points"),
+            "next_bounded_action": dynamic_compare_path_probe.get("next_bounded_action"),
+        }
+        if dynamic_compare_path_probe
+        else {},
         "uncertainty": sorted(set(uncertainty)),
         "artifact_refs": artifact_refs,
         "generated_at": _now_iso(),
     }
 
 
-def build_negative_results() -> list[dict[str, Any]]:
-    return [
+def build_negative_results(artifact_index: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+    results = [
         {
             "direction": "old sample_solver blind search",
             "severity": "soft_block",
@@ -568,6 +585,25 @@ def build_negative_results() -> list[dict[str, Any]]:
             "override_reason_required": True,
         },
     ]
+    artifacts = artifact_index.get("latest_artifacts", {}) if isinstance(artifact_index, dict) else {}
+    artifacts = artifacts if isinstance(artifacts, dict) else {}
+    dynamic_probe = _read_json(artifacts.get("dynamic_compare_path_probe"))
+    probe_points = dynamic_probe.get("probe_points", {})
+    if isinstance(probe_points, dict) and probe_points.get("pre_rc4_runtime_material") == "unavailable":
+        results.append(
+            {
+                "direction": "focused dynamic compare-path probe with current compare-site hook",
+                "severity": "soft_block",
+                "do_not_repeat": True,
+                "reason": (
+                    "dynamic compare-path probe captured compare-site evidence but did not directly expose "
+                    "pre-RC4/Base64/RC4 key material; next evidence source should be lower-level instrumentation"
+                ),
+                "override_allowed": True,
+                "override_reason_required": True,
+            }
+        )
+    return results
 
 
 def _case_results_have_errors(paths: list[str]) -> bool:
@@ -851,7 +887,7 @@ def build_project_state(
         max_artifacts=max_artifacts,
     )
     current_state = build_current_state(artifact_index=artifact_index, sample=sample)
-    negative_results = build_negative_results()
+    negative_results = build_negative_results(artifact_index=artifact_index)
     model_gate = build_model_gate(artifact_index=artifact_index, current_state=current_state)
     task_packet = build_task_packet(
         current_state=current_state,

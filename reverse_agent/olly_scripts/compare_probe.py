@@ -118,6 +118,9 @@ def _build_payload(
     summary: str,
     compare_site: str = "",
     input_text: str = "",
+    lhs_ptr: str = "",
+    rhs_ptr: str = "",
+    compare_count: int | None = None,
     lhs_wide_text: str = "",
     lhs_wide_hex: str = "",
     rhs_wide_text: str = "",
@@ -140,6 +143,9 @@ def _build_payload(
         "summary": summary,
         "compare_site": compare_site,
         "input_text": input_text,
+        "lhs_ptr": lhs_ptr,
+        "rhs_ptr": rhs_ptr,
+        "compare_count": compare_count,
         "lhs_wide_text": lhs_wide_text,
         "lhs_wide_hex": lhs_wide_hex,
         "rhs_wide_text": rhs_wide_text,
@@ -402,6 +408,12 @@ Interceptor.attach(compareSite, {{
         lhs_wide_hex = str(captured.get("lhs_wide_hex", "") or "")
         rhs_wide_hex = str(captured.get("rhs_wide_hex", "") or "")
         compare_site = str(captured.get("compare_site", "") or "")
+        lhs_ptr = str(captured.get("lhs_ptr", "") or "")
+        rhs_ptr = str(captured.get("rhs_ptr", "") or "")
+        try:
+            compare_count = int(captured.get("count", 0) or 0)
+        except (TypeError, ValueError):
+            compare_count = None
         runtime_lhs_prefix_hex = _prefix_hex(lhs_wide_hex, capture_prefix_bytes)
         runtime_lhs_prefix_hex_10 = _prefix_hex(lhs_wide_hex, 10)
         runtime_lhs_prefix_hex_16 = _prefix_hex(lhs_wide_hex, 16) if capture_prefix_bytes >= 16 else ""
@@ -461,6 +473,9 @@ Interceptor.attach(compareSite, {{
                 summary=summary,
                 compare_site=compare_site,
                 input_text=captured_input,
+                lhs_ptr=lhs_ptr,
+                rhs_ptr=rhs_ptr,
+                compare_count=compare_count,
                 lhs_wide_text=lhs_wide_text,
                 lhs_wide_hex=lhs_wide_hex,
                 rhs_wide_text=rhs_wide_text,

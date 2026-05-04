@@ -87,6 +87,9 @@ def test_compare_probe_runner_parses_structured_payload(
                 "    'summary': 'compare ok',",
                 "    'compare_site': '0x40258c',",
                 "    'input_text': 'AAAAAAA',",
+                "    'lhs_ptr': '0x1000',",
+                "    'rhs_ptr': '0x2000',",
+                "    'compare_count': 5,",
                 "    'lhs_wide_text': 'flag{demo',",
                 "    'lhs_wide_hex': '66006c00610067007b00',",
                 "    'rhs_wide_text': 'flag{',",
@@ -139,11 +142,32 @@ def test_compare_probe_runner_parses_structured_payload(
     assert compare_evidence.payload["runtime_lhs_prefix_hex"] == "66006c00610067007b00640065006d00"
     assert compare_evidence.payload["runtime_lhs_prefix_hex_16"] == "66006c00610067007b00640065006d00"
     assert compare_evidence.payload["runtime_lhs_prefix_bytes_captured"] == 16
+    assert compare_evidence.payload["lhs_ptr"] == "0x1000"
+    assert compare_evidence.payload["rhs_ptr"] == "0x2000"
+    assert compare_evidence.payload["compare_count"] == 5
     assert compare_evidence.payload["offline_ci_exact_wchars"] == 5
     assert compare_evidence.payload["offline_ci_distance5"] == 0
     assert compare_evidence.payload["offline_raw_prefix_hex"] == "66006c00610067007b00"
     assert compare_evidence.payload["compare_semantics_agree"] is True
     assert any(item.kind == "CandidateEvidence" for item in artifact.structured_evidence)
+
+
+def test_compare_probe_payload_exposes_compare_count_and_ptrs() -> None:
+    from reverse_agent.olly_scripts.compare_probe import _build_payload
+
+    payload = _build_payload(
+        success=True,
+        summary="ok",
+        compare_site="0x40258c",
+        input_text="AAAAAAA",
+        lhs_ptr="0x1000",
+        rhs_ptr="0x2000",
+        compare_count=5,
+    )
+
+    assert payload["lhs_ptr"] == "0x1000"
+    assert payload["rhs_ptr"] == "0x2000"
+    assert payload["compare_count"] == 5
 
 
 def test_ollydbg_requires_script_for_automation(tmp_path: Path) -> None:

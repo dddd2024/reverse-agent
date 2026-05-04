@@ -12,6 +12,7 @@ from reverse_agent.strategies.base import StrategyResult
 from reverse_agent.strategies.compare_aware_search import (
     BRIDGE_RESULT_FILE_NAME,
     CompareAwareSearchStrategy,
+    DYNAMIC_COMPARE_PATH_PROBE_FILE_NAME,
     FRONTIER_ANCHOR_MODE,
     FRONTIER_EXACT0_SUBMODE,
     FRONTIER_EXACT1_SUBMODE,
@@ -47,6 +48,7 @@ from reverse_agent.strategies.compare_aware_search import (
     _select_smt_base_entry,
     _validated_projected_preserve_second_hop_candidates,
     run_compare_aware_smt,
+    run_dynamic_compare_path_probe,
     run_exact2_basin_value_pool_evaluation,
     run_h1_h3_boundary_validation,
     run_profile_transform_hypothesis_audit,
@@ -770,6 +772,7 @@ def test_compare_aware_strategy_runs_refine_then_smt_and_uses_promoted_anchors(
     assert captured["smt_base"] == "78d540b49c590770"
     assert result.metadata["completed_stage"] in {
         "transform_trace_consistency",
+        "dynamic_compare_path_probe",
         "h1_h3_boundary_validation",
     }
     assert result.metadata["smt"]["payload"]["exact2_basin_smt"]["base_anchor"] == "78d540b49c590770"
@@ -3231,6 +3234,167 @@ def test_transform_trace_consistency_reports_missing_runtime_artifact(
         item["verdict"]["evidence_status"] == "missing_runtime_artifact"
         for item in payload["candidates"]
     )
+
+
+def _fake_dynamic_probe_validate(tmp_path: Path, captured: dict[str, object] | None = None):
+    def fake_validate_compare_aware_results(**kwargs):
+        payload = json.loads(Path(kwargs["result_path"]).read_text(encoding="utf-8"))
+        candidates = list(payload["validation_candidates"])
+        if captured is not None:
+            captured["validate_top"] = kwargs["validate_top"]
+            captured["candidate_count"] = len(candidates)
+            captured["output_file_name"] = kwargs["output_file_name"]
+            captured["capture_prefix_bytes"] = kwargs["capture_prefix_bytes"]
+        validations = []
+        for entry in candidates:
+            candidate_hex = str(entry["candidate_hex"])
+            trace = trace_candidate_transform(candidate_hex)
+            compare_boundary = trace["compare_boundary"]
+            validations.append(
+                {
+                    **entry,
+                    "candidate_hex": candidate_hex,
+                    "cand8_hex": candidate_hex[:16],
+                    "compare_semantics_agree": True,
+                    "runtime_lhs_prefix_hex": compare_boundary["raw_prefix_hex_64"],
+                    "runtime_lhs_prefix_hex_10": compare_boundary["raw_prefix_hex_10"],
+                    "runtime_lhs_prefix_hex_16": compare_boundary["raw_prefix_hex_64"][:32],
+                    "runtime_lhs_prefix_bytes_captured": 64,
+                    "runtime_lhs_ptr": "0x1000",
+                    "runtime_rhs_ptr": "0x2000",
+                    "runtime_compare_count": 5,
+                    "runtime_rhs_prefix_hex": "66006c00610067007b00",
+                    "runtime_rhs_wide_text": "flag{",
+                    "runtime_lhs_wide_text": "",
+                    "runtime_ci_exact_wchars": compare_boundary["ci_exact_wchars"],
+                    "runtime_ci_distance5": compare_boundary["ci_distance5"],
+                    "offline_ci_distance5": compare_boundary["ci_distance5"],
+                    "offline_raw_distance10": compare_boundary["raw_distance10"],
+                    "prefix_boundary": compare_boundary,
+                }
+            )
+        return tmp_path / "dynamic_probe_validation.json", validations
+
+    return fake_validate_compare_aware_results
+
+
+def test_dynamic_compare_path_probe_has_bounded_candidate_count(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    target = tmp_path / "samplereverse.exe"
+    target.write_bytes(b"MZ")
+    captured: dict[str, object] = {}
+    monkeypatch.setattr(
+        compare_aware_search,
+        "validate_compare_aware_results",
+        _fake_dynamic_probe_validate(tmp_path, captured),
+    )
+
+    result = run_dynamic_compare_path_probe(
+        target=target,
+        artifacts_dir=tmp_path / "dynamic_compare_path_probe",
+        transform_model=SamplereverseTransformModel(),
+        per_probe_timeout=0.5,
+        log=lambda _: None,
+    )
+
+    payload = result["payload"]
+    assert Path(result["result_path"]).name == DYNAMIC_COMPARE_PATH_PROBE_FILE_NAME
+    assert payload["candidate_count"] == 3
+    assert captured["validate_top"] == 3
+    assert captured["candidate_count"] == 3
+    assert captured["output_file_name"] == DYNAMIC_COMPARE_PATH_PROBE_FILE_NAME
+
+
+def test_dynamic_compare_path_probe_does_not_expand_search_budget(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    target = tmp_path / "samplereverse.exe"
+    target.write_bytes(b"MZ")
+    captured: dict[str, object] = {}
+    monkeypatch.setattr(
+        compare_aware_search,
+        "validate_compare_aware_results",
+        _fake_dynamic_probe_validate(tmp_path, captured),
+    )
+
+    result = run_dynamic_compare_path_probe(
+        target=target,
+        artifacts_dir=tmp_path / "dynamic_compare_path_probe",
+        transform_model=SamplereverseTransformModel(),
+        per_probe_timeout=0.5,
+        log=lambda _: None,
+    )
+
+    payload = result["payload"]
+    assert payload["candidate_generation_changed"] is False
+    assert payload["ranking_changed"] is False
+    assert payload["final_selection_changed"] is False
+    assert payload["beam_budget_topn_timeout_frontier_limit_expanded"] is False
+    assert captured["capture_prefix_bytes"] == 64
+
+
+def test_dynamic_compare_path_probe_records_probe_point_availability(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    target = tmp_path / "samplereverse.exe"
+    target.write_bytes(b"MZ")
+    monkeypatch.setattr(
+        compare_aware_search,
+        "validate_compare_aware_results",
+        _fake_dynamic_probe_validate(tmp_path),
+    )
+
+    result = run_dynamic_compare_path_probe(
+        target=target,
+        artifacts_dir=tmp_path / "dynamic_compare_path_probe",
+        transform_model=SamplereverseTransformModel(),
+        per_probe_timeout=0.5,
+        log=lambda _: None,
+    )
+
+    payload = result["payload"]
+    assert payload["classification"] == "dynamic_probe_complete"
+    assert payload["runtime_backed_count"] == 3
+    assert payload["probe_points"]["raw_input"] == "available"
+    assert payload["probe_points"]["post_rc4_compare_buffer"] == "available"
+    assert payload["probe_points"]["compare_target"] == "available"
+    assert payload["probe_points"]["compare_length"] == "available"
+    assert payload["probe_points"]["compare_unit"] == "available"
+    assert payload["probe_points"]["utf16le_payload"] == "inferred"
+    assert payload["probe_points"]["base64_material"] == "inferred"
+    assert payload["probe_points"]["rc4_key"] == "inferred"
+    assert payload["probe_points"]["pre_rc4_runtime_material"] == "unavailable"
+    assert payload["candidate_results"][0]["first_failing_wchar"]["index"] == 2
+
+
+def test_dynamic_compare_path_probe_preserves_existing_selection_behavior(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    target = tmp_path / "samplereverse.exe"
+    target.write_bytes(b"MZ")
+    monkeypatch.setattr(
+        compare_aware_search,
+        "validate_compare_aware_results",
+        _fake_dynamic_probe_validate(tmp_path),
+    )
+
+    result = run_dynamic_compare_path_probe(
+        target=target,
+        artifacts_dir=tmp_path / "dynamic_compare_path_probe",
+        transform_model=SamplereverseTransformModel(),
+        per_probe_timeout=0.5,
+        log=lambda _: None,
+    )
+
+    payload = result["payload"]
+    assert payload["promotable_validations"] == []
+    assert result["promotable_validations"] == []
+    assert payload["final_selection_changed"] is False
 
 
 def test_h1_h3_boundary_validation_runtime_validates_fixed_contrast_set(
