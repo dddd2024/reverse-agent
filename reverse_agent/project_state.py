@@ -17,6 +17,11 @@ IMPORTANT_ARTIFACTS = {
     "guided_pool_validation": "samplereverse_compare_aware_guided_pool_validation.json",
     "smt_result": "samplereverse_compare_aware_smt_result.json",
     "smt_validation": "samplereverse_compare_aware_smt_validation.json",
+    "transform_trace_consistency": "transform_trace_consistency.json",
+    "profile_transform_hypothesis_matrix": "profile_transform_hypothesis_matrix.json",
+    "h1_h3_boundary_validation": "h1_h3_boundary_validation.json",
+    "exact2_basin_value_pool_result": "samplereverse_exact2_basin_value_pool_result.json",
+    "exact2_basin_value_pool_validation": "samplereverse_exact2_basin_value_pool_validation.json",
     "pairscan_summary": "pairscan_summary.json",
     "bridge_search_result": "bridge_search_result.json",
     "bridge_validation": "bridge_validation.json",
@@ -32,6 +37,8 @@ LATEST_ARTIFACT_KEYS = tuple(IMPORTANT_ARTIFACTS.keys()) + (
 
 RUNTIME_VALIDATION_KEYS = {
     "guided_pool_validation",
+    "h1_h3_boundary_validation",
+    "exact2_basin_value_pool_validation",
     "smt_validation",
     "bridge_validation",
     "compare_probe",
@@ -197,6 +204,8 @@ def _latest_path(paths: list[Path]) -> Path | None:
 def _classify_artifact(path: Path, sample: str) -> str | None:
     name = path.name
     lower_name = name.lower()
+    if lower_name == "h1_h3_boundary_validation.json" and path.parent.name.lower() == "validation":
+        return "h1_h3_boundary_validation_runtime"
     for kind, expected_name in IMPORTANT_ARTIFACTS.items():
         if lower_name == expected_name.lower():
             return kind
@@ -394,6 +403,7 @@ def build_current_state(*, artifact_index: dict[str, Any], sample: str) -> dict[
     artifact_refs = {key: value for key, value in artifacts.items() if value}
     strata_summary = _read_json(artifact_refs.get("strata_summary"))
     frontier_summary = _read_json(artifact_refs.get("frontier_summary"))
+    transform_trace_consistency = _read_json(artifact_refs.get("transform_trace_consistency"))
     uncertainty: list[str] = []
 
     exact2 = _compact_candidate(strata_summary.get("best_exact2_runtime"))
@@ -432,6 +442,10 @@ def build_current_state(*, artifact_index: dict[str, Any], sample: str) -> dict[
         or strata_summary.get("frontier_converged_reason")
         or None
     )
+    transform_classification = str(transform_trace_consistency.get("classification") or "").strip()
+    if transform_classification:
+        stage = "transform_consistency"
+        reason = transform_classification
     if stage is None:
         uncertainty.append("current_bottleneck.stage")
     if reason is None:
@@ -460,6 +474,20 @@ def build_current_state(*, artifact_index: dict[str, Any], sample: str) -> dict[
             "reason": reason,
             "confidence": "medium" if stage or reason else "low",
         },
+        "latest_transform_trace_consistency": {
+            "classification": transform_classification or None,
+            "artifact": artifact_refs.get("transform_trace_consistency"),
+            "runtime_backed_count": transform_trace_consistency.get("runtime_backed_count"),
+            "candidate_count": transform_trace_consistency.get("candidate_count"),
+            "stop_reason": transform_trace_consistency.get("stop_reason"),
+            "next_bounded_action": (
+                transform_trace_consistency.get("decision", {}).get("next_bounded_action")
+                if isinstance(transform_trace_consistency.get("decision"), dict)
+                else None
+            ),
+        }
+        if transform_trace_consistency
+        else {},
         "uncertainty": sorted(set(uncertainty)),
         "artifact_refs": artifact_refs,
         "generated_at": _now_iso(),
@@ -499,6 +527,45 @@ def build_negative_results() -> list[dict[str, Any]]:
             "reason": "solve_reports is runtime output and may contain bulky or local data",
             "override_allowed": False,
             "override_reason_required": False,
+        },
+        {
+            "direction": "exact2 basin value-pool evaluation with pools 0:78 1:d5/3e/3c 2:40/7f/80 3:b4/8f 4:9c",
+            "severity": "soft_block",
+            "do_not_repeat": True,
+            "reason": (
+                "bounded exact2 value-pool branch generated 18 unique candidates and runtime-validated all 18; "
+                "best remained exact2 / distance5 246 with no exact3+ or distance improvement"
+            ),
+            "override_allowed": True,
+            "override_reason_required": True,
+        },
+        {
+            "direction": (
+                "H1/H3 fixed 8-candidate prefix8 plus Base64 boundary contrast set: "
+                "78d540b49c59077041414141414141, 78d540b49c59076f41414141414141, "
+                "78d540b49c59077141414141414141, 78d540b49c5907b041414141414141, "
+                "78d540b49c5907d041414141414141, 78d540b49c59077040414141414141, "
+                "78d540b49c59077042414141414141, 78d540b49c59076f42414141414141"
+            ),
+            "severity": "soft_block",
+            "do_not_repeat": True,
+            "reason": (
+                "H1/H3 fixed contrast set was runtime-validated with compare_semantics_agree=true; "
+                "best stayed exact2 / distance5 246 and improved_over_exact2=false"
+            ),
+            "override_allowed": True,
+            "override_reason_required": True,
+        },
+        {
+            "direction": "repeat current 5-candidate transform trace consistency audit without new runtime evidence",
+            "severity": "soft_block",
+            "do_not_repeat": True,
+            "reason": (
+                "transform trace consistency diagnostic confirmed five runtime-backed candidates agree with "
+                "offline UTF-16LE/Base64/RC4/compare trace; next work needs a different bounded evidence source"
+            ),
+            "override_allowed": True,
+            "override_reason_required": True,
         },
     ]
 

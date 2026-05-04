@@ -39,6 +39,7 @@ PROFILE_TRANSFORM_HYPOTHESIS_MATRIX_FILE_NAME = "profile_transform_hypothesis_ma
 PROFILE_TRANSFORM_AUDIT_CANDIDATE_LIMIT = 8
 H1_H3_BOUNDARY_VALIDATION_FILE_NAME = "h1_h3_boundary_validation.json"
 H1_H3_BOUNDARY_CANDIDATE_LIMIT = 8
+TRANSFORM_TRACE_CONSISTENCY_FILE_NAME = "transform_trace_consistency.json"
 
 DEFAULT_ANCHORS = (
     "78d540b49c590770",
@@ -156,6 +157,13 @@ H1_H3_BOUNDARY_CANDIDATES = (
         "straddling prefix/suffix contrast",
         "simultaneous last-prefix and first-suffix boundary perturbation",
     ),
+)
+TRANSFORM_TRACE_CONSISTENCY_CANDIDATES = (
+    "78d540b49c59077041414141414141",
+    "78d540b49c59077040414141414141",
+    "78d540b49c59077042414141414141",
+    "78d540b49c59077141414141414141",
+    "5a3e7f46ddd474d041414141414141",
 )
 PAIR_TAIL_FLAGLIKE_BYTES = set(b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_{}-")
 
@@ -3243,6 +3251,23 @@ def _negative_exact2_value_pool_recorded() -> bool:
     return False
 
 
+def _negative_h1_h3_boundary_recorded() -> bool:
+    negative_results_path = _repo_root() / "project_state" / "negative_results.json"
+    try:
+        payload = json.loads(negative_results_path.read_text(encoding="utf-8"))
+    except Exception:
+        return False
+    if not isinstance(payload, list):
+        return False
+    for item in payload:
+        if not isinstance(item, dict):
+            continue
+        direction = str(item.get("direction", "")).lower()
+        if "h1/h3 fixed 8-candidate" in direction and bool(item.get("do_not_repeat")):
+            return True
+    return False
+
+
 def _profile_audit_candidate_record(
     *,
     label: str,
@@ -3721,6 +3746,233 @@ def _selected_h1_h3_target(profile_transform_audit_run: dict[str, object] | None
     target = dict(payload.get("next_bounded_validation_target", {}))
     selected = [str(item) for item in target.get("selected_hypotheses", [])]
     return selected == ["H1", "H3"]
+
+
+def _validation_rows_from_payload(payload: dict[str, object]) -> list[dict[str, object]]:
+    validations = payload.get("validations", [])
+    if isinstance(validations, list):
+        return [dict(item) for item in validations if isinstance(item, dict)]
+    return []
+
+
+def _indexed_validation_rows(kind: str) -> tuple[list[dict[str, object]], str]:
+    payload, path = _indexed_artifact_payload(kind)
+    return _validation_rows_from_payload(payload), path
+
+
+def _runtime_rows_by_candidate(
+    *validation_groups: Sequence[dict[str, object]],
+) -> dict[str, dict[str, object]]:
+    rows: dict[str, dict[str, object]] = {}
+    for group in validation_groups:
+        for item in group:
+            candidate_hex = _candidate_hex_from_entry(dict(item))
+            if not candidate_hex:
+                continue
+            current = rows.get(candidate_hex)
+            if current is None:
+                rows[candidate_hex] = dict(item)
+                continue
+            current_agree = bool(current.get("compare_semantics_agree"))
+            item_agree = bool(item.get("compare_semantics_agree"))
+            current_has_prefix = bool(str(current.get("runtime_lhs_prefix_hex_10", "")).strip())
+            item_has_prefix = bool(str(item.get("runtime_lhs_prefix_hex_10", "")).strip())
+            if (item_agree, item_has_prefix) > (current_agree, current_has_prefix):
+                rows[candidate_hex] = dict(item)
+    return rows
+
+
+def _trace_compare_metrics(trace: dict[str, object]) -> tuple[str, int, int]:
+    rc4 = dict(trace.get("rc4", {})) if isinstance(trace.get("rc4"), dict) else {}
+    compare_boundary = (
+        dict(trace.get("compare_boundary", {}))
+        if isinstance(trace.get("compare_boundary"), dict)
+        else {}
+    )
+    offline_prefix = str(
+        compare_boundary.get("raw_prefix_hex_10")
+        or str(rc4.get("decrypt_prefix_hex", ""))[: len(TARGET_PREFIX) * 2]
+    ).strip().lower()
+    return (
+        offline_prefix,
+        int(compare_boundary.get("ci_exact_wchars", 0) or 0),
+        int(compare_boundary.get("ci_distance5", 1 << 30) or (1 << 30)),
+    )
+
+
+def _transform_consistency_verdict(
+    *,
+    candidate_hex: str,
+    trace: dict[str, object],
+    runtime_entry: dict[str, object] | None,
+) -> dict[str, object]:
+    offline_prefix, offline_exact, offline_distance = _trace_compare_metrics(trace)
+    if not runtime_entry:
+        return {
+            "candidate_hex": candidate_hex,
+            "offline_prefix_hex_10": offline_prefix,
+            "offline_ci_exact_wchars": offline_exact,
+            "offline_ci_distance5": offline_distance,
+            "runtime_prefix_hex_10": "",
+            "runtime_ci_exact_wchars": None,
+            "runtime_ci_distance5": None,
+            "offline_runtime_prefix_agree_10": False,
+            "offline_runtime_metrics_agree": False,
+            "compare_semantics_agree": None,
+            "first_unsupported_stage": "runtime_validation",
+            "evidence_status": "missing_runtime_artifact",
+        }
+
+    runtime_prefix = str(runtime_entry.get("runtime_lhs_prefix_hex_10", "")).strip().lower()
+    runtime_exact_raw = runtime_entry.get("runtime_ci_exact_wchars")
+    runtime_distance_raw = runtime_entry.get("runtime_ci_distance5")
+    runtime_exact = int(runtime_exact_raw) if runtime_exact_raw is not None else None
+    runtime_distance = int(runtime_distance_raw) if runtime_distance_raw is not None else None
+    prefix_agree = bool(runtime_prefix) and runtime_prefix == offline_prefix
+    metrics_agree = runtime_exact == offline_exact and runtime_distance == offline_distance
+    compare_agree = runtime_entry.get("compare_semantics_agree")
+
+    if not runtime_prefix:
+        first_unsupported_stage = "runtime_prefix"
+        evidence_status = "missing_runtime_prefix"
+    elif not prefix_agree:
+        first_unsupported_stage = "rc4_output"
+        evidence_status = "runtime_mismatch"
+    elif not metrics_agree:
+        first_unsupported_stage = "compare_metrics"
+        evidence_status = "runtime_mismatch"
+    elif compare_agree is False:
+        first_unsupported_stage = "compare_semantics"
+        evidence_status = "runtime_mismatch"
+    else:
+        first_unsupported_stage = ""
+        evidence_status = "supported_by_runtime"
+
+    return {
+        "candidate_hex": candidate_hex,
+        "offline_prefix_hex_10": offline_prefix,
+        "offline_ci_exact_wchars": offline_exact,
+        "offline_ci_distance5": offline_distance,
+        "runtime_prefix_hex_10": runtime_prefix,
+        "runtime_ci_exact_wchars": runtime_exact,
+        "runtime_ci_distance5": runtime_distance,
+        "offline_runtime_prefix_agree_10": prefix_agree,
+        "offline_runtime_metrics_agree": metrics_agree,
+        "compare_semantics_agree": compare_agree,
+        "first_unsupported_stage": first_unsupported_stage,
+        "evidence_status": evidence_status,
+        "runtime_source": str(runtime_entry.get("stage", runtime_entry.get("frontier_role", ""))),
+    }
+
+
+def run_transform_trace_consistency_diagnostic(
+    *,
+    artifacts_dir: Path,
+    runtime_validations: Sequence[dict[str, object]],
+    transform_model: SamplereverseTransformModel,
+    log: Any | None = None,
+) -> dict[str, object]:
+    _ = transform_model
+    artifacts_dir.mkdir(parents=True, exist_ok=True)
+    h1_h3_rows, h1_h3_path = _indexed_validation_rows("h1_h3_boundary_validation_runtime")
+    value_pool_rows, value_pool_path = _indexed_validation_rows("exact2_basin_value_pool_validation")
+    rows_by_candidate = _runtime_rows_by_candidate(runtime_validations, h1_h3_rows, value_pool_rows)
+
+    candidates: list[dict[str, object]] = []
+    for candidate_hex in TRANSFORM_TRACE_CONSISTENCY_CANDIDATES:
+        trace = trace_candidate_transform(candidate_hex)
+        verdict = _transform_consistency_verdict(
+            candidate_hex=candidate_hex,
+            trace=trace,
+            runtime_entry=rows_by_candidate.get(candidate_hex),
+        )
+        candidates.append(
+            {
+                "candidate_hex": candidate_hex,
+                "trace": trace,
+                "verdict": verdict,
+            }
+        )
+
+    runtime_backed = [
+        item for item in candidates if dict(item.get("verdict", {})).get("evidence_status") != "missing_runtime_artifact"
+    ]
+    baseline = next(
+        (dict(item.get("verdict", {})) for item in candidates if item.get("candidate_hex") == TRANSFORM_TRACE_CONSISTENCY_CANDIDATES[0]),
+        {},
+    )
+    mismatches = [
+        dict(item.get("verdict", {}))
+        for item in runtime_backed
+        if dict(item.get("verdict", {})).get("evidence_status") == "runtime_mismatch"
+    ]
+    missing = [
+        dict(item.get("verdict", {}))
+        for item in candidates
+        if dict(item.get("verdict", {})).get("evidence_status") in {"missing_runtime_artifact", "missing_runtime_prefix"}
+    ]
+    if mismatches:
+        classification = "transform_mismatch_found"
+        stop_reason = "offline transform trace diverges from runtime validation evidence"
+    elif baseline.get("evidence_status") != "supported_by_runtime" or len(runtime_backed) < 3:
+        classification = "evidence_insufficient"
+        stop_reason = "not enough runtime-backed candidates to confirm transform consistency"
+    else:
+        classification = "transform_model_confirmed"
+        stop_reason = "runtime-backed candidates agree with offline trace prefixes and metrics"
+
+    payload: dict[str, object] = {
+        "artifact_kind": "transform_trace_consistency",
+        "profile": "samplereverse",
+        "attempted": True,
+        "classification": classification,
+        "stop_reason": stop_reason,
+        "candidate_generation_changed": False,
+        "ranking_changed": False,
+        "final_selection_changed": False,
+        "search_budget_changed": False,
+        "beam_budget_topn_timeout_frontier_limit_expanded": False,
+        "candidate_count": len(candidates),
+        "runtime_backed_count": len(runtime_backed),
+        "runtime_sources": {
+            "current_run_validations": len(runtime_validations),
+            "h1_h3_boundary_validation_runtime": h1_h3_path,
+            "h1_h3_boundary_validation_runtime_count": len(h1_h3_rows),
+            "exact2_basin_value_pool_validation": value_pool_path,
+            "exact2_basin_value_pool_validation_count": len(value_pool_rows),
+        },
+        "decision": {
+            "transform_mismatch_found": bool(classification == "transform_mismatch_found"),
+            "transform_model_confirmed": bool(classification == "transform_model_confirmed"),
+            "evidence_insufficient": bool(classification == "evidence_insufficient"),
+            "minimal_transform_fix": (
+                "inspect first_unsupported_stage and update the matching transform helper only"
+                if classification == "transform_mismatch_found"
+                else ""
+            ),
+            "next_bounded_action": (
+                "stop local mutation and use a different bounded evidence source"
+                if classification == "transform_model_confirmed"
+                else "capture pre-RC4/Base64 runtime buffers with a bounded dynamic probe"
+                if classification == "evidence_insufficient"
+                else "repair transform/compare helper, then revalidate exact2"
+            ),
+        },
+        "mismatches": mismatches,
+        "missing_runtime_evidence": missing,
+        "candidates": candidates,
+        "promotable_validations": [],
+    }
+    output_path = artifacts_dir / TRANSFORM_TRACE_CONSISTENCY_FILE_NAME
+    _write_json(output_path, payload)
+    if log:
+        log(f"transform trace consistency diagnostic wrote {output_path}")
+    return {
+        "result_path": str(output_path),
+        "payload": payload,
+        "validations": [],
+        "promotable_validations": [],
+    }
 
 
 def run_h1_h3_boundary_validation(
@@ -8411,6 +8663,8 @@ class CompareAwareSearchStrategy(SolverStrategy):
         exact2_basin_value_pool_validation_artifact: ToolRunArtifact | None = None
         profile_transform_audit_run: dict[str, object] | None = None
         profile_transform_audit_artifact: ToolRunArtifact | None = None
+        transform_trace_consistency_run: dict[str, object] | None = None
+        transform_trace_consistency_artifact: ToolRunArtifact | None = None
         h1_h3_boundary_validation_run: dict[str, object] | None = None
         h1_h3_boundary_validation_artifact: ToolRunArtifact | None = None
         h1_h3_boundary_runtime_artifact: ToolRunArtifact | None = None
@@ -8700,7 +8954,43 @@ class CompareAwareSearchStrategy(SolverStrategy):
             derived_entries=[],
         )
 
-        if _selected_h1_h3_target(profile_transform_audit_run):
+        transform_trace_consistency_run = run_transform_trace_consistency_diagnostic(
+            artifacts_dir=artifacts_dir / "transform_trace_consistency",
+            runtime_validations=[
+                *bridge_validations,
+                *guided_validations,
+                *frontier_guided_validations,
+                *final_validations,
+                *(list(smt_run.get("validations", [])) if smt_run else []),
+                *(list(exact2_basin_smt_run.get("validations", [])) if exact2_basin_smt_run else []),
+                *(list(exact2_basin_value_pool_run.get("validations", [])) if exact2_basin_value_pool_run else []),
+            ],
+            transform_model=transform_model,
+            log=log,
+        )
+        transform_trace_consistency_payload = dict(transform_trace_consistency_run.get("payload", {}))
+        transform_trace_consistency_artifact = _make_search_artifact(
+            tool_name="TransformTraceConsistency",
+            output_path=Path(str(transform_trace_consistency_run["result_path"])),
+            summary=str(
+                transform_trace_consistency_payload.get(
+                    "classification",
+                    "transform trace consistency diagnostic complete",
+                )
+            ),
+            strategy_name=self.name,
+            evidence_kind="TransformEvidence",
+            payload=transform_trace_consistency_payload,
+            derived_entries=[],
+        )
+
+        should_run_h1_h3 = (
+            _selected_h1_h3_target(profile_transform_audit_run)
+            and not _negative_h1_h3_boundary_recorded()
+            and str(transform_trace_consistency_payload.get("classification", ""))
+            == "evidence_insufficient"
+        )
+        if should_run_h1_h3:
             h1_h3_boundary_validation_run = run_h1_h3_boundary_validation(
                 target=file_path,
                 artifacts_dir=artifacts_dir / "h1_h3_boundary_validation",
@@ -8773,6 +9063,8 @@ class CompareAwareSearchStrategy(SolverStrategy):
             artifacts.append(exact2_basin_value_pool_validation_artifact)
         if profile_transform_audit_artifact is not None:
             artifacts.append(profile_transform_audit_artifact)
+        if transform_trace_consistency_artifact is not None:
+            artifacts.append(transform_trace_consistency_artifact)
         if h1_h3_boundary_validation_artifact is not None:
             artifacts.append(h1_h3_boundary_validation_artifact)
         if h1_h3_boundary_runtime_artifact is not None:
@@ -8800,12 +9092,15 @@ class CompareAwareSearchStrategy(SolverStrategy):
                 "exact2_basin_smt": exact2_basin_smt_run or {},
                 "exact2_basin_value_pool": exact2_basin_value_pool_run or {},
                 "profile_transform_hypothesis_audit": profile_transform_audit_run or {},
+                "transform_trace_consistency": transform_trace_consistency_run or {},
                 "h1_h3_boundary_validation": h1_h3_boundary_validation_run or {},
                 "prefix_boundary_diagnostics": prefix_boundary_diagnostics,
                 "frontier_converged_reason": frontier_converged_reason,
                 "frontier_stall_stage": frontier_stall_stage,
                 "completed_stage": "h1_h3_boundary_validation"
                 if h1_h3_boundary_validation_run
+                else "transform_trace_consistency"
+                if transform_trace_consistency_run
                 else "smt"
                 if smt_run
                 else "refine",

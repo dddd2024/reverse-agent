@@ -2857,3 +2857,57 @@ Reverse Agent 项目进展日志（截至 2026-04-16）
 - 下一步需要新的 single bounded hypothesis 或不同 evidence source。
 - 不扩大 timeout/beam/budget/topN/frontier iteration limit。
 
+## 2026-05-04 transform trace consistency diagnostic
+
+1) 执行范围
+- 按计划执行 transform/runtime consistency audit。
+- 复用既有 `trace_candidate_transform()`，没有新增搜索模式。
+- 没有改变 candidate generation、ranking、final selection、promotion。
+- 没有扩大 beam、budget、topN、timeout、frontier iteration limit。
+- 没有重复 H1/H3 fixed 8-candidate runtime validation；仅读取既有 runtime-backed validation rows 做一致性对照。
+
+2) 代码改动
+- `reverse_agent/transforms/samplereverse.py`
+  - trace 增加 candidate raw bytes、prefix length table 1-10、Base64 mod/padding、RC4 assumptions、compare window metadata。
+- `reverse_agent/strategies/compare_aware_search.py`
+  - 新增 `TRANSFORM_TRACE_CONSISTENCY_FILE_NAME` 和固定 5-candidate audit set。
+  - 新增 `run_transform_trace_consistency_diagnostic()`，输出 `transform_trace_consistency.json`。
+  - 对每个候选记录 offline/runtime prefix、metrics agree、compare_semantics_agree、first_unsupported_stage、evidence_status。
+  - diagnostic 不产生 promotable candidates。
+  - 当 negative_results 记录 H1/H3 fixed contrast 已穷尽时，不重复该 runtime validation。
+- `reverse_agent/project_state.py`
+  - artifact index 识别 transform trace consistency、profile audit、exact2 value-pool、H1/H3 artifacts。
+  - current_state 将 `transform_model_confirmed` 作为当前 bottleneck。
+  - build_negative_results 保留 exact2 value-pool、H1/H3 fixed contrast、当前 transform audit 的 do-not-repeat 记录。
+- `tests/test_compare_aware_search_strategy.py`
+  - 覆盖 trace prefix table、diagnostic runtime 对照、missing evidence、不产生 promotion。
+
+3) 自动化验证
+- `python -m pytest -q tests/test_compare_aware_search_strategy.py -k "transform_trace or profile_transform or h1_h3 or exact2_basin_smt_diagnostic"` -> `6 passed, 60 deselected`
+- `python -m pytest -q tests/test_compare_aware_search_strategy.py` -> `66 passed`
+- `python -m pytest -q` -> `148 passed`
+
+4) Harness
+- Run: `samplereverse_transform_trace_consistency_20260504`
+- Summary: `solve_reports\harness_runs\samplereverse_transform_trace_consistency_20260504\summary.json`
+- Artifact:
+  - `solve_reports\harness_runs\samplereverse_transform_trace_consistency_20260504\reports\tool_artifacts\samplereverse\transform_trace_consistency\transform_trace_consistency.json`
+- Harness completed 1 case, 0 errors.
+
+5) 结论
+- Classification: `transform_model_confirmed`
+- 5 个 diagnostic candidates 全部有 runtime-backed evidence。
+- mismatches `[]`，missing_runtime_evidence `[]`。
+- 当前 runtime best 未改善：
+  - exact2 仍为 `78d540b49c59077041414141414141`，runtime exact2 / distance5 246。
+- `selected_flag` 仍为模型/候选评分选出的 `flag{`；仍不能视为 runtime improvement。
+
+6) 下一轮默认方向
+- 当前 exact2 plateau 不应再优先归因于 offline transform mismatch。
+- 停止重复：
+  - exact2 basin value-pool branch；
+  - H1/H3 fixed 8-candidate boundary contrast set；
+  - 当前 5-candidate transform trace consistency audit，除非 runtime evidence 改变。
+- 下一步需要不同 bounded evidence source；建议做 focused dynamic probe，捕获 compare path 附近的 pre-RC4/Base64/key material。
+- 不扩大 timeout/beam/budget/topN/frontier iteration limit。
+

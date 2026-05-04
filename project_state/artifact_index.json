@@ -1,154 +1,153 @@
 {
-  "generated_at": "2026-05-04T08:15:56Z",
+  "generated_at": "2026-05-04T08:57:37Z",
   "latest_artifacts": {
-    "bridge_search_result": "solve_reports\\harness_runs\\samplereverse_h1_h3_boundary_validation_20260504\\reports\\tool_artifacts\\samplereverse\\bridge\\bridge_search_result.json",
-    "bridge_validation": "solve_reports\\harness_runs\\samplereverse_h1_h3_boundary_validation_20260504\\reports\\tool_artifacts\\samplereverse\\bridge\\bridge_validation\\bridge_validation.json",
+    "bridge_search_result": "solve_reports\\harness_runs\\samplereverse_transform_trace_consistency_20260504\\reports\\tool_artifacts\\samplereverse\\bridge\\bridge_search_result.json",
+    "bridge_validation": "solve_reports\\harness_runs\\samplereverse_transform_trace_consistency_20260504\\reports\\tool_artifacts\\samplereverse\\bridge\\bridge_validation\\bridge_validation.json",
     "checkpoint": "solve_reports\\tool_artifacts\\samplereverse_optimizer_smoke\\samplereverse_search_checkpoint.json",
-    "compare_aware_result": "solve_reports\\harness_runs\\samplereverse_h1_h3_boundary_validation_20260504\\reports\\tool_artifacts\\samplereverse\\frontier_refine_2\\samplereverse_compare_aware_result.json",
-    "compare_probe": "solve_reports\\harness_runs\\samplereverse_h1_h3_boundary_validation_20260504\\reports\\tool_artifacts\\samplereverse\\samplereverse_compare_probe.json",
-    "compare_probe_log": "solve_reports\\harness_runs\\samplereverse_h1_h3_boundary_validation_20260504\\reports\\tool_artifacts\\samplereverse\\samplereverse_compare_probe.log",
-    "frontier_summary": "solve_reports\\harness_runs\\samplereverse_h1_h3_boundary_validation_20260504\\reports\\tool_artifacts\\samplereverse\\samplereverse_compare_aware_frontier_summary.json",
-    "guided_pool_result": "solve_reports\\harness_runs\\samplereverse_h1_h3_boundary_validation_20260504\\reports\\tool_artifacts\\samplereverse\\frontier_guided_2_5a3f7f46ddd474d0\\samplereverse_compare_aware_guided_pool_result.json",
-    "guided_pool_validation": "solve_reports\\harness_runs\\samplereverse_h1_h3_boundary_validation_20260504\\reports\\tool_artifacts\\samplereverse\\frontier_guided_2_5a3f7f46ddd474d0\\guided_pool_validation\\samplereverse_compare_aware_guided_pool_validation.json",
-    "pairscan_summary": "solve_reports\\harness_runs\\samplereverse_h1_h3_boundary_validation_20260504\\reports\\tool_artifacts\\samplereverse\\bridge\\pairscan_summary.json",
-    "run_manifest": "solve_reports\\harness_runs\\samplereverse_h1_h3_boundary_validation_20260504\\run_manifest.json",
-    "smt_result": "solve_reports\\harness_runs\\samplereverse_h1_h3_boundary_validation_20260504\\reports\\tool_artifacts\\samplereverse\\smt\\samplereverse_compare_aware_smt_result.json",
+    "compare_aware_result": "solve_reports\\harness_runs\\samplereverse_transform_trace_consistency_20260504\\reports\\tool_artifacts\\samplereverse\\frontier_refine_2\\samplereverse_compare_aware_result.json",
+    "compare_probe": "solve_reports\\harness_runs\\samplereverse_transform_trace_consistency_20260504\\reports\\tool_artifacts\\samplereverse\\samplereverse_compare_probe.json",
+    "compare_probe_log": "solve_reports\\harness_runs\\samplereverse_transform_trace_consistency_20260504\\reports\\tool_artifacts\\samplereverse\\samplereverse_compare_probe.log",
+    "exact2_basin_value_pool_result": "solve_reports\\harness_runs\\samplereverse_transform_trace_consistency_20260504\\reports\\tool_artifacts\\samplereverse\\exact2_basin_value_pool\\samplereverse_exact2_basin_value_pool_result.json",
+    "exact2_basin_value_pool_validation": "solve_reports\\harness_runs\\samplereverse_transform_trace_consistency_20260504\\reports\\tool_artifacts\\samplereverse\\exact2_basin_value_pool\\value_pool_validation\\samplereverse_exact2_basin_value_pool_validation.json",
+    "frontier_summary": "solve_reports\\harness_runs\\samplereverse_transform_trace_consistency_20260504\\reports\\tool_artifacts\\samplereverse\\samplereverse_compare_aware_frontier_summary.json",
+    "guided_pool_result": "solve_reports\\harness_runs\\samplereverse_transform_trace_consistency_20260504\\reports\\tool_artifacts\\samplereverse\\frontier_guided_2_5a3f7f46ddd474d0\\samplereverse_compare_aware_guided_pool_result.json",
+    "guided_pool_validation": "solve_reports\\harness_runs\\samplereverse_transform_trace_consistency_20260504\\reports\\tool_artifacts\\samplereverse\\frontier_guided_2_5a3f7f46ddd474d0\\guided_pool_validation\\samplereverse_compare_aware_guided_pool_validation.json",
+    "h1_h3_boundary_validation": null,
+    "pairscan_summary": "solve_reports\\harness_runs\\samplereverse_transform_trace_consistency_20260504\\reports\\tool_artifacts\\samplereverse\\bridge\\pairscan_summary.json",
+    "profile_transform_hypothesis_matrix": "solve_reports\\harness_runs\\samplereverse_transform_trace_consistency_20260504\\reports\\tool_artifacts\\samplereverse\\profile_transform_hypothesis_matrix.json",
+    "run_manifest": "solve_reports\\harness_runs\\samplereverse_transform_trace_consistency_20260504\\run_manifest.json",
+    "smt_result": "solve_reports\\harness_runs\\samplereverse_transform_trace_consistency_20260504\\reports\\tool_artifacts\\samplereverse\\smt\\samplereverse_compare_aware_smt_result.json",
     "smt_validation": null,
-    "strata_summary": "solve_reports\\harness_runs\\samplereverse_h1_h3_boundary_validation_20260504\\reports\\tool_artifacts\\samplereverse\\samplereverse_compare_aware_strata_summary.json",
-    "summary": "solve_reports\\harness_runs\\samplereverse_h1_h3_boundary_validation_20260504\\summary.json",
-    "profile_transform_hypothesis_matrix": "solve_reports\\harness_runs\\samplereverse_h1_h3_boundary_validation_20260504\\reports\\tool_artifacts\\samplereverse\\profile_transform_hypothesis_matrix.json",
-    "h1_h3_boundary_validation": "solve_reports\\harness_runs\\samplereverse_h1_h3_boundary_validation_20260504\\reports\\tool_artifacts\\samplereverse\\h1_h3_boundary_validation\\h1_h3_boundary_validation.json",
-    "h1_h3_boundary_validation_runtime": "solve_reports\\harness_runs\\samplereverse_h1_h3_boundary_validation_20260504\\reports\\tool_artifacts\\samplereverse\\h1_h3_boundary_validation\\validation\\h1_h3_boundary_validation.json",
-    "exact2_basin_value_pool_result": "solve_reports\\harness_runs\\samplereverse_h1_h3_boundary_validation_20260504\\reports\\tool_artifacts\\samplereverse\\exact2_basin_value_pool\\samplereverse_exact2_basin_value_pool_result.json",
-    "exact2_basin_value_pool_validation": "solve_reports\\harness_runs\\samplereverse_h1_h3_boundary_validation_20260504\\reports\\tool_artifacts\\samplereverse\\exact2_basin_value_pool\\value_pool_validation\\samplereverse_exact2_basin_value_pool_validation.json",
-    "smt_exact2_basin_result": "solve_reports\\harness_runs\\samplereverse_h1_h3_boundary_validation_20260504\\reports\\tool_artifacts\\samplereverse\\smt_exact2_basin\\samplereverse_compare_aware_smt_result.json"
+    "strata_summary": "solve_reports\\harness_runs\\samplereverse_transform_trace_consistency_20260504\\reports\\tool_artifacts\\samplereverse\\samplereverse_compare_aware_strata_summary.json",
+    "summary": "solve_reports\\harness_runs\\samplereverse_transform_trace_consistency_20260504\\summary.json",
+    "transform_trace_consistency": "solve_reports\\harness_runs\\samplereverse_transform_trace_consistency_20260504\\reports\\tool_artifacts\\samplereverse\\transform_trace_consistency\\transform_trace_consistency.json"
   },
   "latest_case_results": [
-    "solve_reports\\harness_runs\\samplereverse_h1_h3_boundary_validation_20260504\\case_results\\samplereverse-exact1-projected-vs-neighbor.json"
+    "solve_reports\\harness_runs\\samplereverse_transform_trace_consistency_20260504\\case_results\\samplereverse-exact1-projected-vs-neighbor.json"
   ],
-  "latest_harness_run": "solve_reports\\harness_runs\\samplereverse_h1_h3_boundary_validation_20260504",
-  "latest_summary": "solve_reports\\harness_runs\\samplereverse_h1_h3_boundary_validation_20260504\\summary.json",
+  "latest_harness_run": "solve_reports\\harness_runs\\samplereverse_transform_trace_consistency_20260504",
+  "latest_summary": "solve_reports\\harness_runs\\samplereverse_transform_trace_consistency_20260504\\summary.json",
   "missing": [],
   "recent_artifacts": [
     {
       "kind": "summary",
-      "modified_at": "2026-05-04T08:15:30Z",
-      "path": "solve_reports\\harness_runs\\samplereverse_h1_h3_boundary_validation_20260504\\summary.json",
-      "size_bytes": 985
+      "modified_at": "2026-05-04T08:56:31Z",
+      "path": "solve_reports\\harness_runs\\samplereverse_transform_trace_consistency_20260504\\summary.json",
+      "size_bytes": 994
     },
     {
       "kind": "run_manifest",
-      "modified_at": "2026-05-04T08:15:30Z",
-      "path": "solve_reports\\harness_runs\\samplereverse_h1_h3_boundary_validation_20260504\\run_manifest.json",
-      "size_bytes": 2150
+      "modified_at": "2026-05-04T08:56:31Z",
+      "path": "solve_reports\\harness_runs\\samplereverse_transform_trace_consistency_20260504\\run_manifest.json",
+      "size_bytes": 2156
+    },
+    {
+      "kind": "profile_transform_hypothesis_matrix",
+      "modified_at": "2026-05-04T08:54:35Z",
+      "path": "solve_reports\\harness_runs\\samplereverse_transform_trace_consistency_20260504\\reports\\tool_artifacts\\samplereverse\\profile_transform_hypothesis_matrix.json",
+      "size_bytes": 107639
+    },
+    {
+      "kind": "exact2_basin_value_pool_result",
+      "modified_at": "2026-05-04T08:54:35Z",
+      "path": "solve_reports\\harness_runs\\samplereverse_transform_trace_consistency_20260504\\reports\\tool_artifacts\\samplereverse\\exact2_basin_value_pool\\samplereverse_exact2_basin_value_pool_result.json",
+      "size_bytes": 118059
+    },
+    {
+      "kind": "transform_trace_consistency",
+      "modified_at": "2026-05-04T08:54:35Z",
+      "path": "solve_reports\\harness_runs\\samplereverse_transform_trace_consistency_20260504\\reports\\tool_artifacts\\samplereverse\\transform_trace_consistency\\transform_trace_consistency.json",
+      "size_bytes": 59435
+    },
+    {
+      "kind": "exact2_basin_value_pool_validation",
+      "modified_at": "2026-05-04T08:54:35Z",
+      "path": "solve_reports\\harness_runs\\samplereverse_transform_trace_consistency_20260504\\reports\\tool_artifacts\\samplereverse\\exact2_basin_value_pool\\value_pool_validation\\samplereverse_exact2_basin_value_pool_validation.json",
+      "size_bytes": 89665
     },
     {
       "kind": "smt_result",
-      "modified_at": "2026-05-04T08:11:30Z",
-      "path": "solve_reports\\harness_runs\\samplereverse_h1_h3_boundary_validation_20260504\\reports\\tool_artifacts\\samplereverse\\smt\\samplereverse_compare_aware_smt_result.json",
-      "size_bytes": 8449
+      "modified_at": "2026-05-04T08:53:50Z",
+      "path": "solve_reports\\harness_runs\\samplereverse_transform_trace_consistency_20260504\\reports\\tool_artifacts\\samplereverse\\smt\\samplereverse_compare_aware_smt_result.json",
+      "size_bytes": 8451
     },
     {
       "kind": "smt_result",
-      "modified_at": "2026-05-04T08:11:30Z",
-      "path": "solve_reports\\harness_runs\\samplereverse_h1_h3_boundary_validation_20260504\\reports\\tool_artifacts\\samplereverse\\smt_exact2_basin\\samplereverse_compare_aware_smt_result.json",
-      "size_bytes": 8408
+      "modified_at": "2026-05-04T08:53:50Z",
+      "path": "solve_reports\\harness_runs\\samplereverse_transform_trace_consistency_20260504\\reports\\tool_artifacts\\samplereverse\\smt_exact2_basin\\samplereverse_compare_aware_smt_result.json",
+      "size_bytes": 8410
     },
     {
       "kind": "frontier_summary",
-      "modified_at": "2026-05-04T08:11:19Z",
-      "path": "solve_reports\\harness_runs\\samplereverse_h1_h3_boundary_validation_20260504\\reports\\tool_artifacts\\samplereverse\\samplereverse_compare_aware_frontier_summary.json",
-      "size_bytes": 673964
+      "modified_at": "2026-05-04T08:53:39Z",
+      "path": "solve_reports\\harness_runs\\samplereverse_transform_trace_consistency_20260504\\reports\\tool_artifacts\\samplereverse\\samplereverse_compare_aware_frontier_summary.json",
+      "size_bytes": 674080
     },
     {
       "kind": "strata_summary",
-      "modified_at": "2026-05-04T08:11:19Z",
-      "path": "solve_reports\\harness_runs\\samplereverse_h1_h3_boundary_validation_20260504\\reports\\tool_artifacts\\samplereverse\\samplereverse_compare_aware_strata_summary.json",
-      "size_bytes": 77387
+      "modified_at": "2026-05-04T08:53:39Z",
+      "path": "solve_reports\\harness_runs\\samplereverse_transform_trace_consistency_20260504\\reports\\tool_artifacts\\samplereverse\\samplereverse_compare_aware_strata_summary.json",
+      "size_bytes": 77397
     },
     {
       "kind": "compare_aware_result",
-      "modified_at": "2026-05-04T08:10:58Z",
-      "path": "solve_reports\\harness_runs\\samplereverse_h1_h3_boundary_validation_20260504\\reports\\tool_artifacts\\samplereverse\\frontier_refine_2\\samplereverse_compare_aware_result.json",
+      "modified_at": "2026-05-04T08:53:18Z",
+      "path": "solve_reports\\harness_runs\\samplereverse_transform_trace_consistency_20260504\\reports\\tool_artifacts\\samplereverse\\frontier_refine_2\\samplereverse_compare_aware_result.json",
       "size_bytes": 25001
     },
     {
       "kind": "guided_pool_validation",
-      "modified_at": "2026-05-04T08:08:15Z",
-      "path": "solve_reports\\harness_runs\\samplereverse_h1_h3_boundary_validation_20260504\\reports\\tool_artifacts\\samplereverse\\frontier_guided_2_5a3f7f46ddd474d0\\guided_pool_validation\\samplereverse_compare_aware_guided_pool_validation.json",
-      "size_bytes": 40386
+      "modified_at": "2026-05-04T08:51:19Z",
+      "path": "solve_reports\\harness_runs\\samplereverse_transform_trace_consistency_20260504\\reports\\tool_artifacts\\samplereverse\\frontier_guided_2_5a3f7f46ddd474d0\\guided_pool_validation\\samplereverse_compare_aware_guided_pool_validation.json",
+      "size_bytes": 40420
     },
     {
       "kind": "guided_pool_result",
-      "modified_at": "2026-05-04T08:07:55Z",
-      "path": "solve_reports\\harness_runs\\samplereverse_h1_h3_boundary_validation_20260504\\reports\\tool_artifacts\\samplereverse\\frontier_guided_2_5a3f7f46ddd474d0\\samplereverse_compare_aware_guided_pool_result.json",
+      "modified_at": "2026-05-04T08:50:58Z",
+      "path": "solve_reports\\harness_runs\\samplereverse_transform_trace_consistency_20260504\\reports\\tool_artifacts\\samplereverse\\frontier_guided_2_5a3f7f46ddd474d0\\samplereverse_compare_aware_guided_pool_result.json",
       "size_bytes": 922514
     },
     {
       "kind": "compare_aware_result",
-      "modified_at": "2026-05-04T08:07:33Z",
-      "path": "solve_reports\\harness_runs\\samplereverse_h1_h3_boundary_validation_20260504\\reports\\tool_artifacts\\samplereverse\\frontier_refine_1\\samplereverse_compare_aware_result.json",
+      "modified_at": "2026-05-04T08:50:37Z",
+      "path": "solve_reports\\harness_runs\\samplereverse_transform_trace_consistency_20260504\\reports\\tool_artifacts\\samplereverse\\frontier_refine_1\\samplereverse_compare_aware_result.json",
       "size_bytes": 24749
     },
     {
       "kind": "guided_pool_validation",
-      "modified_at": "2026-05-04T08:04:42Z",
-      "path": "solve_reports\\harness_runs\\samplereverse_h1_h3_boundary_validation_20260504\\reports\\tool_artifacts\\samplereverse\\frontier_guided_1_5a3e7f46ddd474d0\\guided_pool_validation\\samplereverse_compare_aware_guided_pool_validation.json",
-      "size_bytes": 39592
+      "modified_at": "2026-05-04T08:48:39Z",
+      "path": "solve_reports\\harness_runs\\samplereverse_transform_trace_consistency_20260504\\reports\\tool_artifacts\\samplereverse\\frontier_guided_1_5a3e7f46ddd474d0\\guided_pool_validation\\samplereverse_compare_aware_guided_pool_validation.json",
+      "size_bytes": 39626
     },
     {
       "kind": "guided_pool_result",
-      "modified_at": "2026-05-04T08:04:21Z",
-      "path": "solve_reports\\harness_runs\\samplereverse_h1_h3_boundary_validation_20260504\\reports\\tool_artifacts\\samplereverse\\frontier_guided_1_5a3e7f46ddd474d0\\samplereverse_compare_aware_guided_pool_result.json",
+      "modified_at": "2026-05-04T08:48:19Z",
+      "path": "solve_reports\\harness_runs\\samplereverse_transform_trace_consistency_20260504\\reports\\tool_artifacts\\samplereverse\\frontier_guided_1_5a3e7f46ddd474d0\\samplereverse_compare_aware_guided_pool_result.json",
       "size_bytes": 1028799
     },
     {
       "kind": "compare_aware_result",
-      "modified_at": "2026-05-04T08:04:00Z",
-      "path": "solve_reports\\harness_runs\\samplereverse_h1_h3_boundary_validation_20260504\\reports\\tool_artifacts\\samplereverse\\samplereverse_compare_aware_result.json",
+      "modified_at": "2026-05-04T08:47:58Z",
+      "path": "solve_reports\\harness_runs\\samplereverse_transform_trace_consistency_20260504\\reports\\tool_artifacts\\samplereverse\\samplereverse_compare_aware_result.json",
       "size_bytes": 23144
     },
     {
       "kind": "guided_pool_validation",
-      "modified_at": "2026-05-04T08:01:19Z",
-      "path": "solve_reports\\harness_runs\\samplereverse_h1_h3_boundary_validation_20260504\\reports\\tool_artifacts\\samplereverse\\guided_pool\\guided_pool_validation\\samplereverse_compare_aware_guided_pool_validation.json",
-      "size_bytes": 24742
+      "modified_at": "2026-05-04T08:45:58Z",
+      "path": "solve_reports\\harness_runs\\samplereverse_transform_trace_consistency_20260504\\reports\\tool_artifacts\\samplereverse\\guided_pool\\guided_pool_validation\\samplereverse_compare_aware_guided_pool_validation.json",
+      "size_bytes": 24764
     },
     {
       "kind": "guided_pool_result",
-      "modified_at": "2026-05-04T08:01:06Z",
-      "path": "solve_reports\\harness_runs\\samplereverse_h1_h3_boundary_validation_20260504\\reports\\tool_artifacts\\samplereverse\\guided_pool\\samplereverse_compare_aware_guided_pool_result.json",
+      "modified_at": "2026-05-04T08:45:46Z",
+      "path": "solve_reports\\harness_runs\\samplereverse_transform_trace_consistency_20260504\\reports\\tool_artifacts\\samplereverse\\guided_pool\\samplereverse_compare_aware_guided_pool_result.json",
       "size_bytes": 38696
     },
     {
       "kind": "bridge_validation",
-      "modified_at": "2026-05-04T08:01:06Z",
-      "path": "solve_reports\\harness_runs\\samplereverse_h1_h3_boundary_validation_20260504\\reports\\tool_artifacts\\samplereverse\\bridge\\bridge_validation\\bridge_validation.json",
-      "size_bytes": 5101
-    },
-    {
-      "kind": "bridge_search_result",
-      "modified_at": "2026-05-04T08:01:04Z",
-      "path": "solve_reports\\harness_runs\\samplereverse_h1_h3_boundary_validation_20260504\\reports\\tool_artifacts\\samplereverse\\bridge\\bridge_search_result.json",
-      "size_bytes": 3970
-    },
-    {
-      "kind": "pairscan_summary",
-      "modified_at": "2026-05-04T08:01:04Z",
-      "path": "solve_reports\\harness_runs\\samplereverse_h1_h3_boundary_validation_20260504\\reports\\tool_artifacts\\samplereverse\\bridge\\pairscan_summary.json",
-      "size_bytes": 884
-    },
-    {
-      "kind": "compare_probe",
-      "modified_at": "2026-05-04T08:01:01Z",
-      "path": "solve_reports\\harness_runs\\samplereverse_h1_h3_boundary_validation_20260504\\reports\\tool_artifacts\\samplereverse\\samplereverse_compare_probe.json",
-      "size_bytes": 2155
-    },
-    {
-      "kind": "compare_probe_log",
-      "modified_at": "2026-05-04T08:01:01Z",
-      "path": "solve_reports\\harness_runs\\samplereverse_h1_h3_boundary_validation_20260504\\reports\\tool_artifacts\\samplereverse\\samplereverse_compare_probe.log",
-      "size_bytes": 22
+      "modified_at": "2026-05-04T08:45:46Z",
+      "path": "solve_reports\\harness_runs\\samplereverse_transform_trace_consistency_20260504\\reports\\tool_artifacts\\samplereverse\\bridge\\bridge_validation\\bridge_validation.json",
+      "size_bytes": 5107
     }
   ],
   "reports_dir": "solve_reports",

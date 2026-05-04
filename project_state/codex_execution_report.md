@@ -2,60 +2,56 @@
 
 ## Summary
 
-Implemented and executed the bounded H1/H3 boundary validation for `samplereverse`.
+Implemented and executed the bounded transform trace consistency diagnostic for `samplereverse`.
 
-This iteration adds a fixed 8-candidate contrast set around `prefix8 + Base64 chunk boundary`, records prefix 7/8/9 transform traces for each candidate, and runtime-validates every candidate through the existing compare-aware validation path. It does not add blind search, guided-pool expansion, SMT expansion, or any beam/budget/topN/timeout/frontier-limit increase.
+This iteration reuses the existing `trace_candidate_transform()` helper, adds prefix length table metadata, and writes `transform_trace_consistency.json`. The diagnostic compares offline UTF-16LE/Base64/RC4/compare traces against runtime validation rows. It does not change candidate generation, ranking, final selection, promotion, beam, budget, topN, timeout, or frontier iteration limits.
 
 Final harness run:
 
 ```text
-samplereverse_h1_h3_boundary_validation_20260504
+samplereverse_transform_trace_consistency_20260504
 ```
 
 ## Implemented Changes
 
 | area | change | behavior impact |
 |---|---|---|
-| strategy | Added `run_h1_h3_boundary_validation()` and `h1_h3_boundary_validation.json` artifact generation | bounded validation stage only |
-| candidates | Added exactly 8 hand-picked H1/H3 boundary contrast candidates | no search expansion |
-| trace metadata | Added prefix 7/8/9 transform traces to each validation candidate | records Base64 remainders 1/2/0 |
-| runtime validation | Reused `validate_compare_aware_results()` with `validate_top=8` | all candidates runtime checked |
-| promotion gate | Only compare-agree runtime candidates with exact_wchars > 2 or distance5 < 246 are promotable | no trace-only promotion |
-| project state | Updated compact state and negative results for H1/H3 exhaustion | next sessions should not repeat this exact set |
+| transform trace | Added candidate raw bytes, prefix length table 1-10, Base64 mod/padding metadata, RC4 assumptions, and compare window metadata | diagnostic metadata only |
+| strategy | Added `run_transform_trace_consistency_diagnostic()` and `transform_trace_consistency.json` artifact generation | no candidate promotion |
+| repeated branch guard | Skips the exhausted H1/H3 fixed contrast set when the negative result record is present | avoids repeating known no-gain validation |
+| project state | Added indexing/current-state support for transform consistency and preserved specific negative-result records | compact handoff now points at this bottleneck |
 
 ## Harness Result
 
 | item | value |
 |---|---|
-| run | `samplereverse_h1_h3_boundary_validation_20260504` |
+| run | `samplereverse_transform_trace_consistency_20260504` |
 | status | completed, 1 case, 0 errors |
-| artifact | `solve_reports\harness_runs\samplereverse_h1_h3_boundary_validation_20260504\reports\tool_artifacts\samplereverse\h1_h3_boundary_validation\h1_h3_boundary_validation.json` |
-| runtime validation | `solve_reports\harness_runs\samplereverse_h1_h3_boundary_validation_20260504\reports\tool_artifacts\samplereverse\h1_h3_boundary_validation\validation\h1_h3_boundary_validation.json` |
-| candidates | 8 / cap 8 |
-| validated | 8 |
-| classification | `h1_h3_boundary_contrast_exhausted_no_gain` |
-| best runtime candidate | `78d540b49c59077040414141414141`, exact2 / distance5 246 |
-| improved over exact2? | no |
-| negative result recorded? | yes |
+| artifact | `solve_reports\harness_runs\samplereverse_transform_trace_consistency_20260504\reports\tool_artifacts\samplereverse\transform_trace_consistency\transform_trace_consistency.json` |
+| classification | `transform_model_confirmed` |
+| candidates | 5 |
+| runtime-backed candidates | 5 |
+| mismatches | 0 |
+| missing runtime evidence | 0 |
+| current runtime best | `78d540b49c59077041414141414141`, exact2 / distance5 246 |
 | selected flag note | model/candidate scoring still selected bare `flag{`; not a runtime improvement |
 
 ## Conclusion
 
-The H1/H3 fixed boundary contrast set is exhausted. The current runtime best did not improve over `78d540b49c59077041414141414141` with exact2 / distance5 246.
+The current exact2 plateau is not explained by an offline transform mismatch for the audited candidates. Runtime-backed candidates agree with the offline UTF-16LE/Base64/RC4/compare trace and metrics.
 
-`project_state/negative_results.json` now records both the previously exhausted exact2 value-pool branch and the fixed 8-candidate H1/H3 contrast set as do-not-repeat directions unless their evidence inputs change.
+The next default direction is to stop local mutation of the exhausted branches and use a different bounded evidence source. Do not repeat the exact2 value-pool branch, the fixed H1/H3 boundary contrast set, or this 5-candidate transform trace audit unless new runtime evidence changes the inputs.
 
 ## Commands
 
 | command | result |
 |---|---|
-| `python -m pytest -q tests/test_compare_aware_search_strategy.py -k "h1 or h3 or boundary or trace or compare"` | `64 passed` |
-| `python -m pytest -q tests/test_compare_aware_search_strategy.py` | `64 passed` |
-| `python -m pytest -q` | `146 passed` |
-| `python -m reverse_agent.harness --dataset .\samplereverse_exact1_projected_vs_neighbor_20260424.json --run-name samplereverse_h1_h3_boundary_validation_20260504 --reports-dir solve_reports --analysis-mode "Auto" --model-type "Copilot CLI" --copilot-timeout-seconds 300 --ctf-skill-profile compact --case-id samplereverse-exact1-projected-vs-neighbor --no-resume` | completed, 0 errors |
-| `python -m reverse_agent.project_state build --reports-dir solve_reports --sample samplereverse --run-name samplereverse_h1_h3_boundary_validation_20260504` | passed; compact state manually corrected because auto classifier reverted to old pair-gate label |
-| `python -m reverse_agent.project_state status` | passed before manual correction but showed old reason; compact state now corrected to `h1_h3_boundary_contrast_exhausted_no_gain` |
+| `python -m pytest -q tests/test_compare_aware_search_strategy.py -k "transform_trace or profile_transform or h1_h3 or exact2_basin_smt_diagnostic"` | `6 passed, 60 deselected` |
+| `python -m pytest -q tests/test_compare_aware_search_strategy.py` | `66 passed` |
+| `python -m pytest -q` | `148 passed` |
+| `python -m reverse_agent.harness --dataset .\samplereverse_exact1_projected_vs_neighbor_20260424.json --run-name samplereverse_transform_trace_consistency_20260504 --reports-dir solve_reports --analysis-mode "Auto" --model-type "Copilot CLI" --copilot-timeout-seconds 300 --ctf-skill-profile compact --case-id samplereverse-exact1-projected-vs-neighbor --no-resume` | completed, 0 errors |
+| `python -m reverse_agent.project_state build --reports-dir solve_reports --sample samplereverse --run-name samplereverse_transform_trace_consistency_20260504` | passed |
 
 ## Next Step
 
-Choose a single new bounded hypothesis from evidence outside the exhausted exact2 value pool and fixed H1/H3 boundary contrast set. Do not expand beam, budget, topN, timeout, or frontier iteration limit.
+Choose a different single bounded evidence source outside the current local mutation route. A good next direction is a focused dynamic probe that captures the pre-RC4/Base64/key material around the compare path, rather than expanding search.

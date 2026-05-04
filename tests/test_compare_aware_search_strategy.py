@@ -24,6 +24,7 @@ from reverse_agent.strategies.compare_aware_search import (
     PROFILE_TRANSFORM_HYPOTHESIS_MATRIX_FILE_NAME,
     PROJECTED_PRESERVE_SECOND_HOP_ROLE,
     RESULT_FILE_NAME,
+    TRANSFORM_TRACE_CONSISTENCY_FILE_NAME,
     VALIDATION_FILE_NAME,
     _alternate_locked_pair_positions_for_exact1,
     _annotate_frontier_improvement_gate,
@@ -49,6 +50,7 @@ from reverse_agent.strategies.compare_aware_search import (
     run_exact2_basin_value_pool_evaluation,
     run_h1_h3_boundary_validation,
     run_profile_transform_hypothesis_audit,
+    run_transform_trace_consistency_diagnostic,
     validate_compare_aware_results,
     resolve_compare_aware_anchors,
 )
@@ -93,6 +95,7 @@ def test_trace_candidate_transform_records_layout_boundaries_and_known_runtime_p
     trace = trace_candidate_transform("78d540b49c59077041414141414141")
 
     assert trace["valid"] is True
+    assert trace["candidate_raw_bytes"]["hex"] == "78d540b49c59077041414141414141"
     assert trace["candidate_layout"]["candidate_length_bytes"] == 15
     assert trace["candidate_layout"]["prefix_hex"] == "78d540b49c590770"
     assert trace["candidate_layout"]["suffix_is_all_A"] is True
@@ -103,7 +106,14 @@ def test_trace_candidate_transform_records_layout_boundaries_and_known_runtime_p
     assert trace["rc4"]["key_length_bytes"] == trace["rc4"]["key_source_base64_chars"]
     assert trace["rc4"]["decrypt_prefix_hex"].startswith("46006c004464830d311c")
     assert trace["compare_boundary"]["raw_prefix_hex_10"] == "46006c004464830d311c"
+    assert trace["compare_boundary"]["compare_window_hex"] == "46006c004464830d311c"
     assert trace["compare_boundary"]["ci_exact_wchars"] == 2
+    assert len(trace["prefix_length_table"]) == 10
+    assert trace["prefix_length_table"][0]["candidate_prefix_len_bytes"] == 1
+    assert trace["prefix_length_table"][9]["candidate_prefix_len_bytes"] == 10
+    assert {"utf16le_hex", "base64_text", "base64_len", "rc4_input_len"} <= set(
+        trace["prefix_length_table"][7]
+    )
     assert [item["exact_ci"] for item in trace["compare_boundary"]["wchar_deltas"][:3]] == [
         True,
         True,
@@ -758,12 +768,21 @@ def test_compare_aware_strategy_runs_refine_then_smt_and_uses_promoted_anchors(
         "95a3f65dcedb6290",
     ]
     assert captured["smt_base"] == "78d540b49c590770"
-    assert result.metadata["completed_stage"] == "h1_h3_boundary_validation"
-    assert result.metadata["smt"]["payload"]["exact2_basin_smt"]["base_anchor"] == "78d540b49c590770"
-    assert result.metadata["h1_h3_boundary_validation"]["payload"]["classification"] in {
-        "h1_h3_boundary_contrast_exhausted_no_gain",
-        "h1_h3_boundary_contrast_improved",
+    assert result.metadata["completed_stage"] in {
+        "transform_trace_consistency",
+        "h1_h3_boundary_validation",
     }
+    assert result.metadata["smt"]["payload"]["exact2_basin_smt"]["base_anchor"] == "78d540b49c590770"
+    assert result.metadata["transform_trace_consistency"]["payload"]["classification"] in {
+        "transform_model_confirmed",
+        "evidence_insufficient",
+        "transform_mismatch_found",
+    }
+    if result.metadata["h1_h3_boundary_validation"]:
+        assert result.metadata["h1_h3_boundary_validation"]["payload"]["classification"] in {
+            "h1_h3_boundary_contrast_exhausted_no_gain",
+            "h1_h3_boundary_contrast_improved",
+        }
     smt_payload = json.loads((tmp_path / "smt_result.json").read_text(encoding="utf-8"))
     assert smt_payload["exact2_basin_smt"]["base_anchor"] == "78d540b49c590770"
     assert smt_payload["exact2_basin_smt"]["prefix_boundary"]["ci_exact_wchars"] == 2
@@ -3108,6 +3127,110 @@ def test_profile_transform_hypothesis_audit_writes_bounded_metadata_only_matrix(
     assert exact2["trace"]["rc4"]["decrypt_prefix_hex"].startswith("46006c004464830d311c")
     assert any(item["promotion_allowed"] is False for item in payload["candidates"])
     assert payload["next_bounded_validation_target"]["selected_hypotheses"] == ["H1", "H3"]
+
+
+def test_transform_trace_consistency_confirms_runtime_backed_candidates(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    def fake_indexed_artifact_payload(kind):
+        if kind == "h1_h3_boundary_validation_runtime":
+            return (
+                {
+                    "validations": [
+                        {
+                            "candidate_hex": "78d540b49c59077040414141414141",
+                            "cand8_hex": "78d540b49c590770",
+                            "compare_semantics_agree": True,
+                            "runtime_lhs_prefix_hex_10": "46006c004464830d311c",
+                            "runtime_ci_exact_wchars": 2,
+                            "runtime_ci_distance5": 246,
+                            "stage": "h1_h3_boundary_validation",
+                        },
+                        {
+                            "candidate_hex": "78d540b49c59077042414141414141",
+                            "cand8_hex": "78d540b49c590770",
+                            "compare_semantics_agree": True,
+                            "runtime_lhs_prefix_hex_10": "46006c004464830d311c",
+                            "runtime_ci_exact_wchars": 2,
+                            "runtime_ci_distance5": 246,
+                            "stage": "h1_h3_boundary_validation",
+                        },
+                    ]
+                },
+                "indexed/h1_h3_runtime.json",
+            )
+        if kind == "exact2_basin_value_pool_validation":
+            return (
+                {
+                    "validations": [
+                        {
+                            "candidate_hex": "78d540b49c59077041414141414141",
+                            "cand8_hex": "78d540b49c590770",
+                            "compare_semantics_agree": True,
+                            "runtime_lhs_prefix_hex_10": "46006c004464830d311c",
+                            "runtime_ci_exact_wchars": 2,
+                            "runtime_ci_distance5": 246,
+                            "stage": "exact2_basin_value_pool",
+                        }
+                    ]
+                },
+                "indexed/value_pool_validation.json",
+            )
+        return {}, ""
+
+    monkeypatch.setattr(compare_aware_search, "_indexed_artifact_payload", fake_indexed_artifact_payload)
+
+    result = run_transform_trace_consistency_diagnostic(
+        artifacts_dir=tmp_path,
+        runtime_validations=[],
+        transform_model=SamplereverseTransformModel(),
+        log=lambda _: None,
+    )
+
+    path = Path(result["result_path"])
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    assert path.name == TRANSFORM_TRACE_CONSISTENCY_FILE_NAME
+    assert payload["classification"] == "transform_model_confirmed"
+    assert payload["candidate_generation_changed"] is False
+    assert payload["ranking_changed"] is False
+    assert payload["final_selection_changed"] is False
+    assert payload["beam_budget_topn_timeout_frontier_limit_expanded"] is False
+    assert payload["runtime_backed_count"] == 3
+    assert payload["promotable_validations"] == []
+
+    baseline = next(
+        item for item in payload["candidates"] if item["candidate_hex"] == "78d540b49c59077041414141414141"
+    )
+    verdict = baseline["verdict"]
+    assert verdict["offline_runtime_prefix_agree_10"] is True
+    assert verdict["offline_runtime_metrics_agree"] is True
+    assert verdict["compare_semantics_agree"] is True
+    assert verdict["first_unsupported_stage"] == ""
+    assert verdict["evidence_status"] == "supported_by_runtime"
+    assert len(baseline["trace"]["prefix_length_table"]) == 10
+
+
+def test_transform_trace_consistency_reports_missing_runtime_artifact(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(compare_aware_search, "_indexed_artifact_payload", lambda kind: ({}, ""))
+
+    result = run_transform_trace_consistency_diagnostic(
+        artifacts_dir=tmp_path,
+        runtime_validations=[],
+        transform_model=SamplereverseTransformModel(),
+        log=lambda _: None,
+    )
+
+    payload = result["payload"]
+    assert payload["classification"] == "evidence_insufficient"
+    assert payload["runtime_backed_count"] == 0
+    assert all(
+        item["verdict"]["evidence_status"] == "missing_runtime_artifact"
+        for item in payload["candidates"]
+    )
 
 
 def test_h1_h3_boundary_validation_runtime_validates_fixed_contrast_set(

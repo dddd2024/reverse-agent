@@ -36,7 +36,7 @@
     "do_not_repeat": true,
     "override_allowed": true,
     "override_reason_required": true,
-    "reason": "samplereverse_h1_h3_boundary_validation_20260504 reconfirmed the pool is exhausted before H1/H3 validation: 18 generated, 18 unique, 18 runtime validated; best remained 78d540b49c59077041414141414141 exact2 / distance5 246 with no exact3+ or distance improvement",
+    "reason": "bounded exact2 value-pool branch generated 18 unique candidates and runtime-validated all 18; best remained exact2 / distance5 246 with no exact3+ or distance improvement",
     "severity": "soft_block"
   },
   {
@@ -44,7 +44,15 @@
     "do_not_repeat": true,
     "override_allowed": true,
     "override_reason_required": true,
-    "reason": "samplereverse_h1_h3_boundary_validation_20260504 runtime-validated all 8 fixed candidates with compare_semantics_agree=true; best stayed exact2 / distance5 246, improved_over_exact2=false, classification h1_h3_boundary_contrast_exhausted_no_gain",
+    "reason": "H1/H3 fixed contrast set was runtime-validated with compare_semantics_agree=true; best stayed exact2 / distance5 246 and improved_over_exact2=false",
+    "severity": "soft_block"
+  },
+  {
+    "direction": "repeat current 5-candidate transform trace consistency audit without new runtime evidence",
+    "do_not_repeat": true,
+    "override_allowed": true,
+    "override_reason_required": true,
+    "reason": "transform trace consistency diagnostic confirmed five runtime-backed candidates agree with offline UTF-16LE/Base64/RC4/compare trace; next work needs a different bounded evidence source",
     "severity": "soft_block"
   }
 ]

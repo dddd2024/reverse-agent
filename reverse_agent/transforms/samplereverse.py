@@ -175,6 +175,34 @@ def _wchar_compare_deltas(raw_prefix: bytes) -> list[dict[str, object]]:
     return deltas
 
 
+def _prefix_length_trace_rows(candidate: bytes, max_prefix_bytes: int = 10) -> list[dict[str, object]]:
+    rows: list[dict[str, object]] = []
+    max_len = min(max_prefix_bytes, len(candidate))
+    for prefix_len in range(1, max_len + 1):
+        prefix = candidate[:prefix_len]
+        expanded = _expand_candidate_bytes(prefix)
+        utf16_raw = _utf16_interleaved_bytes(expanded)
+        base64_text = base64.b64encode(utf16_raw).decode("ascii")
+        key = base64_text.encode("utf-16le")[: len(base64_text)]
+        rows.append(
+            {
+                "candidate_prefix_len_bytes": prefix_len,
+                "candidate_prefix_hex": prefix.hex(),
+                "wchar_len": len(expanded),
+                "utf16le_hex": utf16_raw.hex(),
+                "utf16le_len_bytes": len(utf16_raw),
+                "utf16le_len_mod3": len(utf16_raw) % 3,
+                "base64_text": base64_text,
+                "base64_len": len(base64_text),
+                "base64_remainder_mod4": len(base64_text) % 4,
+                "base64_padding_count": len(base64_text) - len(base64_text.rstrip("=")),
+                "rc4_input_len": len(key),
+                "rc4_key_length_bytes": len(key),
+            }
+        )
+    return rows
+
+
 def trace_candidate_transform(
     candidate_hex: str,
     *,
@@ -220,6 +248,10 @@ def trace_candidate_transform(
     return {
         "candidate_hex": normalized,
         "valid": True,
+        "candidate_raw_bytes": {
+            "hex": candidate.hex(),
+            "length_bytes": len(candidate),
+        },
         "candidate_layout": {
             "candidate_length_bytes": len(candidate),
             "prefix_bytes": prefix_len,
@@ -250,11 +282,16 @@ def trace_candidate_transform(
             "prefix_last_chunk_raw_remainder": prefix_raw_bytes % 3,
             "suffix_first_raw_byte_index": suffix_first_raw_byte_index,
             "suffix_first_base64_char_index": suffix_first_base64_char_index,
+            "base64_remainder_mod4": len(base64_text) % 4,
+            "raw_length_mod3": len(utf16_raw) % 3,
         },
         "rc4": {
             "key_length_bytes": len(key),
             "key_source_base64_chars": len(base64_text),
             "key_hex_prefix": key[:64].hex(),
+            "input_type": "base64_ascii_text_encoded_utf16le_truncated_to_base64_char_count",
+            "state_reset_per_candidate": True,
+            "prga_first_byte_discarded": False,
             "decrypt_prefix_len": len(decrypt_prefix),
             "decrypt_prefix_hex": decrypt_prefix.hex(),
         },
@@ -262,9 +299,14 @@ def trace_candidate_transform(
             "target_wchars": TARGET_WCHARS,
             "target_prefix_hex": TARGET_PREFIX.hex(),
             "raw_prefix_hex_10": decrypt_prefix[:TARGET_COMPARE_BYTES].hex(),
+            "compare_window_hex": decrypt_prefix[:TARGET_COMPARE_BYTES].hex(),
+            "compare_window_bytes": TARGET_COMPARE_BYTES,
+            "compare_unit": "wchar",
+            "case_sensitive": False,
             "wchar_deltas": _wchar_compare_deltas(decrypt_prefix),
             **metrics,
         },
+        "prefix_length_table": _prefix_length_trace_rows(candidate, max_prefix_bytes=10),
     }
 
 
