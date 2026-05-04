@@ -4,346 +4,299 @@ Generated: 2026-05-04
 
 ## 1. Goal
 
-本轮目标是：
+Resolve the current `samplereverse` stall after `h1_h3_boundary_contrast_exhausted_no_gain`.
+
+The next goal is **not** to expand search. The goal is to test one bounded hypothesis:
 
 ```text
-run_selected_bounded_profile_transform_validation_for_H1_H3
+The current exact2 plateau may be caused by an incorrect offline transform model around the UTF-16LE/Base64/RC4/compare boundary, rather than by candidate-value selection.
 ```
 
-也就是：围绕 `prefix8 + Base64 chunk boundary` 做一个 **最多 8 个 hand-picked contrast candidates** 的小规模运行时验证，专门验证 H1/H3：
+Codex should audit whether the compare-aware pipeline is faithfully modeling the runtime path before generating new candidates.
+
+Current best remains:
 
 ```text
-H1: candidate byte layout / prefix length 假设错误或过窄
-H3: Base64 boundary / padding / chunk alignment 可能存在 off-by-one
+exact2 / distance5 246
+candidate_hex = 78d540b49c59077041414141414141
+compare_semantics_agree = true
 ```
 
-本轮不是继续审计报告，不是扩大搜索，而是把上一轮已经生成的 hypothesis matrix 落地为一个 bounded validation。当前状态已经明确建议下一步验证 H1/H3，理由是 helper/runtime prefix 一致，但 prefix8 raw bytes 落在 Base64 chunk 边界内部。
-
-成功信号：
-
-```text
-runtime_ci_exact_wchars > 2
-或
-runtime_ci_distance5 < 246
-且 compare_semantics_agree != false
-```
-
-如果没有达到上述信号，应记录 negative result，并停止该 H1/H3 contrast set，不要继续扩大。
+Latest H1/H3 boundary validation did not improve over exact2.
 
 ---
 
 ## 2. Current Evidence
 
-当前 active strategy：
-
-```text
-CompareAwareSearchStrategy
-```
-
-当前 sample/profile：
-
-```text
-samplereverse
-```
-
-当前已知 transform：
+Known mainline:
 
 ```text
 input -> UTF-16LE -> Base64 -> RC4 -> compare flag{ prefix
 ```
 
-当前 mainline：
+Current best exact2 candidate:
 
 ```text
-L15(prefix8)
+78d540b49c59077041414141414141
 ```
 
-当前 runtime best 仍是 exact2：
+with:
 
 ```text
-candidate_hex = 78d540b49c59077041414141414141
-candidate_prefix = 78d540b49c590770
 runtime_ci_exact_wchars = 2
 runtime_ci_distance5 = 246
 compare_semantics_agree = true
-source = pairscan
 ```
 
-上一轮 Codex 已完成 profile/transform hypothesis audit，生成了 `profile_transform_hypothesis_matrix.json`，并确认 exact2 value-pool 分支没有改进：18 个生成、18 个 unique、18 个 runtime validated，best 仍为 `78d540b49c59077041414141414141`。
-
-上一轮结论：
+The latest H1/H3 validation tested 8 fixed boundary candidates and concluded:
 
 ```text
-classification = profile_transform_hypothesis_audit_complete
-exact2 value-pool branch = stopped
-H4/H5 temporarily demoted
-next bounded target = H1/H3
+h1_h3_boundary_contrast_exhausted_no_gain
+```
+
+Best runtime candidate remained exact2 / distance5 246, so the boundary-contrast set is exhausted.
+
+Negative results already include:
+
+```text
+exact2 basin value-pool evaluation exhausted
+H1/H3 fixed 8-candidate boundary contrast exhausted
+old blind search blocked
+beam/budget expansion blocked
+compare_semantics_agree=false primary frontier blocked
 ```
 
 ---
 
 ## 3. Do Not Do
 
-严格禁止：
+Codex must not:
 
 ```text
-1. 不要回到 old sample_solver blind search。
-2. 不要只增加 beam / budget / topN / timeout / frontier iteration limit。
-3. 不要把 compare_semantics_agree=false candidates 作为主突破点。
-4. 不要重复 exact2 basin value-pool evaluation。
-5. 不要提交完整 solve_reports 目录。
-6. 不要扫描完整 solve_reports。
-7. 不要提升 5a3f7f46ddd474d0、5a3f7fc2ddd474d0、343f7f46ddd474d0。
-8. 不要把 model-selected bare flag{ 当成 runtime improvement。
-9. 不要重复上一轮 profile_transform_hypothesis_matrix 的纯审计工作。
-10. 不要把本轮变成新的大规模 candidate generator。
+1. Return to old sample_solver blind search.
+2. Increase beam, budget, topN, timeout, or frontier iteration limit.
+3. Promote compare_semantics_agree=false candidates.
+4. Repeat the exact2 basin value-pool evaluation.
+5. Repeat the fixed 8-candidate H1/H3 boundary contrast set.
+6. Commit full solve_reports.
+7. Treat model-selected bare flag{ as a runtime improvement.
+8. Generate a large new candidate pool before completing the transform audit.
 ```
-
-特别注意：`negative_results.json` 已记录 exact2 basin value-pool evaluation 的失败分支，除非 diagnostics value pools 改变，否则不要重复。
 
 ---
 
 ## 4. Files To Inspect
 
-必须先读：
+Primary files:
 
 ```text
-project_state/task_packet.json
-project_state/current_state.json
-project_state/artifact_index.json
-project_state/negative_results.json
-project_state/codex_execution_report.md
-```
-
-主要代码文件：
-
-```text
-reverse_agent/strategies/compare_aware_search.py
 reverse_agent/transforms/samplereverse.py
-reverse_agent/profiles/samplereverse.py
+reverse_agent/strategies/compare_aware_search.py
 tests/test_compare_aware_search_strategy.py
 ```
 
-只在必要时读取这些 artifact，不要读取完整 `solve_reports`：
+Project-state files:
 
 ```text
-profile_transform_hypothesis_matrix
-compare_probe
-bridge_validation
-pairscan_summary
-exact2_basin_value_pool_validation
-summary
-run_manifest
+project_state/current_state.json
+project_state/task_packet.json
+project_state/negative_results.json
+project_state/artifact_index.json
+project_state/codex_execution_report.md
 ```
 
-artifact_index 已经列出最新 harness run 和关键 artifact 路径，应通过该索引定位文件，不要全目录扫描。
+Target artifacts only, not full `solve_reports`:
+
+```text
+h1_h3_boundary_validation.json
+h1_h3_boundary_validation/runtime validation json
+profile_transform_hypothesis_matrix.json
+compare_probe.json
+bridge_validation.json
+pairscan_summary.json
+frontier_summary.json
+strata_summary.json
+smt_result.json
+smt_exact2_basin_result.json
+```
+
+Use `artifact_index.json` paths for these. Do not scan the entire report tree.
 
 ---
 
 ## 5. Required Audit
 
-本轮不是重新做 hypothesis matrix，而是执行 **H1/H3 bounded validation**。Codex 必须完成：
+Codex should perform a focused audit with these questions.
 
-### A. 复核上一轮前提
+### A. UTF-16LE audit
 
-确认：
-
-```text
-1. profile_transform_hypothesis_audit 已完成。
-2. exact2 value-pool branch 已停止。
-3. H1/H3 是当前 selected bounded validation target。
-4. current best baseline 是 exact2:
-   78d540b49c59077041414141414141
-   exact_wchars = 2
-   distance5 = 246
-5. 本轮不得重复 exact2 basin value-pool pool。
-```
-
-### B. 构造 tiny contrast set
-
-围绕以下边界构造最多 8 个候选：
+Check whether offline transform uses exactly the same bytes as runtime:
 
 ```text
-prefix8 raw bytes
-UTF-16LE wchar boundary
-Base64 3-byte chunk boundary
-Base64 padding / remainder
-RC4 decrypted prefix comparison
+input character -> UTF-16LE bytes -> Base64 bytes
 ```
 
-候选必须是 hand-picked contrast candidates，不允许自动扩展 beam/budget。
-
-建议候选设计方向：
+Specifically inspect:
 
 ```text
-1. 保留 exact2 prefix，微调 prefix8 附近 1-2 byte。
-2. 测试 Base64 chunk boundary remainder 从 2 调整到邻近状态的候选。
-3. 测试 UTF-16LE wchar 对齐变化是否影响 runtime exact_wchars。
-4. 测试 candidate layout/prefix length 是否导致 offline trace 与 runtime trace 解释错位。
+ASCII candidate char -> [char_byte, 00]
+input length in wchar vs byte length
+null terminator handling
+whether runtime includes or excludes final 00 00
 ```
 
-### C. Runtime validation required
-
-每个候选都必须 runtime validate。报告中必须列出：
+Codex should produce a table for candidate prefixes length 1-10:
 
 ```text
-candidate_hex
-candidate_prefix
-layout hypothesis
-base64 boundary state
-offline prefix/decrypt prefix
-runtime exact_wchars
-runtime distance5
-compare_semantics_agree
-whether improved over exact2
+wchar_len
+utf16le_hex
+base64_text
+base64_len
+base64_remainder_mod4
+rc4_input_len
 ```
 
-### D. 判断逻辑
+### B. Base64 boundary audit
 
-如果出现：
+The previous H1/H3 contrast tested a fixed boundary set, but it did not prove the full input space. Codex should determine whether the current model assumes the wrong Base64 chunk alignment.
+
+Check:
 
 ```text
-runtime_ci_exact_wchars > 2
-或 runtime_ci_distance5 < 246
-且 compare_semantics_agree = true
+whether runtime Base64 encodes UTF-16LE bytes directly
+whether Base64 output includes padding =
+whether padding is stripped before RC4
+whether newline or null byte is included
+whether the compare target starts at RC4 byte 0
 ```
 
-则把该候选作为新的 bounded frontier，并更新 project_state。
+### C. RC4 audit
 
-如果没有出现改进：
+Check whether the RC4 implementation matches runtime exactly:
 
 ```text
-1. 记录 H1/H3 contrast set negative result。
-2. 不扩大候选数。
-3. 不继续本方向。
-4. 给出下一轮可验证的单一新 hypothesis。
+key bytes
+KSA initialization
+PRGA first-byte discard or no discard
+signed/unsigned byte behavior
+state reset per candidate or reused state
+input type: Base64 ASCII bytes vs decoded Base64 bytes
 ```
+
+The main failure pattern may be: exact2 is real, but the offline model becomes wrong after two compared wide chars.
+
+### D. Compare audit
+
+Check whether `exact_wchars` is computed against the same unit as runtime:
+
+```text
+byte compare vs wchar compare
+case-sensitive compare
+comparison stops at null byte or explicit length
+whether target is "flag{" as ASCII, UTF-16LE, or post-RC4 bytes
+```
+
+Codex should verify whether `distance5 = 246` is computed against the same five logical characters that runtime uses.
 
 ---
 
 ## 6. Implementation Scope
 
-允许修改：
+Codex should add **one diagnostic mode**, not a new search mode.
+
+Suggested scope:
 
 ```text
-reverse_agent/strategies/compare_aware_search.py
-reverse_agent/transforms/samplereverse.py
-reverse_agent/profiles/samplereverse.py
-tests/test_compare_aware_search_strategy.py
-project_state/codex_execution_report.md
-project_state/current_state.json
-project_state/task_packet.json
-project_state/artifact_index.json
-project_state/negative_results.json
+add a transform_trace_consistency diagnostic for samplereverse
 ```
 
-允许新增或更新的 artifact：
+This diagnostic should:
 
 ```text
-solve_reports/.../reports/tool_artifacts/samplereverse/h1_h3_boundary_validation.json
+1. Take 3-5 known candidates:
+   - 78d540b49c59077041414141414141
+   - 78d540b49c59077040414141414141
+   - 5a3e7f46ddd474d041414141414141
+2. Emit stage-by-stage bytes:
+   - raw input bytes
+   - UTF-16LE bytes
+   - Base64 bytes/string
+   - RC4 output bytes
+   - compare window bytes
+   - expected target bytes
+   - exact_wchars calculation
+   - distance5 calculation
+3. Compare offline trace with runtime validation artifacts.
+4. Report the first stage where the model can no longer be justified by evidence.
 ```
 
-允许的实现：
-
-```text
-1. 增加一个 H1/H3 bounded contrast candidate evaluator。
-2. 增加 trace metadata：candidate layout、UTF-16LE bytes、Base64 boundary、RC4 decrypt prefix。
-3. 增加最多 8 个 hand-picked candidates。
-4. 对每个 candidate 做 runtime validation。
-5. 更新 compact project_state。
-6. 记录 negative result，如果本轮无改进。
-```
-
-不允许的实现：
-
-```text
-1. 新 blind search。
-2. 新 guided pool expansion。
-3. 新 beam search。
-4. 提高 timeout。
-5. 修改 final selection 逻辑来制造“改进”。
-6. 重构 harness/pipeline。
-7. 提交完整 solve_reports。
-```
+No candidate promotion unless the audit identifies a concrete mismatch.
 
 ---
 
 ## 7. Tests
 
-至少运行：
+Required tests:
 
-```powershell
-python -m pytest -q tests/test_compare_aware_search_strategy.py -k "profile or transform or boundary or trace or compare"
+```bash
 python -m pytest -q tests/test_compare_aware_search_strategy.py
-```
-
-如果改动 transform/profile/helper：
-
-```powershell
 python -m pytest -q
 ```
 
-运行 bounded harness，使用新 run name：
+Add targeted tests if diagnostic code is added:
 
-```powershell
-python -m reverse_agent.harness --dataset .\samplereverse_exact1_projected_vs_neighbor_20260424.json --run-name samplereverse_h1_h3_boundary_validation_20260504 --reports-dir solve_reports --analysis-mode "Auto" --model-type "Copilot CLI" --copilot-timeout-seconds 300 --ctf-skill-profile compact --case-id samplereverse-exact1-projected-vs-neighbor --no-resume
+```text
+test_samplereverse_transform_trace_contains_utf16le_base64_rc4_compare_stages
+test_samplereverse_transform_trace_is_deterministic
+test_samplereverse_transform_trace_does_not_expand_search_budget
 ```
 
-然后更新 project_state：
-
-```powershell
-python -m reverse_agent.project_state build --reports-dir solve_reports --sample samplereverse --run-name samplereverse_h1_h3_boundary_validation_20260504
-python -m reverse_agent.project_state status
-```
-
-上一轮测试基线是 `tests/test_compare_aware_search_strategy.py` 62 passed，全量 pytest 144 passed；本轮不得引入回归。
+If a transform mismatch is found, add a regression test that proves the corrected transform changes the trace for the current exact2 candidate.
 
 ---
 
 ## 8. Stop Conditions
 
-立即停止并报告：
+### Stop A: Transform mismatch found
+
+Report:
 
 ```text
-1. 需要超过 8 个 hand-picked contrast candidates。
-2. 需要扩大 beam / budget / topN / timeout。
-3. 需要 full solve_reports scan。
-4. 发现 helper/runtime prefix mismatch。
-5. 只能依赖 compare_semantics_agree=false candidate。
-6. 无法 runtime validate。
-7. 无法证明本轮候选确实围绕 H1/H3 boundary。
-8. 需要修改 final selection 才能显示收益。
+mismatch stage
+old assumption
+runtime-supported correction
+minimal code change required
+whether current exact2 candidate should be revalidated
 ```
 
-成功停止条件：
+Do not launch a broad search yet.
+
+### Stop B: Transform model confirmed correct
+
+Report:
 
 ```text
-1. 完成 H1/H3 最多 8 个候选的 runtime validation。
-2. 每个候选都有 transform trace。
-3. 明确是否有 exact_wchars > 2 或 distance5 < 246。
-4. 如果有改进，更新 current_best 和 next_local_action。
-5. 如果无改进，记录 negative result，并给出下一轮单一 bounded hypothesis。
+all audited stages match current assumptions
+exact2 plateau is likely not caused by transform modeling
+next bounded hypothesis recommendation
 ```
 
-## GPT Decision Summary
+### Stop C: Evidence insufficient
 
-下一步不要再做“审计矩阵”，因为 Codex 已经完成。下一步应让 Codex 实施一个很小的 H1/H3 bounded validation：
+Report exactly which artifact is missing or ambiguous.
+
+Do not infer from absent data.
+
+---
+
+## Practical Expectation
+
+This round is not expected to solve the flag directly. It should answer this question:
 
 ```text
-最多 8 个 hand-picked contrast candidates
-围绕 prefix8 + Base64 chunk boundary
-必须 runtime validate
-不扩大搜索预算
-不重复 exact2 value-pool
+Is exact2 stalled because candidates are weak, or because the transform/compare model is wrong?
 ```
 
-当前基线是：
+If the model is wrong, the next round may quickly move to exact3+.
 
-```text
-78d540b49c59077041414141414141
-exact_wchars = 2
-distance5 = 246
-compare_semantics_agree = true
-```
-
-只有超过这个 runtime baseline，才算真正推进。
+If the model is correct, the current route is in a deeper bottleneck and the next step should be a different bounded hypothesis, not expanded search.
