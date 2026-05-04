@@ -4,66 +4,87 @@ Generated: 2026-05-04
 
 ## 1. Goal
 
-Resolve the current `samplereverse` stall after `h1_h3_boundary_contrast_exhausted_no_gain`.
-
-The next goal is **not** to expand search. The goal is to test one bounded hypothesis:
+本轮目标：
 
 ```text
-The current exact2 plateau may be caused by an incorrect offline transform model around the UTF-16LE/Base64/RC4/compare boundary, rather than by candidate-value selection.
+run_focused_dynamic_probe_for_samplereverse_compare_path
 ```
 
-Codex should audit whether the compare-aware pipeline is faithfully modeling the runtime path before generating new candidates.
+Current `transform_trace_consistency` has confirmed that five runtime-backed candidates agree with the offline `UTF-16LE/Base64/RC4/compare` trace, with `mismatches = 0`. Therefore, the exact2 plateau is not explained by an audited transform-model mismatch.
 
-Current best remains:
+The next step is to stop the local mutation route and use a different bounded evidence source:
 
 ```text
-exact2 / distance5 246
-candidate_hex = 78d540b49c59077041414141414141
-compare_semantics_agree = true
+focused dynamic probe around compare path
 ```
 
-Latest H1/H3 boundary validation did not improve over exact2.
+The goal is to capture runtime-backed material around:
+
+```text
+pre-RC4 material
+Base64 material
+RC4 key / key schedule evidence
+post-RC4 compare buffer
+compare target
+compare length / compare unit
+```
+
+Success is not measured by generating more candidates. Success is obtaining runtime evidence that explains why the path stalls after exact2.
 
 ---
 
 ## 2. Current Evidence
 
-Known mainline:
+Current active strategy:
+
+```text
+CompareAwareSearchStrategy
+```
+
+Current known transform:
 
 ```text
 input -> UTF-16LE -> Base64 -> RC4 -> compare flag{ prefix
 ```
 
-Current best exact2 candidate:
+Current runtime best remains:
 
 ```text
-78d540b49c59077041414141414141
-```
-
-with:
-
-```text
+candidate_hex = 78d540b49c59077041414141414141
 runtime_ci_exact_wchars = 2
 runtime_ci_distance5 = 246
 compare_semantics_agree = true
 ```
 
-The latest H1/H3 validation tested 8 fixed boundary candidates and concluded:
+Latest bottleneck:
 
 ```text
-h1_h3_boundary_contrast_exhausted_no_gain
+stage = transform_consistency
+reason = transform_model_confirmed
+confidence = medium
 ```
 
-Best runtime candidate remained exact2 / distance5 246, so the boundary-contrast set is exhausted.
-
-Negative results already include:
+Latest Codex execution result:
 
 ```text
-exact2 basin value-pool evaluation exhausted
-H1/H3 fixed 8-candidate boundary contrast exhausted
-old blind search blocked
-beam/budget expansion blocked
-compare_semantics_agree=false primary frontier blocked
+run = samplereverse_transform_trace_consistency_20260504
+classification = transform_model_confirmed
+candidates = 5
+runtime-backed candidates = 5
+mismatches = 0
+missing runtime evidence = 0
+current runtime best = exact2 / distance5 246
+```
+
+Already failed or blocked directions:
+
+```text
+old sample_solver blind search
+only increase beam or budget
+compare_semantics_agree=false candidates as primary frontier
+exact2 basin value-pool evaluation
+H1/H3 fixed 8-candidate boundary contrast set
+repeat current 5-candidate transform trace consistency audit without new runtime evidence
 ```
 
 ---
@@ -73,230 +94,271 @@ compare_semantics_agree=false primary frontier blocked
 Codex must not:
 
 ```text
-1. Return to old sample_solver blind search.
-2. Increase beam, budget, topN, timeout, or frontier iteration limit.
-3. Promote compare_semantics_agree=false candidates.
-4. Repeat the exact2 basin value-pool evaluation.
-5. Repeat the fixed 8-candidate H1/H3 boundary contrast set.
-6. Commit full solve_reports.
-7. Treat model-selected bare flag{ as a runtime improvement.
-8. Generate a large new candidate pool before completing the transform audit.
+1. Do not return to old sample_solver blind search.
+2. Do not increase beam, budget, topN, timeout, or frontier iteration limit.
+3. Do not use compare_semantics_agree=false candidates as primary frontier.
+4. Do not repeat exact2 basin value-pool evaluation.
+5. Do not repeat the H1/H3 fixed 8-candidate boundary contrast set.
+6. Do not repeat the current 5-candidate transform trace consistency audit.
+7. Do not scan full solve_reports.
+8. Do not commit full solve_reports.
+9. Do not treat model-selected bare flag{ as runtime improvement.
+10. Do not create a new broad candidate generator before obtaining new runtime evidence.
 ```
 
 ---
 
 ## 4. Files To Inspect
 
-Primary files:
+Must read first:
 
 ```text
-reverse_agent/transforms/samplereverse.py
-reverse_agent/strategies/compare_aware_search.py
-tests/test_compare_aware_search_strategy.py
-```
-
-Project-state files:
-
-```text
-project_state/current_state.json
 project_state/task_packet.json
-project_state/negative_results.json
+project_state/current_state.json
 project_state/artifact_index.json
+project_state/negative_results.json
 project_state/codex_execution_report.md
 ```
 
-Target artifacts only, not full `solve_reports`:
+Primary code files:
 
 ```text
-h1_h3_boundary_validation.json
-h1_h3_boundary_validation/runtime validation json
-profile_transform_hypothesis_matrix.json
-compare_probe.json
-bridge_validation.json
-pairscan_summary.json
-frontier_summary.json
-strata_summary.json
-smt_result.json
-smt_exact2_basin_result.json
+reverse_agent/strategies/compare_aware_search.py
+reverse_agent/transforms/samplereverse.py
+tests/test_compare_aware_search_strategy.py
 ```
 
-Use `artifact_index.json` paths for these. Do not scan the entire report tree.
+If runtime / harness / debugger related implementation exists, inspect:
+
+```text
+reverse_agent/harness*
+reverse_agent/runtime*
+reverse_agent/validators*
+reverse_agent/profiles/samplereverse.py
+```
+
+Read only key artifacts pointed to by `artifact_index.json`; do not scan the full `solve_reports` tree:
+
+```text
+transform_trace_consistency
+compare_probe
+bridge_validation
+pairscan_summary
+profile_transform_hypothesis_matrix
+frontier_summary
+strata_summary
+summary
+run_manifest
+```
 
 ---
 
 ## 5. Required Audit
 
-Codex should perform a focused audit with these questions.
+This round requires a focused dynamic probe feasibility audit plus minimal implementation.
 
-### A. UTF-16LE audit
+### A. Locate runtime compare path
 
-Check whether offline transform uses exactly the same bytes as runtime:
-
-```text
-input character -> UTF-16LE bytes -> Base64 bytes
-```
-
-Specifically inspect:
+Codex should identify where runtime validation obtains:
 
 ```text
-ASCII candidate char -> [char_byte, 00]
-input length in wchar vs byte length
-null terminator handling
-whether runtime includes or excludes final 00 00
+exact_wchars
+distance5
+compare_semantics_agree
+selected flag / compare prefix
 ```
 
-Codex should produce a table for candidate prefixes length 1-10:
+Required answers:
 
 ```text
-wchar_len
-utf16le_hex
-base64_text
-base64_len
-base64_remainder_mod4
-rc4_input_len
+1. Is exact_wchars derived from real process output or from the offline evaluator?
+2. Which buffer / character unit is distance5 calculated from?
+3. What runtime evidence supports compare_semantics_agree?
+4. Can the current system locate runtime bytes before and after compare?
 ```
 
-### B. Base64 boundary audit
+### B. Design dynamic probe points
 
-The previous H1/H3 contrast tested a fixed boundary set, but it did not prove the full input space. Codex should determine whether the current model assumes the wrong Base64 chunk alignment.
-
-Check:
+Codex should add bounded probe points around these stages:
 
 ```text
-whether runtime Base64 encodes UTF-16LE bytes directly
-whether Base64 output includes padding =
-whether padding is stripped before RC4
-whether newline or null byte is included
-whether the compare target starts at RC4 byte 0
+raw input candidate
+UTF-16LE encoded bytes
+Base64 output bytes
+RC4 input bytes
+RC4 key material / KSA input
+RC4 output bytes
+compare buffer
+compare target
+compare length
 ```
 
-### C. RC4 audit
+The probe does not need to obtain every point in one round, but every point must be marked as available, unavailable, or inferred, with evidence source.
 
-Check whether the RC4 implementation matches runtime exactly:
+### C. Probe exact2 baseline and near controls
+
+Probe at least these candidates:
 
 ```text
-key bytes
-KSA initialization
-PRGA first-byte discard or no discard
-signed/unsigned byte behavior
-state reset per candidate or reused state
-input type: Base64 ASCII bytes vs decoded Base64 bytes
+78d540b49c59077041414141414141
+78d540b49c59077040414141414141
+5a3e7f46ddd474d041414141414141
 ```
 
-The main failure pattern may be: exact2 is real, but the offline model becomes wrong after two compared wide chars.
+At most two additional control candidates are allowed. Total candidate count must not exceed 5.
 
-### D. Compare audit
-
-Check whether `exact_wchars` is computed against the same unit as runtime:
+For each candidate, output:
 
 ```text
-byte compare vs wchar compare
-case-sensitive compare
-comparison stops at null byte or explicit length
-whether target is "flag{" as ASCII, UTF-16LE, or post-RC4 bytes
+candidate_hex
+runtime exact_wchars
+runtime distance5
+runtime compare buffer preview
+runtime compare target preview
+runtime compare length / unit
+pre-RC4 material if available
+RC4 key material if available
+whether evidence explains exact2 plateau
 ```
 
-Codex should verify whether `distance5 = 246` is computed against the same five logical characters that runtime uses.
+### D. Determine whether hidden runtime material differs from modeled material
+
+Codex must answer:
+
+```text
+1. Is the RC4 key fully confirmed?
+2. Is RC4 input confirmed as Base64 ASCII bytes?
+3. Is the compare target confirmed as flag{ in the same encoding unit?
+4. Does compare start at byte 0?
+5. Is there an offset / prefix skip / wchar stride / null-stop behavior?
+6. What is the first real runtime byte/word that fails after exact2?
+```
 
 ---
 
 ## 6. Implementation Scope
 
-Codex should add **one diagnostic mode**, not a new search mode.
+Allowed: add one diagnostic.
 
-Suggested scope:
+Do not add a searcher.
 
-```text
-add a transform_trace_consistency diagnostic for samplereverse
-```
-
-This diagnostic should:
+Suggested function name:
 
 ```text
-1. Take 3-5 known candidates:
-   - 78d540b49c59077041414141414141
-   - 78d540b49c59077040414141414141
-   - 5a3e7f46ddd474d041414141414141
-2. Emit stage-by-stage bytes:
-   - raw input bytes
-   - UTF-16LE bytes
-   - Base64 bytes/string
-   - RC4 output bytes
-   - compare window bytes
-   - expected target bytes
-   - exact_wchars calculation
-   - distance5 calculation
-3. Compare offline trace with runtime validation artifacts.
-4. Report the first stage where the model can no longer be justified by evidence.
+run_dynamic_compare_path_probe()
 ```
 
-No candidate promotion unless the audit identifies a concrete mismatch.
+or:
+
+```text
+run_samplereverse_runtime_compare_probe()
+```
+
+Allowed artifact:
+
+```text
+solve_reports/.../tool_artifacts/samplereverse/dynamic_compare_path_probe/dynamic_compare_path_probe.json
+```
+
+Suggested artifact schema:
+
+```json
+{
+  "classification": "dynamic_probe_complete | dynamic_probe_partial | dynamic_probe_unavailable",
+  "candidate_count": 3,
+  "runtime_backed_count": 3,
+  "probe_points": {
+    "pre_rc4": "available | unavailable | inferred",
+    "rc4_key": "available | unavailable | inferred",
+    "post_rc4_compare_buffer": "available | unavailable | inferred",
+    "compare_target": "available | unavailable | inferred",
+    "compare_length": "available | unavailable | inferred"
+  },
+  "findings": [],
+  "next_bounded_action": ""
+}
+```
+
+If the current harness cannot directly obtain runtime bytes, Codex should implement the minimal feasible probe or report why the evidence is unavailable. Do not convert this into broad search.
 
 ---
 
 ## 7. Tests
 
-Required tests:
+At minimum run:
 
 ```bash
 python -m pytest -q tests/test_compare_aware_search_strategy.py
 python -m pytest -q
 ```
 
-Add targeted tests if diagnostic code is added:
+If a diagnostic is added, add or update tests:
 
 ```text
-test_samplereverse_transform_trace_contains_utf16le_base64_rc4_compare_stages
-test_samplereverse_transform_trace_is_deterministic
-test_samplereverse_transform_trace_does_not_expand_search_budget
+test_dynamic_compare_path_probe_has_bounded_candidate_count
+test_dynamic_compare_path_probe_does_not_expand_search_budget
+test_dynamic_compare_path_probe_records_probe_point_availability
+test_dynamic_compare_path_probe_preserves_existing_selection_behavior
 ```
 
-If a transform mismatch is found, add a regression test that proves the corrected transform changes the trace for the current exact2 candidate.
+Run harness with new run name:
+
+```powershell
+python -m reverse_agent.harness --dataset .\samplereverse_exact1_projected_vs_neighbor_20260424.json --run-name samplereverse_dynamic_compare_path_probe_20260504 --reports-dir solve_reports --analysis-mode "Auto" --model-type "Copilot CLI" --copilot-timeout-seconds 300 --ctf-skill-profile compact --case-id samplereverse-exact1-projected-vs-neighbor --no-resume
+```
+
+Then update project state:
+
+```powershell
+python -m reverse_agent.project_state build --reports-dir solve_reports --sample samplereverse --run-name samplereverse_dynamic_compare_path_probe_20260504
+python -m reverse_agent.project_state status
+```
 
 ---
 
 ## 8. Stop Conditions
 
-### Stop A: Transform mismatch found
-
-Report:
+Stop immediately and report if:
 
 ```text
-mismatch stage
-old assumption
-runtime-supported correction
-minimal code change required
-whether current exact2 candidate should be revalidated
+1. Need to expand beam / budget / topN / timeout.
+2. Need to return to blind search.
+3. Need to repeat exact2 basin value-pool.
+4. Need to repeat H1/H3 fixed boundary set.
+5. Need to repeat transform trace consistency audit.
+6. Cannot obtain any new runtime evidence.
+7. Can only advance through compare_semantics_agree=false candidates.
+8. Need to scan full solve_reports.
 ```
 
-Do not launch a broad search yet.
-
-### Stop B: Transform model confirmed correct
-
-Report:
+Successful stop conditions:
 
 ```text
-all audited stages match current assumptions
-exact2 plateau is likely not caused by transform modeling
-next bounded hypothesis recommendation
+1. Dynamic probe completes with at least 3 candidates having runtime-backed probe result.
+2. Each probe point is marked available, unavailable, or inferred.
+3. Report whether the exact2 plateau is explained by runtime compare path evidence.
+4. If new offset / key / compare-length / compare-unit evidence is found, propose one next bounded hypothesis.
+5. If no new evidence is obtainable, record a negative result and recommend stopping the current compare-aware local route.
 ```
-
-### Stop C: Evidence insufficient
-
-Report exactly which artifact is missing or ambiguous.
-
-Do not infer from absent data.
 
 ---
 
-## Practical Expectation
+## GPT Decision Summary
 
-This round is not expected to solve the flag directly. It should answer this question:
+Do not continue local exact2 mutation. Do not re-check transform consistency. Both directions are exhausted or confirmed.
+
+Next Codex action:
 
 ```text
-Is exact2 stalled because candidates are weak, or because the transform/compare model is wrong?
+focused dynamic compare-path probe
 ```
 
-If the model is wrong, the next round may quickly move to exact3+.
+The core target is runtime evidence for:
 
-If the model is correct, the current route is in a deeper bottleneck and the next step should be a different bounded hypothesis, not expanded search.
+```text
+RC4 key / pre-RC4 material / post-RC4 compare buffer / compare target / compare length
+```
+
+If this round obtains real compare-path bytes, the next step may become a structural breakthrough instead of another local candidate search.
+
+If this round cannot obtain new runtime evidence, the compare-aware pipeline has insufficient observability and the next strategy should move toward lower-level dynamic instrumentation or manual reversing, not more candidate search.
