@@ -7,47 +7,10 @@ Generated: 2026-05-04
 本轮目标：
 
 ```text
-run_focused_dynamic_probe_for_samplereverse_compare_path
+lower_level_probe_for_samplereverse_pre_rc4_and_key_material
 ```
 
-Current `transform_trace_consistency` has confirmed that five runtime-backed candidates agree with the offline `UTF-16LE/Base64/RC4/compare` trace, with `mismatches = 0`. Therefore, the exact2 plateau is not explained by an audited transform-model mismatch.
-
-The next step is to stop the local mutation route and use a different bounded evidence source:
-
-```text
-focused dynamic probe around compare path
-```
-
-The goal is to capture runtime-backed material around:
-
-```text
-pre-RC4 material
-Base64 material
-RC4 key / key schedule evidence
-post-RC4 compare buffer
-compare target
-compare length / compare unit
-```
-
-Success is not measured by generating more candidates. Success is obtaining runtime evidence that explains why the path stalls after exact2.
-
----
-
-## 2. Current Evidence
-
-Current active strategy:
-
-```text
-CompareAwareSearchStrategy
-```
-
-Current known transform:
-
-```text
-input -> UTF-16LE -> Base64 -> RC4 -> compare flag{ prefix
-```
-
-Current runtime best remains:
+上一轮 `dynamic_compare_path_probe` 已完成，但结论是：当前 compare-site hook 只能看到 compare 调用附近的证据，不能直接暴露 `pre-RC4 / Base64 / RC4 key` 材料。当前 exact2 最优没有提升，仍停在：
 
 ```text
 candidate_hex = 78d540b49c59077041414141414141
@@ -56,61 +19,107 @@ runtime_ci_distance5 = 246
 compare_semantics_agree = true
 ```
 
-Latest bottleneck:
+当前状态文件也明确给出下一步：
 
 ```text
-stage = transform_consistency
-reason = transform_model_confirmed
-confidence = medium
+move to lower-level dynamic instrumentation/manual reversing for pre-RC4 or key material
 ```
 
-Latest Codex execution result:
+因此，本轮不要继续局部候选搜索，而是把任务切到低层动态插桩 / 手工逆向审计，目标是抓到真实运行时的 RC4 key、RC4 input、Base64 中间态或 UTF-16LE 编码后缓冲区。
+
+---
+
+## 2. Current Evidence
+
+当前主线：
 
 ```text
-run = samplereverse_transform_trace_consistency_20260504
-classification = transform_model_confirmed
-candidates = 5
-runtime-backed candidates = 5
-mismatches = 0
-missing runtime evidence = 0
-current runtime best = exact2 / distance5 246
+input -> UTF-16LE -> Base64 -> RC4 -> compare flag{ prefix
 ```
 
-Already failed or blocked directions:
+当前最好候选：
 
 ```text
-old sample_solver blind search
-only increase beam or budget
-compare_semantics_agree=false candidates as primary frontier
-exact2 basin value-pool evaluation
-H1/H3 fixed 8-candidate boundary contrast set
-repeat current 5-candidate transform trace consistency audit without new runtime evidence
+exact2 candidate:
+78d540b49c59077041414141414141
+
+runtime:
+exact_wchars = 2
+distance5 = 246
+compare_semantics_agree = true
 ```
+
+上一轮动态探针结果：
+
+```text
+classification = dynamic_probe_complete
+candidate_count = 3
+runtime_backed_count = 3
+```
+
+已确认可见：
+
+```text
+raw input
+post-RC4 compare buffer
+compare target
+compare length
+compare unit
+```
+
+仍未直接可见：
+
+```text
+pre-RC4 runtime material
+Base64 material
+RC4 input
+RC4 key
+UTF-16LE payload
+```
+
+这些关键点目前只是 `inferred` 或 `unavailable`，不是运行时实证。
+
+上一轮还确认：
+
+```text
+compare target = wide flag{
+compare count = 5 wide chars
+no compare-site evidence of offset / prefix-skip / stride / null-stop
+first runtime failure after exact2:
+  wchar index = 2
+  raw = 4464
+  target = 6100
+  distance = 103
+```
+
+这说明 compare 侧已经基本审完，下一步必须往 compare 之前追。
 
 ---
 
 ## 3. Do Not Do
 
-Codex must not:
+Codex 不要做：
 
 ```text
-1. Do not return to old sample_solver blind search.
-2. Do not increase beam, budget, topN, timeout, or frontier iteration limit.
-3. Do not use compare_semantics_agree=false candidates as primary frontier.
-4. Do not repeat exact2 basin value-pool evaluation.
-5. Do not repeat the H1/H3 fixed 8-candidate boundary contrast set.
-6. Do not repeat the current 5-candidate transform trace consistency audit.
-7. Do not scan full solve_reports.
-8. Do not commit full solve_reports.
-9. Do not treat model-selected bare flag{ as runtime improvement.
-10. Do not create a new broad candidate generator before obtaining new runtime evidence.
+1. 不要回到 old sample_solver blind search。
+2. 不要只增加 beam / budget / topN / timeout。
+3. 不要把 compare_semantics_agree=false 的候选作为主突破点。
+4. 不要重复 exact2 basin value-pool evaluation。
+5. 不要重复 H1/H3 fixed 8-candidate boundary contrast set。
+6. 不要重复当前 transform_trace_consistency audit。
+7. 不要重复当前 compare-site hook 的 dynamic_compare_path_probe。
+8. 不要扫描完整 solve_reports。
+9. 不要提交完整 solve_reports。
+10. 不要新建广义 candidate generator。
 ```
+
+这些方向已经被 `negative_results.json` 明确标记为不应重复。
 
 ---
 
 ## 4. Files To Inspect
 
-Must read first:
+必须先读：
 
 ```text
 project_state/task_packet.json
@@ -120,84 +129,196 @@ project_state/negative_results.json
 project_state/codex_execution_report.md
 ```
 
-Primary code files:
+然后重点检查：
 
 ```text
 reverse_agent/strategies/compare_aware_search.py
-reverse_agent/transforms/samplereverse.py
 tests/test_compare_aware_search_strategy.py
+tests/test_tool_runners.py
 ```
 
-If runtime / harness / debugger related implementation exists, inspect:
+接着定位 runtime / compare / harness 相关实现：
 
 ```text
 reverse_agent/harness*
 reverse_agent/runtime*
 reverse_agent/validators*
+reverse_agent/tools*
 reverse_agent/profiles/samplereverse.py
+reverse_agent/transforms/samplereverse.py
 ```
 
-Read only key artifacts pointed to by `artifact_index.json`; do not scan the full `solve_reports` tree:
-
-```text
-transform_trace_consistency
-compare_probe
-bridge_validation
-pairscan_summary
-profile_transform_hypothesis_matrix
-frontier_summary
-strata_summary
-summary
-run_manifest
-```
+只读 `artifact_index.json` 指向的关键 artifact，不要扫描整个 `solve_reports`。
 
 ---
 
 ## 5. Required Audit
 
-This round requires a focused dynamic probe feasibility audit plus minimal implementation.
+本轮 Codex 要回答 4 个核心问题。
 
-### A. Locate runtime compare path
+### A. RC4 key 是否真的已知？
 
-Codex should identify where runtime validation obtains:
-
-```text
-exact_wchars
-distance5
-compare_semantics_agree
-selected flag / compare prefix
-```
-
-Required answers:
+必须确认：
 
 ```text
-1. Is exact_wchars derived from real process output or from the offline evaluator?
-2. Which buffer / character unit is distance5 calculated from?
-3. What runtime evidence supports compare_semantics_agree?
-4. Can the current system locate runtime bytes before and after compare?
+1. 当前 RC4 key 来源是什么？
+2. 它是静态代码常量、运行时构造、输入派生，还是外部状态派生？
+3. 当前离线模型使用的 key 是否和运行时 key 完全一致？
+4. 是否存在宽字符、Base64、null byte、长度截断导致的 key 差异？
 ```
 
-### B. Design dynamic probe points
+输出要求：
 
-Codex should add bounded probe points around these stages:
+```json
+{
+  "rc4_key_status": "confirmed | inferred | unknown | contradicted",
+  "evidence_source": "...",
+  "runtime_key_preview": "...",
+  "offline_key_preview": "...",
+  "key_length": null
+}
+```
+
+### B. RC4 input 是否真的是 Base64 ASCII bytes？
+
+必须确认：
 
 ```text
-raw input candidate
-UTF-16LE encoded bytes
-Base64 output bytes
-RC4 input bytes
-RC4 key material / KSA input
-RC4 output bytes
-compare buffer
-compare target
-compare length
+1. RC4 输入缓冲区起点在哪里？
+2. RC4 输入长度是多少？
+3. 该输入是否等于 UTF-16LE(input) 后的 Base64 ASCII？
+4. 是否存在额外前缀、后缀、padding、null terminator、长度 off-by-one？
 ```
 
-The probe does not need to obtain every point in one round, but every point must be marked as available, unavailable, or inferred, with evidence source.
+输出要求：
 
-### C. Probe exact2 baseline and near controls
+```json
+{
+  "rc4_input_status": "confirmed | inferred | unknown | contradicted",
+  "runtime_input_preview_hex": "...",
+  "runtime_input_preview_ascii": "...",
+  "offline_base64_preview": "...",
+  "length_match": true
+}
+```
 
-Probe at least these candidates:
+### C. UTF-16LE / Base64 中间态是否和模型一致？
+
+必须确认：
+
+```text
+1. 原始输入进入程序后是否直接转 UTF-16LE？
+2. UTF-16LE 后的字节序是否为 little-endian？
+3. Base64 编码是否标准 Base64？
+4. Base64 padding 是否保留？
+5. 是否存在自定义 alphabet？
+```
+
+重点是排除这种情况：
+
+```text
+offline model: UTF-16LE -> standard Base64 -> RC4
+runtime model: slightly different UTF-16/Base64/key/length
+```
+
+### D. exact2 失败点为什么是 wchar index 2？
+
+已知失败点：
+
+```text
+index = 2
+raw = 4464
+target = 6100
+```
+
+Codex 需要追溯这个 `4464` 是如何由：
+
+```text
+candidate -> UTF-16LE -> Base64 -> RC4
+```
+
+生成的。
+
+要求输出：
+
+```text
+1. index 2 的 post-RC4 word 由哪些 RC4 keystream bytes 产生？
+2. 对应 RC4 input bytes 是什么？
+3. 这些 bytes 来自 Base64 的哪个位置？
+4. 这些 Base64 bytes 又来自原始 candidate 的哪些字节？
+5. 是否能反推该位置需要的 candidate byte constraint？
+```
+
+这一步是本轮最重要的突破点。
+
+---
+
+## 6. Implementation Scope
+
+允许做：
+
+```text
+1. 新增一个 lower-level diagnostic。
+2. 新增或扩展 artifact schema。
+3. 新增最小测试。
+4. 新增手工逆向辅助脚本。
+5. 对已有 compare probe 做只读式增强，但不能再重复当前 compare-site hook 逻辑。
+```
+
+建议新增函数名：
+
+```text
+run_pre_rc4_material_probe()
+```
+
+或：
+
+```text
+run_samplereverse_pre_rc4_key_probe()
+```
+
+建议新增 artifact：
+
+```text
+solve_reports/.../tool_artifacts/samplereverse/pre_rc4_material_probe/pre_rc4_material_probe.json
+```
+
+建议 artifact schema：
+
+```json
+{
+  "classification": "pre_rc4_probe_complete | pre_rc4_probe_partial | pre_rc4_probe_unavailable",
+  "candidate_count": 3,
+  "runtime_backed_count": 0,
+  "probe_points": {
+    "raw_input": "available | inferred | unavailable",
+    "utf16le_payload": "available | inferred | unavailable",
+    "base64_material": "available | inferred | unavailable",
+    "rc4_key": "available | inferred | unavailable",
+    "rc4_input": "available | inferred | unavailable",
+    "rc4_output": "available | inferred | unavailable",
+    "compare_buffer": "available | inferred | unavailable"
+  },
+  "exact2_failure_trace": {
+    "wchar_index": 2,
+    "runtime_word": "4464",
+    "target_word": "6100",
+    "rc4_input_offsets": [],
+    "keystream_offsets": [],
+    "candidate_byte_dependencies": []
+  },
+  "findings": [],
+  "next_bounded_action": ""
+}
+```
+
+候选数量限制：
+
+```text
+默认只跑 3 个候选，最多 5 个。
+```
+
+固定候选：
 
 ```text
 78d540b49c59077041414141414141
@@ -205,112 +326,42 @@ Probe at least these candidates:
 5a3e7f46ddd474d041414141414141
 ```
 
-At most two additional control candidates are allowed. Total candidate count must not exceed 5.
-
-For each candidate, output:
-
-```text
-candidate_hex
-runtime exact_wchars
-runtime distance5
-runtime compare buffer preview
-runtime compare target preview
-runtime compare length / unit
-pre-RC4 material if available
-RC4 key material if available
-whether evidence explains exact2 plateau
-```
-
-### D. Determine whether hidden runtime material differs from modeled material
-
-Codex must answer:
-
-```text
-1. Is the RC4 key fully confirmed?
-2. Is RC4 input confirmed as Base64 ASCII bytes?
-3. Is the compare target confirmed as flag{ in the same encoding unit?
-4. Does compare start at byte 0?
-5. Is there an offset / prefix skip / wchar stride / null-stop behavior?
-6. What is the first real runtime byte/word that fails after exact2?
-```
-
----
-
-## 6. Implementation Scope
-
-Allowed: add one diagnostic.
-
-Do not add a searcher.
-
-Suggested function name:
-
-```text
-run_dynamic_compare_path_probe()
-```
-
-or:
-
-```text
-run_samplereverse_runtime_compare_probe()
-```
-
-Allowed artifact:
-
-```text
-solve_reports/.../tool_artifacts/samplereverse/dynamic_compare_path_probe/dynamic_compare_path_probe.json
-```
-
-Suggested artifact schema:
-
-```json
-{
-  "classification": "dynamic_probe_complete | dynamic_probe_partial | dynamic_probe_unavailable",
-  "candidate_count": 3,
-  "runtime_backed_count": 3,
-  "probe_points": {
-    "pre_rc4": "available | unavailable | inferred",
-    "rc4_key": "available | unavailable | inferred",
-    "post_rc4_compare_buffer": "available | unavailable | inferred",
-    "compare_target": "available | unavailable | inferred",
-    "compare_length": "available | unavailable | inferred"
-  },
-  "findings": [],
-  "next_bounded_action": ""
-}
-```
-
-If the current harness cannot directly obtain runtime bytes, Codex should implement the minimal feasible probe or report why the evidence is unavailable. Do not convert this into broad search.
+不要生成新的大候选池。
 
 ---
 
 ## 7. Tests
 
-At minimum run:
+最低测试：
 
 ```bash
 python -m pytest -q tests/test_compare_aware_search_strategy.py
+python -m pytest -q tests/test_tool_runners.py
+python -m pytest -q tests/test_project_state.py
 python -m pytest -q
 ```
 
-If a diagnostic is added, add or update tests:
+如果新增 diagnostic，需要增加测试：
 
 ```text
-test_dynamic_compare_path_probe_has_bounded_candidate_count
-test_dynamic_compare_path_probe_does_not_expand_search_budget
-test_dynamic_compare_path_probe_records_probe_point_availability
-test_dynamic_compare_path_probe_preserves_existing_selection_behavior
+test_pre_rc4_material_probe_has_bounded_candidate_count
+test_pre_rc4_material_probe_records_probe_point_availability
+test_pre_rc4_material_probe_does_not_promote_candidates
+test_pre_rc4_material_probe_does_not_expand_search_budget
+test_pre_rc4_material_probe_writes_artifact_schema
+test_project_state_indexes_pre_rc4_material_probe
 ```
 
-Run harness with new run name:
+运行 harness：
 
 ```powershell
-python -m reverse_agent.harness --dataset .\samplereverse_exact1_projected_vs_neighbor_20260424.json --run-name samplereverse_dynamic_compare_path_probe_20260504 --reports-dir solve_reports --analysis-mode "Auto" --model-type "Copilot CLI" --copilot-timeout-seconds 300 --ctf-skill-profile compact --case-id samplereverse-exact1-projected-vs-neighbor --no-resume
+python -m reverse_agent.harness --dataset .\samplereverse_exact1_projected_vs_neighbor_20260424.json --run-name samplereverse_pre_rc4_material_probe_20260504 --reports-dir solve_reports --analysis-mode "Auto" --model-type "Copilot CLI" --copilot-timeout-seconds 300 --ctf-skill-profile compact --case-id samplereverse-exact1-projected-vs-neighbor --no-resume
 ```
 
-Then update project state:
+更新 project_state：
 
 ```powershell
-python -m reverse_agent.project_state build --reports-dir solve_reports --sample samplereverse --run-name samplereverse_dynamic_compare_path_probe_20260504
+python -m reverse_agent.project_state build --reports-dir solve_reports --sample samplereverse --run-name samplereverse_pre_rc4_material_probe_20260504
 python -m reverse_agent.project_state status
 ```
 
@@ -318,47 +369,49 @@ python -m reverse_agent.project_state status
 
 ## 8. Stop Conditions
 
-Stop immediately and report if:
+立即停止并报告，如果出现：
 
 ```text
-1. Need to expand beam / budget / topN / timeout.
-2. Need to return to blind search.
-3. Need to repeat exact2 basin value-pool.
-4. Need to repeat H1/H3 fixed boundary set.
-5. Need to repeat transform trace consistency audit.
-6. Cannot obtain any new runtime evidence.
-7. Can only advance through compare_semantics_agree=false candidates.
-8. Need to scan full solve_reports.
+1. 只能通过扩大搜索预算推进。
+2. 需要回到 blind search。
+3. 需要重复 exact2 value-pool。
+4. 需要重复 H1/H3 boundary set。
+5. 需要重复当前 compare-site hook。
+6. 只能使用 compare_semantics_agree=false 候选。
+7. 需要扫描完整 solve_reports。
+8. 找不到任何 pre-RC4 / key / Base64 证据来源。
 ```
 
-Successful stop conditions:
+成功停止条件：
 
 ```text
-1. Dynamic probe completes with at least 3 candidates having runtime-backed probe result.
-2. Each probe point is marked available, unavailable, or inferred.
-3. Report whether the exact2 plateau is explained by runtime compare path evidence.
-4. If new offset / key / compare-length / compare-unit evidence is found, propose one next bounded hypothesis.
-5. If no new evidence is obtainable, record a negative result and recommend stopping the current compare-aware local route.
+1. 找到 RC4 key 的真实来源。
+2. 或确认 RC4 input 的真实运行时缓冲区。
+3. 或确认 Base64 / UTF-16LE 中间态和离线模型是否一致。
+4. 或追溯 exact2 第 3 个 wchar 失败点的依赖链。
+5. 或明确证明当前自动 harness 无法观测，需要转 IDA/x64dbg 手工断点。
 ```
 
 ---
 
 ## GPT Decision Summary
 
-Do not continue local exact2 mutation. Do not re-check transform consistency. Both directions are exhausted or confirmed.
+下一轮不要再做候选搜索。
 
-Next Codex action:
-
-```text
-focused dynamic compare-path probe
-```
-
-The core target is runtime evidence for:
+本轮 Codex 的唯一主线是：
 
 ```text
-RC4 key / pre-RC4 material / post-RC4 compare buffer / compare target / compare length
+从 compare 往前追，拿 pre-RC4 / Base64 / RC4 key 的真实证据。
 ```
 
-If this round obtains real compare-path bytes, the next step may become a structural breakthrough instead of another local candidate search.
+优先级：
 
-If this round cannot obtain new runtime evidence, the compare-aware pipeline has insufficient observability and the next strategy should move toward lower-level dynamic instrumentation or manual reversing, not more candidate search.
+```text
+1. RC4 key 来源
+2. RC4 input 缓冲区
+3. Base64 中间态
+4. UTF-16LE 中间态
+5. exact2 失败点反向依赖链
+```
+
+如果本轮能拿到 RC4 key 或 RC4 input 的真实运行时材料，就有机会从 exact2 平台进入 exact3+。如果拿不到，下一步应切到 IDA/x64dbg 手工逆向，而不是继续让 Codex 在现有 harness 内搜索。
