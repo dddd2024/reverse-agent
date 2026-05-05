@@ -1,25 +1,25 @@
 {
   "active_strategy": "CompareAwareSearchStrategy",
   "artifact_refs": {
-    "base64_rc4_breakpoint_probe": "solve_reports\\harness_runs\\samplereverse_base64_rc4_breakpoint_probe_20260504\\reports\\tool_artifacts\\samplereverse\\base64_rc4_breakpoint_probe\\base64_rc4_breakpoint_probe.json",
-    "bridge_search_result": "solve_reports\\harness_runs\\samplereverse_base64_rc4_breakpoint_probe_20260504\\reports\\tool_artifacts\\samplereverse\\bridge\\bridge_search_result.json",
-    "bridge_validation": "solve_reports\\harness_runs\\samplereverse_base64_rc4_breakpoint_probe_20260504\\reports\\tool_artifacts\\samplereverse\\bridge\\bridge_validation\\bridge_validation.json",
+    "bridge_search_result": "solve_reports\\harness_runs\\samplereverse_compare_stack_pivot_probe_20260505\\reports\\tool_artifacts\\samplereverse\\bridge\\bridge_search_result.json",
+    "bridge_validation": "solve_reports\\harness_runs\\samplereverse_compare_stack_pivot_probe_20260505\\reports\\tool_artifacts\\samplereverse\\bridge\\bridge_validation\\bridge_validation.json",
     "checkpoint": "solve_reports\\tool_artifacts\\samplereverse_optimizer_smoke\\samplereverse_search_checkpoint.json",
-    "compare_aware_result": "solve_reports\\harness_runs\\samplereverse_base64_rc4_breakpoint_probe_20260504\\reports\\tool_artifacts\\samplereverse\\frontier_refine_2\\samplereverse_compare_aware_result.json",
-    "compare_probe": "solve_reports\\harness_runs\\samplereverse_base64_rc4_breakpoint_probe_20260504\\reports\\tool_artifacts\\samplereverse\\samplereverse_compare_probe.json",
-    "compare_probe_log": "solve_reports\\harness_runs\\samplereverse_base64_rc4_breakpoint_probe_20260504\\reports\\tool_artifacts\\samplereverse\\samplereverse_compare_probe.log",
-    "exact2_basin_value_pool_result": "solve_reports\\harness_runs\\samplereverse_base64_rc4_breakpoint_probe_20260504\\reports\\tool_artifacts\\samplereverse\\exact2_basin_value_pool\\samplereverse_exact2_basin_value_pool_result.json",
-    "exact2_basin_value_pool_validation": "solve_reports\\harness_runs\\samplereverse_base64_rc4_breakpoint_probe_20260504\\reports\\tool_artifacts\\samplereverse\\exact2_basin_value_pool\\value_pool_validation\\samplereverse_exact2_basin_value_pool_validation.json",
-    "frontier_summary": "solve_reports\\harness_runs\\samplereverse_base64_rc4_breakpoint_probe_20260504\\reports\\tool_artifacts\\samplereverse\\samplereverse_compare_aware_frontier_summary.json",
-    "guided_pool_result": "solve_reports\\harness_runs\\samplereverse_base64_rc4_breakpoint_probe_20260504\\reports\\tool_artifacts\\samplereverse\\frontier_guided_2_5a3f7f46ddd474d0\\samplereverse_compare_aware_guided_pool_result.json",
-    "guided_pool_validation": "solve_reports\\harness_runs\\samplereverse_base64_rc4_breakpoint_probe_20260504\\reports\\tool_artifacts\\samplereverse\\frontier_guided_2_5a3f7f46ddd474d0\\guided_pool_validation\\samplereverse_compare_aware_guided_pool_validation.json",
-    "pairscan_summary": "solve_reports\\harness_runs\\samplereverse_base64_rc4_breakpoint_probe_20260504\\reports\\tool_artifacts\\samplereverse\\bridge\\pairscan_summary.json",
-    "profile_transform_hypothesis_matrix": "solve_reports\\harness_runs\\samplereverse_base64_rc4_breakpoint_probe_20260504\\reports\\tool_artifacts\\samplereverse\\profile_transform_hypothesis_matrix.json",
-    "run_manifest": "solve_reports\\harness_runs\\samplereverse_base64_rc4_breakpoint_probe_20260504\\run_manifest.json",
-    "smt_result": "solve_reports\\harness_runs\\samplereverse_base64_rc4_breakpoint_probe_20260504\\reports\\tool_artifacts\\samplereverse\\smt\\samplereverse_compare_aware_smt_result.json",
-    "strata_summary": "solve_reports\\harness_runs\\samplereverse_base64_rc4_breakpoint_probe_20260504\\reports\\tool_artifacts\\samplereverse\\samplereverse_compare_aware_strata_summary.json",
-    "summary": "solve_reports\\harness_runs\\samplereverse_base64_rc4_breakpoint_probe_20260504\\summary.json",
-    "transform_trace_consistency": "solve_reports\\harness_runs\\samplereverse_base64_rc4_breakpoint_probe_20260504\\reports\\tool_artifacts\\samplereverse\\transform_trace_consistency\\transform_trace_consistency.json"
+    "compare_aware_result": "solve_reports\\harness_runs\\samplereverse_compare_stack_pivot_probe_20260505\\reports\\tool_artifacts\\samplereverse\\frontier_refine_2\\samplereverse_compare_aware_result.json",
+    "compare_probe": "solve_reports\\harness_runs\\samplereverse_compare_stack_pivot_probe_20260505\\reports\\tool_artifacts\\samplereverse\\samplereverse_compare_probe.json",
+    "compare_probe_log": "solve_reports\\harness_runs\\samplereverse_compare_stack_pivot_probe_20260505\\reports\\tool_artifacts\\samplereverse\\samplereverse_compare_probe.log",
+    "compare_stack_pivot_probe": "solve_reports\\harness_runs\\samplereverse_compare_stack_pivot_probe_20260505\\reports\\tool_artifacts\\samplereverse\\compare_stack_pivot_probe\\compare_stack_pivot_probe.json",
+    "exact2_basin_value_pool_result": "solve_reports\\harness_runs\\samplereverse_compare_stack_pivot_probe_20260505\\reports\\tool_artifacts\\samplereverse\\exact2_basin_value_pool\\samplereverse_exact2_basin_value_pool_result.json",
+    "exact2_basin_value_pool_validation": "solve_reports\\harness_runs\\samplereverse_compare_stack_pivot_probe_20260505\\reports\\tool_artifacts\\samplereverse\\exact2_basin_value_pool\\value_pool_validation\\samplereverse_exact2_basin_value_pool_validation.json",
+    "frontier_summary": "solve_reports\\harness_runs\\samplereverse_compare_stack_pivot_probe_20260505\\reports\\tool_artifacts\\samplereverse\\samplereverse_compare_aware_frontier_summary.json",
+    "guided_pool_result": "solve_reports\\harness_runs\\samplereverse_compare_stack_pivot_probe_20260505\\reports\\tool_artifacts\\samplereverse\\frontier_guided_2_5a3f7f46ddd474d0\\samplereverse_compare_aware_guided_pool_result.json",
+    "guided_pool_validation": "solve_reports\\harness_runs\\samplereverse_compare_stack_pivot_probe_20260505\\reports\\tool_artifacts\\samplereverse\\frontier_guided_2_5a3f7f46ddd474d0\\guided_pool_validation\\samplereverse_compare_aware_guided_pool_validation.json",
+    "pairscan_summary": "solve_reports\\harness_runs\\samplereverse_compare_stack_pivot_probe_20260505\\reports\\tool_artifacts\\samplereverse\\bridge\\pairscan_summary.json",
+    "profile_transform_hypothesis_matrix": "solve_reports\\harness_runs\\samplereverse_compare_stack_pivot_probe_20260505\\reports\\tool_artifacts\\samplereverse\\profile_transform_hypothesis_matrix.json",
+    "run_manifest": "solve_reports\\harness_runs\\samplereverse_compare_stack_pivot_probe_20260505\\run_manifest.json",
+    "smt_result": "solve_reports\\harness_runs\\samplereverse_compare_stack_pivot_probe_20260505\\reports\\tool_artifacts\\samplereverse\\smt\\samplereverse_compare_aware_smt_result.json",
+    "strata_summary": "solve_reports\\harness_runs\\samplereverse_compare_stack_pivot_probe_20260505\\reports\\tool_artifacts\\samplereverse\\samplereverse_compare_aware_strata_summary.json",
+    "summary": "solve_reports\\harness_runs\\samplereverse_compare_stack_pivot_probe_20260505\\summary.json",
+    "transform_trace_consistency": "solve_reports\\harness_runs\\samplereverse_compare_stack_pivot_probe_20260505\\reports\\tool_artifacts\\samplereverse\\transform_trace_consistency\\transform_trace_consistency.json"
   },
   "best_candidates": {
     "exact1": {
@@ -58,11 +58,11 @@
   },
   "current_bottleneck": {
     "confidence": "medium",
-    "reason": "breakpoint_probe_partial",
-    "stage": "base64_rc4_breakpoint_probe"
+    "reason": "compare_stack_pivot_complete",
+    "stage": "compare_stack_pivot_probe"
   },
   "current_mainline": "L15(prefix8)",
-  "generated_at": "2026-05-04T13:55:43Z",
+  "generated_at": "2026-05-05T03:59:10Z",
   "known_transform": [
     "input",
     "UTF-16LE",
@@ -70,17 +70,11 @@
     "RC4",
     "compare flag{ prefix"
   ],
-  "latest_base64_rc4_breakpoint_probe": {
-    "artifact": "solve_reports\\harness_runs\\samplereverse_base64_rc4_breakpoint_probe_20260504\\reports\\tool_artifacts\\samplereverse\\base64_rc4_breakpoint_probe\\base64_rc4_breakpoint_probe.json",
-    "base64_material": {
-      "alphabet": "unknown",
-      "input_preview_hex": "",
-      "output_preview_ascii": "",
-      "padding_behavior": "unknown",
-      "status": "unknown"
-    },
+  "latest_base64_rc4_breakpoint_probe": {},
+  "latest_compare_stack_pivot_probe": {
+    "artifact": "solve_reports\\harness_runs\\samplereverse_compare_stack_pivot_probe_20260505\\reports\\tool_artifacts\\samplereverse\\compare_stack_pivot_probe\\compare_stack_pivot_probe.json",
     "candidate_count": 3,
-    "classification": "breakpoint_probe_partial",
+    "classification": "compare_stack_pivot_complete",
     "hook_results": {
       "base64_input": "unavailable",
       "base64_output": "unavailable",
@@ -88,107 +82,122 @@
       "rc4_input": "unavailable",
       "rc4_key": "unavailable",
       "rc4_output": "unavailable",
-      "utf16le_payload": "unavailable"
+      "utf16le_payload": "available_from_compare_stack"
     },
-    "next_bounded_action": "use manual IDA/x64dbg breakpoints with the recorded static offsets",
-    "rc4_input": {
-      "input_len": null,
-      "input_preview_ascii": "",
-      "input_preview_hex": "",
-      "input_ptr": "",
-      "matches_offline_base64": null,
-      "status": "unknown"
-    },
-    "rc4_key": {
-      "key_len": null,
-      "key_preview_hex": "",
-      "key_ptr": "",
-      "source_hypothesis": "unknown",
-      "status": "unknown"
-    },
+    "next_bounded_action": "hook module+0x1b50 enter/return and module+0x2559 to capture the handoff into [ebp-0x1170]",
+    "next_hook_points": [
+      {
+        "address": "module+0x2559",
+        "module_offset": 9561,
+        "name": "post_handoff_lhs_reload",
+        "reason": "first instruction after call 0x401b50 reloads [ebp-0x1170] into esi"
+      },
+      {
+        "address": "module+0x1b50",
+        "module_offset": 6992,
+        "name": "handoff_helper_enter",
+        "reason": "captures arguments to the helper that runs before the compare buffer is reloaded"
+      },
+      {
+        "address": "module+0x2559",
+        "module_offset": 9561,
+        "name": "handoff_helper_return",
+        "reason": "captures [ebp-0x1170], esi, and stack payload immediately after helper return"
+      }
+    ],
     "runtime_backed_count": 3,
-    "static_points": {
-      "base64": [
+    "static_audit": {
+      "backward_slice": [
         {
-          "address": "",
-          "confidence": "low",
-          "evidence": [
-            "standard Base64 alphabet table not found in PE bytes"
-          ],
-          "hook_kind": "memory_access",
-          "hookable": false,
-          "kind": "base64",
-          "module_offset": null,
-          "name": "standard_base64_alphabet_unavailable",
-          "size": 1
+          "instruction": "mov dword ptr [ebp - 0x1170], eax",
+          "operation": "store candidate output pointer into [ebp-0x1170]",
+          "rva": "0x253a"
+        },
+        {
+          "instruction": "call 0x401b50",
+          "operation": "handoff/copy helper before compare buffer reload",
+          "rva": "0x2554"
+        },
+        {
+          "instruction": "mov esi, dword ptr [ebp - 0x1170]",
+          "operation": "reload compare lhs pointer from [ebp-0x1170]",
+          "rva": "0x2559"
+        },
+        {
+          "instruction": "push 5",
+          "operation": "set wide compare count",
+          "rva": "0x2584"
+        },
+        {
+          "instruction": "push 0x551c4c",
+          "operation": "push wide flag target",
+          "rva": "0x2586"
+        },
+        {
+          "instruction": "push esi",
+          "operation": "push compare lhs pointer",
+          "rva": "0x258b"
+        },
+        {
+          "instruction": "call 0x5028ac",
+          "operation": "case-insensitive wide compare call",
+          "rva": "0x258c"
         }
       ],
-      "encrypted_const": [
+      "classification": "static_anchor_confirmed",
+      "compare_site": {
+        "actual_call_rva": "0x258c",
+        "expected_call_rva": "0x258c",
+        "helper_classification": "case_insensitive_wchar_compare",
+        "helper_rva": "0x1028ac",
+        "helper_va": "0x5028ac"
+      },
+      "errors": [],
+      "next_hook_points": [
         {
-          "address": "",
-          "confidence": "low",
-          "evidence": [
-            "modeled encrypted const prefix not found in PE bytes"
-          ],
-          "hook_kind": "memory_access",
-          "hookable": false,
-          "kind": "encrypted_const",
-          "module_offset": null,
-          "name": "modeled_rc4_encrypted_const_unavailable",
-          "size": 1
+          "address": "module+0x2559",
+          "module_offset": 9561,
+          "name": "post_handoff_lhs_reload",
+          "reason": "first instruction after call 0x401b50 reloads [ebp-0x1170] into esi"
+        },
+        {
+          "address": "module+0x1b50",
+          "module_offset": 6992,
+          "name": "handoff_helper_enter",
+          "reason": "captures arguments to the helper that runs before the compare buffer is reloaded"
+        },
+        {
+          "address": "module+0x2559",
+          "module_offset": 9561,
+          "name": "handoff_helper_return",
+          "reason": "captures [ebp-0x1170], esi, and stack payload immediately after helper return"
         }
       ],
-      "rc4_ksa": [
+      "wide_flag": {
+        "expected_rva": "0x151c4c",
+        "expected_va": "0x551c4c",
+        "hits": [
+          {
+            "file_offset": "0x15044c",
+            "rva": "0x151c4c",
+            "va": "0x551c4c"
+          }
+        ]
+      },
+      "wide_flag_xrefs": [
         {
-          "address": "",
-          "confidence": "low",
-          "evidence": [
-            "no stable RC4 KSA code signature available from current artifacts"
-          ],
-          "hook_kind": "memory_access",
-          "hookable": false,
-          "kind": "rc4_ksa",
-          "module_offset": null,
-          "name": "rc4_ksa_site_unresolved",
-          "size": 1
-        }
-      ],
-      "rc4_prga": [
-        {
-          "address": "",
-          "confidence": "low",
-          "evidence": [
-            "no stable RC4 PRGA code signature available from current artifacts"
-          ],
-          "hook_kind": "memory_access",
-          "hookable": false,
-          "kind": "rc4_prga",
-          "module_offset": null,
-          "name": "rc4_prga_site_unresolved",
-          "size": 1
-        }
-      ],
-      "utf16le": [
-        {
-          "address": "",
-          "confidence": "low",
-          "evidence": [
-            "no stable UTF-16LE construction instruction signature available from current artifacts"
-          ],
-          "hook_kind": "memory_access",
-          "hookable": false,
-          "kind": "utf16le",
-          "module_offset": null,
-          "name": "utf16le_expansion_site_unresolved",
-          "size": 1
+          "file_offset": "0x1987",
+          "instruction_rva": "0x2586",
+          "rva": "0x2587"
         }
       ]
-    }
+    },
+    "utf16le_payload_available_count": 3
   },
   "latest_dynamic_compare_path_probe": {},
   "latest_pre_rc4_material_probe": {},
   "latest_transform_trace_consistency": {
-    "artifact": "solve_reports\\harness_runs\\samplereverse_base64_rc4_breakpoint_probe_20260504\\reports\\tool_artifacts\\samplereverse\\transform_trace_consistency\\transform_trace_consistency.json",
+    "artifact": "solve_reports\\harness_runs\\samplereverse_compare_stack_pivot_probe_20260505\\reports\\tool_artifacts\\samplereverse\\transform_trace_consistency\\transform_trace_consistency.json",
     "candidate_count": 5,
     "classification": "evidence_insufficient",
     "next_bounded_action": "capture pre-RC4/Base64 runtime buffers with a bounded dynamic probe",

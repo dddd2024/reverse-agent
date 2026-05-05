@@ -2,65 +2,51 @@
 
 ## Summary
 
-Implemented and executed the bounded `base64_rc4_breakpoint_probe` diagnostic for `samplereverse`.
+Implemented and executed the bounded `compare_stack_pivot_probe` diagnostic for `samplereverse`.
 
-This iteration converts the manual-breakpoint direction into a scripted Frida probe. It keeps the candidate set fixed at three candidates, records static Base64/RC4 point availability, hooks any locatable construction/access points plus the existing compare cross-check, and does not change candidate generation, ranking, final selection, promotion, beam, budget, topN, timeout, or frontier iteration limits.
-
-Final harness run:
-
-```text
-samplereverse_base64_rc4_breakpoint_probe_20260504
-```
+This iteration does not add candidates and does not change ranking, final selection, promotion, beam, budget, topN, timeout, or frontier iteration limits. It parses the existing compare-frame stack evidence from `base64_rc4_breakpoint_probe`, confirms the UTF-16LE expanded payload is visible at the compare site, and records the next closer hook points around the handoff into `[ebp-0x1170]`.
 
 ## Implemented Changes
 
 | area | change | behavior impact |
 |---|---|---|
-| runtime probe | Added `reverse_agent/olly_scripts/base64_rc4_breakpoint_probe.py` | scripted Frida/UI probe for static access points and compare cross-check |
-| strategy | Added `run_base64_rc4_breakpoint_probe()` and `base64_rc4_breakpoint_probe.json` | diagnostic metadata only; no promotable candidates |
-| strategy integration | Skips repeating prior unavailable pre-RC4 memory scan and runs the breakpoint probe instead | follows the current bounded direction |
-| project state | Indexes Base64/RC4 breakpoint artifacts and records unavailable construction evidence | compact handoff now points to manual IDA/x64dbg construction-point work |
+| strategy | Added `run_compare_stack_pivot_probe()` and `compare_stack_pivot_probe.json` | diagnostic metadata only; no promotable candidates |
+| stack parser | Extracts UTF-16LE expanded payload matches from compare `stack_preview_hex` | reclassifies payload evidence as `available_from_compare_stack` |
+| static audit | Adds PE anchor audit for wide `flag{`, compare call `0x258c`, helper `0x1028ac`, and handoff slice | produces concrete next hook points |
+| project state | Indexes `compare_stack_pivot_probe` and makes it the latest bottleneck | compact handoff now points to handoff hook work |
 
-## Harness Result
+## Runtime Artifact
 
 | item | value |
 |---|---|
-| run | `samplereverse_base64_rc4_breakpoint_probe_20260504` |
+| harness run | `samplereverse_compare_stack_pivot_probe_20260505` |
 | status | completed, 1 case, 0 errors |
-| artifact | `solve_reports\harness_runs\samplereverse_base64_rc4_breakpoint_probe_20260504\reports\tool_artifacts\samplereverse\base64_rc4_breakpoint_probe\base64_rc4_breakpoint_probe.json` |
-| classification | `breakpoint_probe_partial` |
+| artifact | `solve_reports\harness_runs\samplereverse_compare_stack_pivot_probe_20260505\reports\tool_artifacts\samplereverse\compare_stack_pivot_probe\compare_stack_pivot_probe.json` |
+| classification | `compare_stack_pivot_complete` |
 | candidates | 3 |
-| runtime-backed compare cross-checks | 3 |
-| construction hook hits | 0 |
-| current exact2 runtime best | `78d540b49c59077041414141414141`, exact2 / distance5 246 |
-| rc4 key status | `unknown` |
-| rc4 input/base64 status | `unknown` |
+| UTF-16LE stack payloads found | 3 |
+| static anchor | `static_anchor_confirmed` |
+| compare call | RVA `0x258c` |
+| compare helper | RVA `0x1028ac`, `case_insensitive_wchar_compare` |
 
 ## Probe Findings
 
-| probe point | status |
-|---|---|
-| UTF-16LE payload | `unavailable` |
-| Base64 input | `unavailable` |
-| Base64 output | `unavailable` |
-| RC4 key | `unavailable` |
-| RC4 input | `unavailable` |
-| RC4 output | `unavailable` |
-| compare buffer | `available` |
-
-Static point audit did not find hookable Base64/RC4 construction offsets: the standard Base64 alphabet and modeled encrypted const prefix were not found in PE bytes, and stable UTF-16LE/RC4 code signatures are still unresolved. The exact2 failure trace remains wchar index 2: runtime word `4464` vs target `6100`, encrypted const bytes `8f3b`, keystream bytes `cb5f`.
+- All 3 diagnostic candidates expose the expected UTF-16LE expanded payload in the compare-frame stack preview.
+- For exact2 `78d540b49c59077041414141414141`, the best match starts at `ESP+0x28`, absolute `0x12fdce0`, `EBP-0x1164`, with 24 matched preview bytes out of a 60-byte expected payload.
+- The fixed wide `flag{` target is at VA `0x551c4c` / RVA `0x151c4c`, with one code xref at RVA `0x2587`.
+- The next bounded hook points are `module+0x1b50` enter/return and `module+0x2559` after the handoff helper returns.
 
 ## Commands
 
 | command | result |
 |---|---|
-| `python -m pytest -q tests/test_compare_aware_search_strategy.py` | `76 passed` |
-| `python -m pytest -q tests/test_tool_runners.py` | `10 passed` |
-| `python -m pytest -q tests/test_project_state.py` | `11 passed` |
-| `python -m pytest -q` | `164 passed` |
-| `python -m reverse_agent.harness --dataset .\samplereverse_exact1_projected_vs_neighbor_20260424.json --run-name samplereverse_base64_rc4_breakpoint_probe_20260504 --reports-dir solve_reports --analysis-mode "Auto" --model-type "Copilot CLI" --copilot-timeout-seconds 300 --ctf-skill-profile compact --case-id samplereverse-exact1-projected-vs-neighbor --no-resume` | completed, 0 errors |
-| `python -m reverse_agent.project_state build --reports-dir solve_reports --sample samplereverse --run-name samplereverse_base64_rc4_breakpoint_probe_20260504` | passed |
+| `python -m pytest -q tests/test_compare_aware_search_strategy.py` | `78 passed` |
+| `python -m pytest -q tests/test_tool_runners.py tests/test_project_state.py` | `22 passed` |
+| `python -m pytest -q` | `167 passed` |
+| `python -m reverse_agent.harness --dataset .\samplereverse_exact1_projected_vs_neighbor_20260424.json --run-name samplereverse_compare_stack_pivot_probe_20260505 --reports-dir solve_reports --analysis-mode "Auto" --model-type "Copilot CLI" --copilot-timeout-seconds 300 --ctf-skill-profile compact --case-id samplereverse-exact1-projected-vs-neighbor --no-resume` | completed, 1 case, 0 errors |
+| `python -m reverse_agent.project_state build --reports-dir solve_reports --sample samplereverse --run-name samplereverse_compare_stack_pivot_probe_20260505` | passed |
+| `python -m reverse_agent.project_state status` | `reason: compare_stack_pivot_complete` |
 
 ## Conclusion
 
-The scripted breakpoint/access probe is implemented and indexed, but it did not expose Base64/RC4 construction material in the current automatic path. The next bounded direction is manual IDA/x64dbg work to locate construction points explicitly, not more candidate search, not another memory scan, and not another compare-site-only probe.
+The compare stack pivot turns the previous “construction unavailable” plateau into a closer runtime anchor. The next default direction is to hook `module+0x1b50` and `module+0x2559` to capture the handoff into `[ebp-0x1170]`; do not repeat the prior Base64/RC4 static access probe or broaden candidate search.

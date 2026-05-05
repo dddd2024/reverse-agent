@@ -3114,3 +3114,59 @@ Reverse Agent 项目进展日志（截至 2026-04-16）
 - 停止重复当前 scripted breakpoint/access probe，除非先通过人工 IDA/x64dbg 或更强静态分析拿到新的 hookable construction offsets。
 - 下一步应手工定位 Base64/RC4 construction points，再把明确地址回填为脚本化 hook。
 - 不扩大 timeout/beam/budget/topN/frontier iteration limit；不回 blind search；不重复 memory-scan lower-level probe 或 compare-site-only probe。
+
+## 2026-05-05 Compare stack pivot probe
+
+1) 执行范围
+- 按计划实现 `compare_stack_pivot_probe`，不新增 candidate generator，不改变 ranking、final selection、promotion。
+- 不扩大 beam、budget、topN、timeout、frontier iteration limit。
+- 复用最新 `base64_rc4_breakpoint_probe` 的 compare-frame `stack_preview_hex`，把 compare-site stack 作为向前追踪锚点。
+
+2) 代码改动
+- `reverse_agent/strategies/compare_aware_search.py`
+  - 新增 `COMPARE_STACK_PIVOT_PROBE_FILE_NAME`、固定 3-candidate diagnostic。
+  - 新增 `run_compare_stack_pivot_probe()`，解析 compare hook events 中的 stack preview、ESP/EBP 相对偏移、LHS/RHS 指针和 compare count。
+  - 新增 PE static audit：定位 wide `flag{` VA/RVA、唯一 xref、compare call RVA `0x258c`、compare helper RVA `0x1028ac`，并记录 backward slice 和下一批 hook points。
+  - diagnostic 不产生 promotable candidates。
+- `reverse_agent/project_state.py`
+  - artifact index/current_state/model_gate 识别 `compare_stack_pivot_probe`。
+  - negative_results 记录下一步应使用 compare stack pivot hook points，而不是重复旧 Base64/RC4 static access probe。
+- `tests/test_compare_aware_search_strategy.py`、`tests/test_project_state.py`
+  - 覆盖 compare stack UTF-16LE payload 解析、bounded/no-promotion/no-budget-expansion、project_state indexing。
+
+3) 自动化验证
+- `python -m pytest -q tests/test_compare_aware_search_strategy.py` -> `78 passed`
+- `python -m pytest -q tests/test_tool_runners.py tests/test_project_state.py` -> `22 passed`
+
+4) Harness / project_state
+- Final run: `samplereverse_compare_stack_pivot_probe_20260505`
+- Harness completed 1 case, 0 errors.
+- Artifact:
+  - `solve_reports\harness_runs\samplereverse_compare_stack_pivot_probe_20260505\reports\tool_artifacts\samplereverse\compare_stack_pivot_probe\compare_stack_pivot_probe.json`
+- `python -m reverse_agent.project_state build --reports-dir solve_reports --sample samplereverse --run-name samplereverse_compare_stack_pivot_probe_20260505` passed.
+- `python -m reverse_agent.project_state status` reports `reason: compare_stack_pivot_complete`。
+
+5) 结论
+- Classification: `compare_stack_pivot_complete`
+- 3 个 diagnostic candidates 全部从 compare-frame stack preview 捕获 expected UTF-16LE expanded payload。
+- exact2 stack match:
+  - candidate `78d540b49c59077041414141414141`
+  - payload visible at `ESP+0x28`
+  - absolute `0x12fdce0`
+  - `EBP-0x1164`
+  - matched preview bytes `24/60`
+- Static audit:
+  - wide `flag{` VA `0x551c4c` / RVA `0x151c4c`
+  - unique xref RVA `0x2587`
+  - compare call RVA `0x258c`
+  - helper RVA `0x1028ac`
+  - helper classification `case_insensitive_wchar_compare`
+
+6) 下一轮默认方向
+- 停止重复当前 scripted Base64/RC4 breakpoint probe，除非有新的 explicit construction offsets。
+- 下一步 hook 更近的 handoff 点：
+  - `module+0x1b50` enter/return
+  - `module+0x2559` after helper return
+  - 读取 `[ebp-0x1170]`、`esi`、compare-frame stack payload source。
+- 目标是确认 `call 0x401b50` 是否是 RC4 output string construction/copy/append helper 或关键 transform handoff。
+- 不扩大搜索；不回 blind search。

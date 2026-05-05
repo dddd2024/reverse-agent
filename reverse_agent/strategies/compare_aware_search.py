@@ -44,6 +44,7 @@ TRANSFORM_TRACE_CONSISTENCY_FILE_NAME = "transform_trace_consistency.json"
 DYNAMIC_COMPARE_PATH_PROBE_FILE_NAME = "dynamic_compare_path_probe.json"
 PRE_RC4_MATERIAL_PROBE_FILE_NAME = "pre_rc4_material_probe.json"
 BASE64_RC4_BREAKPOINT_PROBE_FILE_NAME = "base64_rc4_breakpoint_probe.json"
+COMPARE_STACK_PIVOT_PROBE_FILE_NAME = "compare_stack_pivot_probe.json"
 
 DEFAULT_ANCHORS = (
     "78d540b49c590770",
@@ -176,6 +177,7 @@ DYNAMIC_COMPARE_PATH_PROBE_CANDIDATES = (
 )
 PRE_RC4_MATERIAL_PROBE_CANDIDATES = DYNAMIC_COMPARE_PATH_PROBE_CANDIDATES
 BASE64_RC4_BREAKPOINT_PROBE_CANDIDATES = PRE_RC4_MATERIAL_PROBE_CANDIDATES
+COMPARE_STACK_PIVOT_PROBE_CANDIDATES = BASE64_RC4_BREAKPOINT_PROBE_CANDIDATES
 PAIR_TAIL_FLAGLIKE_BYTES = set(b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_{}-")
 
 PAIRSCAN_TOOL = "pairscan"
@@ -3338,6 +3340,26 @@ def _prior_pre_rc4_probe_needs_breakpoint() -> bool:
     return str(payload.get("classification", "")).strip() == "pre_rc4_probe_unavailable"
 
 
+def _base64_probe_needs_stack_pivot(payload: dict[str, object]) -> bool:
+    classification = str(payload.get("classification", "")).strip()
+    hook_results = payload.get("hook_results", {})
+    hook_results = hook_results if isinstance(hook_results, dict) else {}
+    construction_unavailable = all(
+        str(hook_results.get(key, "unavailable")).strip() == "unavailable"
+        for key in ("base64_input", "base64_output", "rc4_key", "rc4_input", "rc4_output")
+    )
+    return classification == "breakpoint_probe_partial" and construction_unavailable
+
+
+def _prior_base64_probe_needs_stack_pivot() -> bool:
+    current_state = _project_state_json("current_state.json")
+    latest = current_state.get("latest_base64_rc4_breakpoint_probe", {})
+    if isinstance(latest, dict) and _base64_probe_needs_stack_pivot(latest):
+        return True
+    payload, _ = _indexed_artifact_payload("base64_rc4_breakpoint_probe")
+    return _base64_probe_needs_stack_pivot(payload)
+
+
 def _profile_audit_candidate_record(
     *,
     label: str,
@@ -4992,6 +5014,429 @@ def run_base64_rc4_breakpoint_probe(
         "result_path": str(result_path),
         "payload": payload,
         "validations": candidate_results,
+        "promotable_validations": [],
+    }
+
+
+def _hex_to_bytes(value: object) -> bytes:
+    text = str(value or "").strip().lower()
+    if len(text) % 2:
+        return b""
+    try:
+        return bytes.fromhex(text)
+    except ValueError:
+        return b""
+
+
+def _parse_int_hex(value: object) -> int | None:
+    text = str(value or "").strip().lower()
+    if not text:
+        return None
+    try:
+        return int(text, 16) if text.startswith("0x") else int(text)
+    except ValueError:
+        return None
+
+
+def _material_hex(expected: dict[str, object], name: str) -> str:
+    materials = expected.get("materials", [])
+    if not isinstance(materials, list):
+        return ""
+    for item in materials:
+        if isinstance(item, dict) and str(item.get("name", "")) == name:
+            return str(item.get("hex", "")).strip().lower()
+    return ""
+
+
+def _stack_material_match(
+    *,
+    stack_preview_hex: object,
+    material_hex: str,
+    esp: object,
+    ebp: object,
+) -> dict[str, object]:
+    stack = _hex_to_bytes(stack_preview_hex)
+    material = _hex_to_bytes(material_hex)
+    if not stack or not material:
+        return {
+            "visible": False,
+            "stack_offset": None,
+            "matched_bytes": 0,
+            "expected_bytes": len(material),
+            "match_ratio": 0.0,
+        }
+    offset = stack.find(material)
+    if offset < 0:
+        best_offset = -1
+        best_len = 0
+        for idx in range(len(stack)):
+            length = 0
+            while idx + length < len(stack) and length < len(material) and stack[idx + length] == material[length]:
+                length += 1
+            if length > best_len:
+                best_offset = idx
+                best_len = length
+        offset = best_offset
+        matched = best_len
+    else:
+        matched = len(material)
+    visible = offset >= 0 and matched >= min(16, len(material))
+    esp_value = _parse_int_hex(esp)
+    ebp_value = _parse_int_hex(ebp)
+    absolute = esp_value + offset if visible and esp_value is not None else None
+    ebp_relative = absolute - ebp_value if absolute is not None and ebp_value is not None else None
+    return {
+        "visible": visible,
+        "stack_offset": offset if visible else None,
+        "esp_relative": f"+0x{offset:x}" if visible else "",
+        "absolute_address": f"0x{absolute:x}" if absolute is not None else "",
+        "ebp_relative": f"-0x{abs(ebp_relative):x}" if isinstance(ebp_relative, int) and ebp_relative < 0 else (
+            f"+0x{ebp_relative:x}" if isinstance(ebp_relative, int) else ""
+        ),
+        "matched_bytes": matched if visible else 0,
+        "expected_bytes": len(material),
+        "match_ratio": round((matched / len(material)) if material else 0.0, 4),
+    }
+
+
+def _compare_stack_static_audit(target: Path) -> dict[str, object]:
+    expected: dict[str, object] = {
+        "wide_flag": {
+            "expected_va": "0x551c4c",
+            "expected_rva": "0x151c4c",
+            "hits": [],
+        },
+        "compare_site": {
+            "expected_call_rva": "0x258c",
+            "helper_rva": "",
+            "helper_classification": "unknown",
+        },
+        "backward_slice": [],
+        "next_hook_points": [],
+        "classification": "static_anchor_ambiguous",
+        "errors": [],
+    }
+    try:
+        data = target.read_bytes()
+    except OSError as exc:
+        expected["errors"] = [f"target_read_failed:{exc}"]
+        return expected
+
+    sections = _pe_sections_for_rva_mapping(data)
+    try:
+        pe_offset = int.from_bytes(data[0x3C:0x40], "little")
+        optional_header = pe_offset + 24
+        magic = int.from_bytes(data[optional_header:optional_header + 2], "little")
+        image_base_offset = optional_header + (28 if magic == 0x10B else 24)
+        image_base = int.from_bytes(data[image_base_offset:image_base_offset + (4 if magic == 0x10B else 8)], "little")
+    except Exception as exc:
+        expected["errors"] = [f"pe_parse_failed:{exc}"]
+        return expected
+
+    wide_hits: list[dict[str, object]] = []
+    start = 0
+    while True:
+        found = data.find(TARGET_PREFIX, start)
+        if found < 0:
+            break
+        rva = _file_offset_to_rva(found, sections)
+        wide_hits.append(
+            {
+                "file_offset": f"0x{found:x}",
+                "rva": f"0x{rva:x}" if rva is not None else "",
+                "va": f"0x{image_base + rva:x}" if rva is not None else "",
+            }
+        )
+        start = found + 1
+    expected["wide_flag"] = {
+        "expected_va": "0x551c4c",
+        "expected_rva": "0x151c4c",
+        "hits": wide_hits,
+    }
+
+    xrefs: list[dict[str, object]] = []
+    if wide_hits:
+        first_rva_text = str(wide_hits[0].get("rva", ""))
+        first_rva = int(first_rva_text, 16) if first_rva_text.startswith("0x") else None
+        if first_rva is not None:
+            needle = int(image_base + first_rva).to_bytes(4, "little")
+            start = 0
+            while True:
+                found = data.find(needle, start)
+                if found < 0:
+                    break
+                rva = _file_offset_to_rva(found, sections)
+                push_rva = rva - 1 if rva is not None and found > 0 and data[found - 1] == 0x68 else None
+                xrefs.append(
+                    {
+                        "file_offset": f"0x{found:x}",
+                        "rva": f"0x{rva:x}" if rva is not None else "",
+                        "instruction_rva": f"0x{push_rva:x}" if push_rva is not None else "",
+                    }
+                )
+                start = found + 1
+
+    compare_call_rva: int | None = None
+    helper_rva: int | None = None
+    if len(xrefs) == 1:
+        xref_rva = int(str(xrefs[0].get("rva", "0")), 16)
+        compare_call_rva = xref_rva + 5
+        call_offset = None
+        for section in sections:
+            virtual_address = int(section.get("virtual_address", 0))
+            raw_pointer = int(section.get("raw_pointer", 0))
+            span = max(int(section.get("raw_size", 0)), int(section.get("virtual_size", 0)), 1)
+            if virtual_address <= compare_call_rva < virtual_address + span:
+                call_offset = raw_pointer + (compare_call_rva - virtual_address)
+                break
+        if call_offset is not None and call_offset + 5 <= len(data) and data[call_offset] == 0xE8:
+            rel = int.from_bytes(data[call_offset + 1:call_offset + 5], "little", signed=True)
+            helper_rva = compare_call_rva + 5 + rel
+    helper_classification = "unknown"
+    if helper_rva is not None:
+        helper_offset = None
+        for section in sections:
+            virtual_address = int(section.get("virtual_address", 0))
+            raw_pointer = int(section.get("raw_pointer", 0))
+            span = max(int(section.get("raw_size", 0)), int(section.get("virtual_size", 0)), 1)
+            if virtual_address <= helper_rva < virtual_address + span:
+                helper_offset = raw_pointer + (helper_rva - virtual_address)
+                break
+        helper_bytes = data[helper_offset:helper_offset + 0x90] if helper_offset is not None else b""
+        if (
+            b"\x83\xf8\x41" in helper_bytes
+            and b"\x83\xf8\x5a" in helper_bytes
+            and b"\x83\xc0\x20" in helper_bytes
+            and b"\x66\x3b\xd0" in helper_bytes
+        ):
+            helper_classification = "case_insensitive_wchar_compare"
+
+    backward_slice = [
+        {
+            "rva": "0x253a",
+            "operation": "store candidate output pointer into [ebp-0x1170]",
+            "instruction": "mov dword ptr [ebp - 0x1170], eax",
+        },
+        {
+            "rva": "0x2554",
+            "operation": "handoff/copy helper before compare buffer reload",
+            "instruction": "call 0x401b50",
+        },
+        {
+            "rva": "0x2559",
+            "operation": "reload compare lhs pointer from [ebp-0x1170]",
+            "instruction": "mov esi, dword ptr [ebp - 0x1170]",
+        },
+        {
+            "rva": "0x2584",
+            "operation": "set wide compare count",
+            "instruction": "push 5",
+        },
+        {
+            "rva": "0x2586",
+            "operation": "push wide flag target",
+            "instruction": "push 0x551c4c",
+        },
+        {
+            "rva": "0x258b",
+            "operation": "push compare lhs pointer",
+            "instruction": "push esi",
+        },
+        {
+            "rva": "0x258c",
+            "operation": "case-insensitive wide compare call",
+            "instruction": "call 0x5028ac",
+        },
+    ]
+    next_hook_points = [
+        {
+            "name": "post_handoff_lhs_reload",
+            "module_offset": 0x2559,
+            "address": "module+0x2559",
+            "reason": "first instruction after call 0x401b50 reloads [ebp-0x1170] into esi",
+        },
+        {
+            "name": "handoff_helper_enter",
+            "module_offset": 0x1B50,
+            "address": "module+0x1b50",
+            "reason": "captures arguments to the helper that runs before the compare buffer is reloaded",
+        },
+        {
+            "name": "handoff_helper_return",
+            "module_offset": 0x2559,
+            "address": "module+0x2559",
+            "reason": "captures [ebp-0x1170], esi, and stack payload immediately after helper return",
+        },
+    ]
+    expected.update(
+        {
+            "wide_flag_xrefs": xrefs,
+            "compare_site": {
+                "expected_call_rva": "0x258c",
+                "actual_call_rva": f"0x{compare_call_rva:x}" if compare_call_rva is not None else "",
+                "helper_rva": f"0x{helper_rva:x}" if helper_rva is not None else "",
+                "helper_va": f"0x{image_base + helper_rva:x}" if helper_rva is not None else "",
+                "helper_classification": helper_classification,
+            },
+            "backward_slice": backward_slice,
+            "next_hook_points": next_hook_points,
+            "classification": (
+                "static_anchor_confirmed"
+                if len(wide_hits) == 1
+                and len(xrefs) == 1
+                and compare_call_rva == 0x258C
+                and helper_rva == 0x1028AC
+                and helper_classification == "case_insensitive_wchar_compare"
+                else "static_anchor_ambiguous"
+            ),
+        }
+    )
+    return expected
+
+
+def _compare_stack_entries_from_breakpoint_payload(
+    breakpoint_payload: dict[str, object],
+) -> list[dict[str, object]]:
+    validation_by_candidate: dict[str, dict[str, object]] = {}
+    for item in breakpoint_payload.get("validation_candidates", []):
+        if isinstance(item, dict):
+            candidate_hex = str(item.get("candidate_hex", "")).strip().lower()
+            if candidate_hex:
+                validation_by_candidate[candidate_hex] = item
+
+    entries: list[dict[str, object]] = []
+    for idx, item in enumerate(breakpoint_payload.get("candidate_results", []), 1):
+        if not isinstance(item, dict):
+            continue
+        candidate_hex = str(item.get("candidate_hex", "")).strip().lower()
+        validation = validation_by_candidate.get(candidate_hex, {})
+        expected = validation.get("expected_materials", {})
+        expected = expected if isinstance(expected, dict) else {}
+        utf16_hex = _material_hex(expected, "utf16le_payload")
+        compare_events = [
+            event
+            for event in item.get("hook_events", [])
+            if isinstance(event, dict) and str(event.get("point_kind", "")) == "compare"
+        ]
+        event_results: list[dict[str, object]] = []
+        for event in compare_events:
+            registers = event.get("registers", {})
+            registers = registers if isinstance(registers, dict) else {}
+            match = _stack_material_match(
+                stack_preview_hex=event.get("stack_preview_hex", ""),
+                material_hex=utf16_hex,
+                esp=registers.get("esp", ""),
+                ebp=registers.get("ebp", ""),
+            )
+            event_results.append(
+                {
+                    **match,
+                    "point_name": event.get("point_name", ""),
+                    "address": event.get("address", ""),
+                    "module_offset": event.get("module_offset", ""),
+                    "lhs_ptr": event.get("lhs_ptr", ""),
+                    "rhs_ptr": event.get("rhs_ptr", ""),
+                    "compare_count": event.get("compare_count"),
+                    "lhs_preview_hex": event.get("lhs_preview_hex", ""),
+                    "rhs_preview_hex": event.get("rhs_preview_hex", ""),
+                    "stack_preview_bytes": len(_hex_to_bytes(event.get("stack_preview_hex", ""))),
+                }
+            )
+        best = max(event_results, key=lambda result: int(result.get("matched_bytes", 0) or 0), default={})
+        entries.append(
+            {
+                "label": item.get("label", f"compare_stack_pivot_probe_{idx}"),
+                "candidate_hex": candidate_hex,
+                "probe_role": item.get("probe_role", ""),
+                "runtime_backed": bool(item.get("runtime_backed")),
+                "compare_event_count": len(compare_events),
+                "utf16le_payload_status": "available_from_compare_stack" if best.get("visible") else "unavailable",
+                "utf16le_payload": {
+                    "expected_length_bytes": len(_hex_to_bytes(utf16_hex)),
+                    "best_match": best,
+                    "events": event_results[:5],
+                },
+            }
+        )
+    return entries
+
+
+def run_compare_stack_pivot_probe(
+    *,
+    target: Path,
+    artifacts_dir: Path,
+    transform_model: SamplereverseTransformModel,
+    breakpoint_probe_payload: dict[str, object] | None = None,
+    log=None,
+) -> dict[str, object]:
+    _ = transform_model
+    artifacts_dir.mkdir(parents=True, exist_ok=True)
+    result_path = artifacts_dir / COMPARE_STACK_PIVOT_PROBE_FILE_NAME
+    if breakpoint_probe_payload is None:
+        breakpoint_probe_payload, source_path = _indexed_artifact_payload("base64_rc4_breakpoint_probe")
+    else:
+        source_path = ""
+    breakpoint_probe_payload = breakpoint_probe_payload or {}
+    entries = _compare_stack_entries_from_breakpoint_payload(breakpoint_probe_payload)
+    visible_count = sum(
+        1 for item in entries if str(item.get("utf16le_payload_status", "")) == "available_from_compare_stack"
+    )
+    runtime_backed_count = sum(1 for item in entries if bool(item.get("runtime_backed")))
+    static_audit = _compare_stack_static_audit(target)
+    classification = (
+        "compare_stack_pivot_complete"
+        if visible_count == len(entries) and entries and static_audit.get("classification") == "static_anchor_confirmed"
+        else "compare_stack_pivot_partial"
+        if visible_count or static_audit.get("classification") == "static_anchor_confirmed"
+        else "compare_stack_pivot_unavailable"
+    )
+    payload: dict[str, object] = {
+        "artifact_kind": "compare_stack_pivot_probe",
+        "profile": "samplereverse",
+        "attempted": True,
+        "source_artifact": source_path,
+        "candidate_generation_changed": False,
+        "ranking_changed": False,
+        "final_selection_changed": False,
+        "search_budget_changed": False,
+        "beam_budget_topn_timeout_frontier_limit_expanded": False,
+        "candidate_count": len(entries),
+        "candidate_limit": len(COMPARE_STACK_PIVOT_PROBE_CANDIDATES),
+        "runtime_backed_count": runtime_backed_count,
+        "utf16le_payload_available_count": visible_count,
+        "classification": classification,
+        "static_audit": static_audit,
+        "stack_results": entries,
+        "hook_results": {
+            "utf16le_payload": "available_from_compare_stack" if visible_count else "unavailable",
+            "base64_input": "unavailable",
+            "base64_output": "unavailable",
+            "rc4_key": "unavailable",
+            "rc4_input": "unavailable",
+            "rc4_output": "unavailable",
+            "compare_buffer": "available" if runtime_backed_count else "unavailable",
+        },
+        "next_hook_points": static_audit.get("next_hook_points", []),
+        "promotable_validations": [],
+        "findings": [
+            "compare-frame stack contains the UTF-16LE expanded payload"
+            if visible_count
+            else "compare-frame stack did not expose the UTF-16LE expanded payload",
+            "candidate generation, ranking, final selection, and search budget were unchanged",
+        ],
+        "next_bounded_action": (
+            "hook module+0x1b50 enter/return and module+0x2559 to capture the handoff into [ebp-0x1170]"
+            if visible_count
+            else "manual IDA/x64dbg breakpoints are required; compare stack pivot did not expose payload"
+        ),
+    }
+    _write_json(result_path, payload)
+    if log:
+        log(f"Compare stack pivot probe wrote {result_path}")
+    return {
+        "result_path": str(result_path),
+        "payload": payload,
+        "validations": entries,
         "promotable_validations": [],
     }
 
@@ -9765,6 +10210,8 @@ class CompareAwareSearchStrategy(SolverStrategy):
         pre_rc4_material_probe_artifact: ToolRunArtifact | None = None
         base64_rc4_breakpoint_probe_run: dict[str, object] | None = None
         base64_rc4_breakpoint_probe_artifact: ToolRunArtifact | None = None
+        compare_stack_pivot_probe_run: dict[str, object] | None = None
+        compare_stack_pivot_probe_artifact: ToolRunArtifact | None = None
         h1_h3_boundary_validation_run: dict[str, object] | None = None
         h1_h3_boundary_validation_artifact: ToolRunArtifact | None = None
         h1_h3_boundary_runtime_artifact: ToolRunArtifact | None = None
@@ -10178,6 +10625,39 @@ class CompareAwareSearchStrategy(SolverStrategy):
                 derived_entries=[],
             )
 
+        base64_rc4_payload = (
+            dict(base64_rc4_breakpoint_probe_run.get("payload", {}))
+            if base64_rc4_breakpoint_probe_run
+            else {}
+        )
+        should_run_compare_stack_pivot_probe = (
+            _base64_probe_needs_stack_pivot(base64_rc4_payload)
+            or _prior_base64_probe_needs_stack_pivot()
+        )
+        if should_run_compare_stack_pivot_probe:
+            compare_stack_pivot_probe_run = run_compare_stack_pivot_probe(
+                target=file_path,
+                artifacts_dir=artifacts_dir / "compare_stack_pivot_probe",
+                transform_model=transform_model,
+                breakpoint_probe_payload=base64_rc4_payload or None,
+                log=log,
+            )
+            compare_stack_payload = dict(compare_stack_pivot_probe_run.get("payload", {}))
+            compare_stack_pivot_probe_artifact = _make_search_artifact(
+                tool_name="CompareStackPivotProbe",
+                output_path=Path(str(compare_stack_pivot_probe_run["result_path"])),
+                summary=str(
+                    compare_stack_payload.get(
+                        "classification",
+                        "compare stack pivot probe complete",
+                    )
+                ),
+                strategy_name=self.name,
+                evidence_kind="RuntimeCompareEvidence",
+                payload=compare_stack_payload,
+                derived_entries=[],
+            )
+
         should_run_h1_h3 = (
             _selected_h1_h3_target(profile_transform_audit_run)
             and not _negative_h1_h3_boundary_recorded()
@@ -10265,6 +10745,8 @@ class CompareAwareSearchStrategy(SolverStrategy):
             artifacts.append(pre_rc4_material_probe_artifact)
         if base64_rc4_breakpoint_probe_artifact is not None:
             artifacts.append(base64_rc4_breakpoint_probe_artifact)
+        if compare_stack_pivot_probe_artifact is not None:
+            artifacts.append(compare_stack_pivot_probe_artifact)
         if h1_h3_boundary_validation_artifact is not None:
             artifacts.append(h1_h3_boundary_validation_artifact)
         if h1_h3_boundary_runtime_artifact is not None:
@@ -10296,12 +10778,15 @@ class CompareAwareSearchStrategy(SolverStrategy):
                 "dynamic_compare_path_probe": dynamic_compare_path_probe_run or {},
                 "pre_rc4_material_probe": pre_rc4_material_probe_run or {},
                 "base64_rc4_breakpoint_probe": base64_rc4_breakpoint_probe_run or {},
+                "compare_stack_pivot_probe": compare_stack_pivot_probe_run or {},
                 "h1_h3_boundary_validation": h1_h3_boundary_validation_run or {},
                 "prefix_boundary_diagnostics": prefix_boundary_diagnostics,
                 "frontier_converged_reason": frontier_converged_reason,
                 "frontier_stall_stage": frontier_stall_stage,
                 "completed_stage": "h1_h3_boundary_validation"
                 if h1_h3_boundary_validation_run
+                else "compare_stack_pivot_probe"
+                if compare_stack_pivot_probe_run
                 else "base64_rc4_breakpoint_probe"
                 if base64_rc4_breakpoint_probe_run
                 else "pre_rc4_material_probe"

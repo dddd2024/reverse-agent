@@ -12,6 +12,7 @@ from reverse_agent.strategies.base import StrategyResult
 from reverse_agent.strategies.compare_aware_search import (
     BASE64_RC4_BREAKPOINT_PROBE_FILE_NAME,
     BRIDGE_RESULT_FILE_NAME,
+    COMPARE_STACK_PIVOT_PROBE_FILE_NAME,
     CompareAwareSearchStrategy,
     DYNAMIC_COMPARE_PATH_PROBE_FILE_NAME,
     FRONTIER_ANCHOR_MODE,
@@ -51,6 +52,7 @@ from reverse_agent.strategies.compare_aware_search import (
     _validated_projected_preserve_second_hop_candidates,
     run_compare_aware_smt,
     run_base64_rc4_breakpoint_probe,
+    run_compare_stack_pivot_probe,
     run_dynamic_compare_path_probe,
     run_exact2_basin_value_pool_evaluation,
     run_h1_h3_boundary_validation,
@@ -779,6 +781,7 @@ def test_compare_aware_strategy_runs_refine_then_smt_and_uses_promoted_anchors(
         "dynamic_compare_path_probe",
         "pre_rc4_material_probe",
         "base64_rc4_breakpoint_probe",
+        "compare_stack_pivot_probe",
         "h1_h3_boundary_validation",
     }
     assert result.metadata["smt"]["payload"]["exact2_basin_smt"]["base_anchor"] == "78d540b49c590770"
@@ -3582,6 +3585,8 @@ def _fake_base64_rc4_subprocess_run(*args, **kwargs):  # noqa: ANN002, ANN003
     command = list(args[0])
     out_path = Path(command[command.index("--out") + 1])
     points_path = Path(command[command.index("--points") + 1])
+    candidate_hex = command[command.index("--probe-hex") + 1]
+    utf16_payload_hex = trace_candidate_transform(candidate_hex)["utf16_payload"]["raw_hex"]
     points_payload = json.loads(points_path.read_text(encoding="utf-8"))
     assert "base64" in points_payload["static_points"]
     out_path.write_text(
@@ -3589,7 +3594,7 @@ def _fake_base64_rc4_subprocess_run(*args, **kwargs):  # noqa: ANN002, ANN003
             {
                 "success": True,
                 "summary": "breakpoint ok",
-                "candidate_hex": command[command.index("--probe-hex") + 1],
+                "candidate_hex": candidate_hex,
                 "static_points": points_payload["static_points"],
                 "hook_events": [
                     {
@@ -3614,6 +3619,10 @@ def _fake_base64_rc4_subprocess_run(*args, **kwargs):  # noqa: ANN002, ANN003
                         "lhs_ptr": "0x1000",
                         "rhs_ptr": "0x2000",
                         "compare_count": 5,
+                        "registers": {"esp": "0x12fdcb8", "ebp": "0x12fee44"},
+                        "stack_preview_hex": "00" * 40 + utf16_payload_hex[:64],
+                        "lhs_preview_hex": "46006c004464830d311c",
+                        "rhs_preview_hex": "66006c00610067007b00",
                     },
                 ],
                 "hook_results": {
@@ -3715,6 +3724,90 @@ def test_base64_rc4_breakpoint_probe_records_exact2_failure_trace(
     assert failure["encrypted_const_bytes"] == "8f3b"
     assert failure["keystream_bytes"] == "cb5f"
     assert "bounded_constraint" in failure
+
+
+def test_compare_stack_pivot_probe_extracts_utf16le_payload_from_compare_stack(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    target = tmp_path / "samplereverse.exe"
+    target.write_bytes(b"MZ")
+    monkeypatch.setattr(compare_aware_search, "_base64_rc4_static_points", _fake_base64_rc4_static_points)
+    monkeypatch.setattr(compare_aware_search.subprocess, "run", _fake_base64_rc4_subprocess_run)
+    monkeypatch.setattr(
+        compare_aware_search,
+        "_compare_stack_static_audit",
+        lambda target: {
+            "classification": "static_anchor_confirmed",
+            "compare_site": {
+                "expected_call_rva": "0x258c",
+                "actual_call_rva": "0x258c",
+                "helper_rva": "0x1028ac",
+                "helper_classification": "case_insensitive_wchar_compare",
+            },
+            "next_hook_points": [{"name": "post_handoff_lhs_reload", "module_offset": 0x2559}],
+        },
+    )
+    breakpoint_result = run_base64_rc4_breakpoint_probe(
+        target=target,
+        artifacts_dir=tmp_path / "base64_rc4_breakpoint_probe",
+        transform_model=SamplereverseTransformModel(),
+        per_probe_timeout=0.5,
+        log=lambda _: None,
+    )
+
+    result = run_compare_stack_pivot_probe(
+        target=target,
+        artifacts_dir=tmp_path / "compare_stack_pivot_probe",
+        transform_model=SamplereverseTransformModel(),
+        breakpoint_probe_payload=breakpoint_result["payload"],
+        log=lambda _: None,
+    )
+
+    payload = result["payload"]
+    assert Path(result["result_path"]).name == COMPARE_STACK_PIVOT_PROBE_FILE_NAME
+    assert payload["candidate_count"] == 3
+    assert payload["candidate_limit"] == 3
+    assert payload["classification"] == "compare_stack_pivot_complete"
+    assert payload["hook_results"]["utf16le_payload"] == "available_from_compare_stack"
+    assert payload["utf16le_payload_available_count"] == 3
+    first = payload["stack_results"][0]["utf16le_payload"]["best_match"]
+    assert first["stack_offset"] == 40
+    assert first["esp_relative"] == "+0x28"
+    assert first["matched_bytes"] >= 16
+
+
+def test_compare_stack_pivot_probe_does_not_expand_search_or_promote(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    target = tmp_path / "samplereverse.exe"
+    target.write_bytes(b"MZ")
+    monkeypatch.setattr(compare_aware_search, "_base64_rc4_static_points", _fake_base64_rc4_static_points)
+    monkeypatch.setattr(compare_aware_search.subprocess, "run", _fake_base64_rc4_subprocess_run)
+    breakpoint_result = run_base64_rc4_breakpoint_probe(
+        target=target,
+        artifacts_dir=tmp_path / "base64_rc4_breakpoint_probe",
+        transform_model=SamplereverseTransformModel(),
+        per_probe_timeout=0.5,
+        log=lambda _: None,
+    )
+
+    result = run_compare_stack_pivot_probe(
+        target=target,
+        artifacts_dir=tmp_path / "compare_stack_pivot_probe",
+        transform_model=SamplereverseTransformModel(),
+        breakpoint_probe_payload=breakpoint_result["payload"],
+        log=lambda _: None,
+    )
+
+    payload = result["payload"]
+    assert payload["candidate_generation_changed"] is False
+    assert payload["ranking_changed"] is False
+    assert payload["final_selection_changed"] is False
+    assert payload["beam_budget_topn_timeout_frontier_limit_expanded"] is False
+    assert payload["promotable_validations"] == []
+    assert result["promotable_validations"] == []
 
 
 def test_h1_h3_boundary_validation_runtime_validates_fixed_contrast_set(

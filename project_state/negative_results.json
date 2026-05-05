@@ -56,11 +56,11 @@
     "severity": "soft_block"
   },
   {
-    "direction": "scripted Base64/RC4 breakpoint probe with current static access points",
+    "direction": "repeat scripted Base64/RC4 breakpoint probe before using compare stack pivot hook points",
     "do_not_repeat": true,
     "override_allowed": true,
     "override_reason_required": true,
-    "reason": "scripted breakpoint/access probe did not capture Base64 or RC4 construction material; next evidence source should be manual IDA/x64dbg breakpoints with explicit addresses",
+    "reason": "compare stack pivot extracted closer handoff evidence from the compare frame; next work should hook the recorded handoff points instead of repeating the prior static access probe",
     "severity": "soft_block"
   }
 ]

@@ -21,6 +21,7 @@ IMPORTANT_ARTIFACTS = {
     "dynamic_compare_path_probe": "dynamic_compare_path_probe.json",
     "pre_rc4_material_probe": "pre_rc4_material_probe.json",
     "base64_rc4_breakpoint_probe": "base64_rc4_breakpoint_probe.json",
+    "compare_stack_pivot_probe": "compare_stack_pivot_probe.json",
     "profile_transform_hypothesis_matrix": "profile_transform_hypothesis_matrix.json",
     "h1_h3_boundary_validation": "h1_h3_boundary_validation.json",
     "exact2_basin_value_pool_result": "samplereverse_exact2_basin_value_pool_result.json",
@@ -48,6 +49,7 @@ RUNTIME_VALIDATION_KEYS = {
     "dynamic_compare_path_probe",
     "pre_rc4_material_probe",
     "base64_rc4_breakpoint_probe",
+    "compare_stack_pivot_probe",
 }
 
 STATE_JSON_NAMES = (
@@ -413,6 +415,7 @@ def build_current_state(*, artifact_index: dict[str, Any], sample: str) -> dict[
     dynamic_compare_path_probe = _read_json(artifact_refs.get("dynamic_compare_path_probe"))
     pre_rc4_material_probe = _read_json(artifact_refs.get("pre_rc4_material_probe"))
     base64_rc4_breakpoint_probe = _read_json(artifact_refs.get("base64_rc4_breakpoint_probe"))
+    compare_stack_pivot_probe = _read_json(artifact_refs.get("compare_stack_pivot_probe"))
     uncertainty: list[str] = []
 
     exact2 = _compact_candidate(strata_summary.get("best_exact2_runtime"))
@@ -467,6 +470,10 @@ def build_current_state(*, artifact_index: dict[str, Any], sample: str) -> dict[
     if breakpoint_classification:
         stage = "base64_rc4_breakpoint_probe"
         reason = breakpoint_classification
+    compare_stack_classification = str(compare_stack_pivot_probe.get("classification") or "").strip()
+    if compare_stack_classification:
+        stage = "compare_stack_pivot_probe"
+        reason = compare_stack_classification
     if stage is None:
         uncertainty.append("current_bottleneck.stage")
     if reason is None:
@@ -544,6 +551,19 @@ def build_current_state(*, artifact_index: dict[str, Any], sample: str) -> dict[
             "next_bounded_action": base64_rc4_breakpoint_probe.get("next_bounded_action"),
         }
         if base64_rc4_breakpoint_probe
+        else {},
+        "latest_compare_stack_pivot_probe": {
+            "classification": compare_stack_classification or None,
+            "artifact": artifact_refs.get("compare_stack_pivot_probe"),
+            "runtime_backed_count": compare_stack_pivot_probe.get("runtime_backed_count"),
+            "candidate_count": compare_stack_pivot_probe.get("candidate_count"),
+            "utf16le_payload_available_count": compare_stack_pivot_probe.get("utf16le_payload_available_count"),
+            "hook_results": compare_stack_pivot_probe.get("hook_results"),
+            "static_audit": compare_stack_pivot_probe.get("static_audit"),
+            "next_hook_points": compare_stack_pivot_probe.get("next_hook_points"),
+            "next_bounded_action": compare_stack_pivot_probe.get("next_bounded_action"),
+        }
+        if compare_stack_pivot_probe
         else {},
         "uncertainty": sorted(set(uncertainty)),
         "artifact_refs": artifact_refs,
@@ -678,6 +698,36 @@ def build_negative_results(artifact_index: dict[str, Any] | None = None) -> list
                 "reason": (
                     "scripted breakpoint/access probe did not capture Base64 or RC4 construction material; "
                     "next evidence source should be manual IDA/x64dbg breakpoints with explicit addresses"
+                ),
+                "override_allowed": True,
+                "override_reason_required": True,
+            }
+        )
+    compare_stack_probe = _read_json(artifacts.get("compare_stack_pivot_probe"))
+    compare_stack_classification = str(compare_stack_probe.get("classification") or "").strip()
+    if compare_stack_classification == "compare_stack_pivot_unavailable":
+        results.append(
+            {
+                "direction": "repeat compare stack pivot probe without a new compare-frame evidence source",
+                "severity": "soft_block",
+                "do_not_repeat": True,
+                "reason": (
+                    "compare stack pivot did not expose UTF-16LE payload or static anchors; "
+                    "next evidence source should be explicit manual IDA/x64dbg breakpoints"
+                ),
+                "override_allowed": True,
+                "override_reason_required": True,
+            }
+        )
+    elif compare_stack_classification in {"compare_stack_pivot_partial", "compare_stack_pivot_complete"}:
+        results.append(
+            {
+                "direction": "repeat scripted Base64/RC4 breakpoint probe before using compare stack pivot hook points",
+                "severity": "soft_block",
+                "do_not_repeat": True,
+                "reason": (
+                    "compare stack pivot extracted closer handoff evidence from the compare frame; "
+                    "next work should hook the recorded handoff points instead of repeating the prior static access probe"
                 ),
                 "override_allowed": True,
                 "override_reason_required": True,
