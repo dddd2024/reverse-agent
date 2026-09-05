@@ -88,7 +88,7 @@ def _write_structured_decision(
                 "phase": "status",
                 "required": True,
                 "expected_exit_codes": [0],
-                "execution_surface": "local",
+                "execution_surface": "trusted_worker",
                 "operations": ["repository_observation"],
                 "network_access": False,
             },
@@ -98,7 +98,7 @@ def _write_structured_decision(
                 "phase": "validation",
                 "required": True,
                 "expected_exit_codes": [0],
-                "execution_surface": "local",
+                "execution_surface": "trusted_worker",
                 "operations": ["diff_validation"],
                 "network_access": False,
             },
@@ -289,7 +289,7 @@ def test_transition_command_plan_generates_structured_allowed_commands(tmp_path:
     structured = [cmd for cmd in commands if not cmd.get("bootstrap_exception")]
     bootstrap = [cmd for cmd in commands if cmd.get("bootstrap_exception")]
     assert len(structured) == 2
-    assert all(cmd["execution_surface"] == "local" for cmd in structured)
+    assert all(cmd["execution_surface"] == "trusted_worker" for cmd in structured)
     assert all(cmd["operations"] for cmd in structured)
     assert len(bootstrap) == 1
     assert all(cmd["bootstrap_exception"] is True for cmd in bootstrap)
@@ -614,7 +614,7 @@ def test_transition_preflight_enforces_structured_authority(tmp_path: Path, monk
                 "phase": "status",
                 "exit_code": 0,
                 "operations": ["repository_observation"],
-                "execution_surface": "local",
+                "execution_surface": "trusted_worker",
             },
             {
                 "index": 2,
@@ -623,7 +623,7 @@ def test_transition_preflight_enforces_structured_authority(tmp_path: Path, monk
                 "phase": "validation",
                 "exit_code": 0,
                 "operations": ["diff_validation"],
-                "execution_surface": "local",
+                "execution_surface": "trusted_worker",
             },
         ],
     )
@@ -785,7 +785,7 @@ def test_transition_preflight_blocks_reference_path_even_when_in_allowed_scope(
                 "phase": "status",
                 "required": True,
                 "expected_exit_codes": [0],
-                "execution_surface": "local",
+                "execution_surface": "trusted_worker",
                 "operations": ["repository_observation"],
                 "network_access": False,
             },
@@ -960,7 +960,7 @@ def _write_collision_decision(
                 "phase": phase,
                 "required": True,
                 "expected_exit_codes": [0],
-                "execution_surface": "local",
+                "execution_surface": "trusted_worker",
                 "operations": ops,
                 "network_access": False,
             }
@@ -1177,3 +1177,108 @@ def test_project_gate_transition_command_plan_preserves_bootstrap_collision(
     assert all(i for i in ids)
     assert ids[0] != ids[1]
     assert all(i.startswith("bootstrap.") for i in ids)
+
+
+def _write_136_incompatible_decision(state_dir: Path) -> None:
+    """A fresh typed Decision with the #636 shape: enum-valid
+    github_control_plane token + checkout/source-edit operations."""
+    contract = {
+        "transition_kernel_required": True,
+        "required_branch": "codex/example-v1",
+        "activation_base_sha": "a" * 40,
+        "bootstrap_exception_files": ["reverse_agent/project_gate.py"],
+        "bootstrap_exception_commands": [],
+        "allowed_commands": [
+            {
+                "command_id": "materialize.mutation",
+                "command": "git status --short",
+                "phase": "implementation",
+                "required": True,
+                "expected_exit_codes": [0],
+                "execution_surface": "github_control_plane",
+                "operations": ["source_edit", "commit"],
+                "network_access": False,
+            },
+        ],
+        "allowed_mutated_paths": ["reverse_agent/example/**"],
+        "forbidden_mutated_paths": ["frontend/**"],
+    }
+    state_dir.mkdir(parents=True, exist_ok=True)
+    (state_dir / "decision_packet.md").write_text(
+        "```json decision_meta\n"
+        + json.dumps(
+            {
+                "schema_version": 1,
+                "decision_id": "decision_636_shape",
+                "round_id": "round_636_shape",
+                "status": "APPROVED",
+                "mainline": "engineering_branch",
+                "skill_profiles": ["reverse-agent-iteration@v2"],
+            }
+        )
+        + "\n```\n\n```json decision_contract\n"
+        + json.dumps(contract)
+        + "\n```\n",
+        encoding="utf-8",
+    )
+
+
+def test_636_shape_rejected_by_state_gate_and_decision_preflight_same_semantics(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The #636 plan is BLOCKED by the same canonical validator that State
+    Gate (transition-lint / transition-command-plan) and Decision Preflight
+    (transition-command-plan -> preflight) both consume. No divergence: the
+    same bad plan cannot be accepted by one gate and rejected by the other."""
+    from reverse_agent.control_plane.command_authority import validate_command_plan
+
+    state_dir = tmp_path / "project_state"
+    _write_136_incompatible_decision(state_dir)
+    _registry(tmp_path)
+
+    # State Gate / Decision Preflight authoring gate (transition-command-plan)
+    # compiles the projection and validates it with the canonical validator.
+    result = project_gate.transition_command_plan(state_dir=state_dir)
+    assert result["plan_status"] == "BLOCKED"
+    assert any(
+        "operation_surface_incompatible" in reason or "legacy_local_surface" in reason
+        for reason in (result.get("blocking_reasons") or [])
+    )
+
+    # The compiled projection itself is rejected by the shared validator.
+    decision, contract = project_gate.load_transition_decision(state_dir / "decision_packet.md")
+    plan = project_gate.build_transition_command_plan(decision, contract)
+    errors = validate_command_plan(plan)
+    assert any("operation_surface_incompatible:source_edit:github_control_plane" in e for e in errors)
+    assert any("operation_surface_incompatible:commit:github_control_plane" in e for e in errors)
+
+    # Decision Preflight cleanliness: no stale tracked plan may make the same
+    # bad decision green. With no tracked plan present, preflight still loads
+    # the tracked command_plan.json that transition-command-plan blocked for.
+    import subprocess as _subprocess
+
+    def fake_git(_repo_root: Path, *args: str, check: bool = True) -> str:
+        del check
+        if args == ("branch", "--show-current"):
+            return "codex/example-v1"
+        if args == ("merge-base", "HEAD", "a" * 40):
+            return "a" * 40
+        if args == ("log", "-1", "--format=%H", "--", "project_state/decision_packet.md"):
+            return "b" * 40
+        if args == ("diff", "--name-only", f"{'b'*40}..HEAD"):
+            return ""
+        if args in (("diff", "--name-only"), ("diff", "--cached", "--name-only")):
+            return ""
+        raise AssertionError(args)
+
+    monkeypatch.setattr(project_gate, "_transition_git", fake_git)
+    monkeypatch.setenv("GITHUB_HEAD_REF", "codex/example-v1")
+    monkeypatch.setattr(
+        project_gate.subprocess,
+        "run",
+        lambda *args, **kwargs: _subprocess.CompletedProcess(args[0], 0, "", ""),
+    )
+    preflight = project_gate.transition_preflight(
+        state_dir=state_dir, repo_root=tmp_path, mode="pre"
+    )
+    assert preflight["gate_status"] == "BLOCKED"

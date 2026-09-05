@@ -33,6 +33,214 @@ SUBPROCESS_EXECUTABLE_SURFACES = frozenset({
 # Explicit machine-specific capability declaration required for user_local.
 MACHINE_SPECIFIC_EXECUTION_OPERATION = "machine_specific_execution"
 
+# ---------------------------------------------------------------------------
+# Canonical capability flag -> operation token vocabulary.
+#
+# This is the single machine-checked definition of every capability-controlled
+# operation that a CapabilityPolicy can legally ALLOW. It is shared by:
+#
+#   * capability-policy enforcement (transition._capability_forbidden_operations);
+#   * legacy structured capability loading (legacy_adapter.load_transition_scope);
+#   * the operation-surface compatibility registry completeness invariant
+#     (every token here MUST have an OPERATION_SURFACE_ADMISSIBILITY entry,
+#     otherwise enabling the flag would create a semantically dead capability
+#     rejected as ``unknown_operation`` at plan validation time).
+#
+# Adding a new capability flag must update this mapping AND the compatibility
+# registry; the completeness regression fails otherwise.
+# ---------------------------------------------------------------------------
+
+CAPABILITY_OPERATION_MAPPING: dict[str, str] = {
+    "runner_dispatch_allowed": "runner_dispatch",
+    "model_api_invocation_allowed": "model_api_invocation",
+    "external_reverse_tool_invocation_allowed": "external_reverse_tool_invocation",
+    "unknown_binary_execution_allowed": "unknown_binary_execution",
+    "destructive_operations_allowed": "destructive",
+    "bmad_installation_allowed": "bmad_installation",
+    "direct_push_to_main_allowed": "direct_push_main",
+    "merge_allowed": "merge",
+    "force_push_allowed": "force_push",
+    "rebase_during_execution_allowed": "rebase",
+    "tag_or_release_allowed": "tag_or_release",
+}
+
+# ---------------------------------------------------------------------------
+# Canonical operation -> admissible execution-surface compatibility.
+#
+# #636 proved that a surface token being enum-valid is not enough: a fresh
+# Decision can pair ``execution_surface`` with operations that surface cannot
+# actually perform. #637 proved the converse completeness requirement: every
+# capability-controlled operation that can become ALLOWED must have an entry,
+# or enabling the flag leaves a semantically dead capability. This single
+# canonical table is consumed by BOTH structured plan compilation and
+# pre-execution plan validation so State Gate and Decision Preflight share
+# identical semantics. ``local`` intentionally has no admissible operations
+# here: it is a legacy compatibility token that is only readable through
+# ``load_legacy_command_plan``.
+#
+# Surface assignment principle (#156 canonical surfaces):
+#   GitHub API/control-plane mutation (PR/ref/workflow/tag/release publication,
+#   merge, runner dispatch)          -> github_control_plane only
+#   checked-out-repository subprocess/work (source edits, commits, builds,
+#   history rewrites, destructive ops, subprocess tool/binary execution)
+#                                    -> trusted_worker (+ machine-specific
+#                                       user_local)
+#   CI-owned validation/installs     -> trusted_worker / user_local / ci_only
+#   read-only GitHub/evidence        -> remote_observation
+#   external networked API calls     -> trusted_worker / user_local / ci_only
+#   machine-specific capability      -> user_local only
+# ---------------------------------------------------------------------------
+
+_SUBPROCESS_MUTATION_SURFACES = frozenset({"trusted_worker", "user_local"})
+_SUBPROCESS_VALIDATION_SURFACES = frozenset({"trusted_worker", "user_local", "ci_only"})
+_SUBPROCESS_EXECUTION_SURFACES = frozenset({"trusted_worker", "user_local"})
+_READ_OBSERVATION_SURFACES = frozenset({"trusted_worker", "user_local", "ci_only", "remote_observation"})
+_GITHUB_NATIVE_SURFACES = frozenset({"github_control_plane"})
+_NETWORK_SURFACES = frozenset({"trusted_worker", "user_local", "ci_only", "github_control_plane"})
+_NETWORK_CALL_SURFACES = frozenset({"trusted_worker", "user_local", "ci_only"})
+
+# Checkout/source-edits and checkout-local mutations require executor
+# provenance (trusted_worker / explicit machine-specific user_local). They
+# are NEVER satisfiable by the GitHub control plane, repository CI, or
+# read-only observation even though those surface tokens are valid.
+OPERATION_SURFACE_ADMISSIBILITY: dict[str, frozenset[str]] = {
+    "source_edit": _SUBPROCESS_MUTATION_SURFACES,
+    "commit": _SUBPROCESS_MUTATION_SURFACES,
+    "build": _SUBPROCESS_MUTATION_SURFACES,
+    "command_plan_generation": _SUBPROCESS_MUTATION_SURFACES,
+    # Repository-owned validation executes in a checkout or in CI workflows.
+    "unit_test": _SUBPROCESS_VALIDATION_SURFACES,
+    "local_static_check": _SUBPROCESS_VALIDATION_SURFACES,
+    "diff_validation": _SUBPROCESS_VALIDATION_SURFACES,
+    "integration_test": _SUBPROCESS_VALIDATION_SURFACES,
+    # Read-only observation.
+    "repository_observation": _READ_OBSERVATION_SURFACES,
+    "code_read": _READ_OBSERVATION_SURFACES,
+    "read_only_audit": frozenset({"trusted_worker", "user_local", "remote_observation"}),
+    "remote_observation": frozenset({"trusted_worker", "user_local", "ci_only", "remote_observation"}),
+    # GitHub-native control-plane mutations/publication.
+    "push": _GITHUB_NATIVE_SURFACES,
+    "draft_pr": _GITHUB_NATIVE_SURFACES,
+    "pr_create": _GITHUB_NATIVE_SURFACES,
+    "pull_request_comment": _GITHUB_NATIVE_SURFACES,
+    "issue_comment": _GITHUB_NATIVE_SURFACES,
+    "mark_ready": _GITHUB_NATIVE_SURFACES,
+    "merge": _GITHUB_NATIVE_SURFACES,
+    "ready": _GITHUB_NATIVE_SURFACES,
+    # Capability-controlled GitHub-native publication/dispatch. These are
+    # GitHub API/control-plane mutations only; no subprocess surface may
+    # carry them (the #156 GitHub-native boundary).
+    "runner_dispatch": _GITHUB_NATIVE_SURFACES,
+    "direct_push_main": _GITHUB_NATIVE_SURFACES,
+    "force_push": _GITHUB_NATIVE_SURFACES,
+    "tag_or_release": _GITHUB_NATIVE_SURFACES,
+    # Network/install modifiers.
+    "network_access": _NETWORK_SURFACES,
+    "network": _NETWORK_SURFACES,
+    "package_install": _SUBPROCESS_VALIDATION_SURFACES,
+    "dependency_install": _SUBPROCESS_VALIDATION_SURFACES,
+    # Capability-controlled checked-out-repository subprocess work: history
+    # rewrites, destructive operations, subprocess tool invocation, and
+    # unknown-binary execution require executor provenance. GitHub-native,
+    # CI-owned validation and read-only observation can never carry them.
+    "rebase": _SUBPROCESS_MUTATION_SURFACES,
+    "destructive": _SUBPROCESS_MUTATION_SURFACES,
+    "external_reverse_tool_invocation": _SUBPROCESS_EXECUTION_SURFACES,
+    "unknown_binary_execution": _SUBPROCESS_EXECUTION_SURFACES,
+    # Capability-controlled install/network-call operations.
+    "bmad_installation": _SUBPROCESS_VALIDATION_SURFACES,
+    "model_api_invocation": _NETWORK_CALL_SURFACES,
+    # Machine-specific declaration is user_local-only.
+    "machine_specific_execution": frozenset({"user_local"}),
+}
+
+# Surfaces that current/new structured authoring may select. The legacy
+# ``local`` token is deliberately excluded.
+CURRENT_AUTHORING_SURFACES = frozenset({
+    "github_control_plane",
+    "trusted_worker",
+    "ci_only",
+    "remote_observation",
+    "user_local",
+})
+
+
+def _admissible_surfaces(operation: str) -> frozenset[str] | None:
+    return OPERATION_SURFACE_ADMISSIBILITY.get(operation)
+
+
+def operation_surface_errors(
+    operations: tuple[str, ...],
+    surface: str,
+    *,
+    command_identity: str = "",
+) -> tuple[str, ...]:
+    """Return canonical operation↔surface incompatibility errors.
+
+    Unknown operations fail closed: a current typed Decision must only declare
+    operations whose admissible-surface class is known and whose surface is in
+    that class. ``local`` carries no admissible operations for current New
+    authoring; this function never authorizes it.
+    """
+
+    errors: list[str] = []
+    for operation in operations:
+        admissible = _admissible_surfaces(operation)
+        if admissible is None:
+            errors.append(f"unknown_operation:{operation}:{surface}:{command_identity}")
+        elif surface not in admissible:
+            errors.append(
+                f"operation_surface_incompatible:{operation}:{surface}:{command_identity}"
+            )
+    return tuple(errors)
+
+
+def capability_operation_coverage() -> tuple[str, ...]:
+    """Return capability-controlled operations absent from the compatibility
+    registry.
+
+    The completeness invariant is::
+
+        set(CAPABILITY_OPERATION_MAPPING.values())
+            subset of
+        set(OPERATION_SURFACE_ADMISSIBILITY.keys())
+
+    Every operation a CapabilityPolicy can legally ALLOW must have an
+    explicit admissible-surface entry, otherwise a fresh typed Decision that
+    enables the flag is rejected as ``unknown_operation`` and the capability
+    becomes semantically dead. This helper makes the invariant machine
+    checkable; the regression suite fails if it ever returns a non-empty
+    tuple.
+    """
+
+    registered = set(OPERATION_SURFACE_ADMISSIBILITY.keys())
+    return tuple(
+        sorted(
+            operation
+            for operation in CAPABILITY_OPERATION_MAPPING.values()
+            if operation not in registered
+        )
+    )
+
+
+def capability_forbidden_operations_for_policy(
+    policy: object,
+) -> tuple[str, ...]:
+    """Map a CapabilityPolicy to its forbidden operation tokens.
+
+    Each flag that is ``False`` adds its corresponding operation to the
+    forbidden set so the machine gate stays in sync with the Decision.
+    ``transition._capability_forbidden_operations`` delegates here so the
+    capability vocabulary is the single machine-checked definition shared
+    with the compatibility registry completeness invariant.
+    """
+
+    operations: list[str] = []
+    for field, operation in CAPABILITY_OPERATION_MAPPING.items():
+        if not getattr(policy, field, False):
+            operations.append(operation)
+    return tuple(dict.fromkeys(operations))
+
 
 def validate_command_plan(plan: TransitionCommandPlan) -> tuple[str, ...]:
     errors: list[str] = []
@@ -67,6 +275,22 @@ def validate_command_plan(plan: TransitionCommandPlan) -> tuple[str, ...]:
         if identity in seen_commands:
             errors.append(f"duplicate_command:{identity[1]}:{identity[0]}")
         seen_commands.add(identity)
+        # G2-compatibility / #636: current/new structured authoring must not
+        # select the legacy ``local`` surface. Bootstrap-exception commands
+        # are the narrow historical/migration seam and keep their exemption.
+        if entry.execution_surface == LEGACY_LOCAL_SURFACE and not entry.bootstrap_exception:
+            errors.append(
+                f"legacy_local_surface_forbidden_in_current_authoring:{identity[0]}"
+            )
+        # Canonical operation↔surface admissibility. Historical tracked
+        # artifacts stay readable through load_legacy_command_plan; this
+        # validation is for current/new typed plans.
+        compatibility = operation_surface_errors(
+            entry.operations,
+            entry.execution_surface,
+            command_identity=identity[0],
+        )
+        errors.extend(compatibility)
     return tuple(errors)
 
 

@@ -19,7 +19,7 @@ def _authority() -> TransitionAuthority:
             "test",
             True,
             (0,),
-            "local",
+            "trusted_worker",
             ("unit_test",),
             command_id="test.unit",
             allowed_mutated_paths=("tests/test_architecture_contracts.py",),
