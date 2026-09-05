@@ -3,31 +3,31 @@
   "artifact_name": "startup_snapshot.json",
   "gate_name": "startup-snapshot",
   "gate_status": "PASSED",
-  "decision_id": "decision_20260904_issue156_postmerge_validator_cutover_r1_v2",
-  "round_id": "round_20260904_issue156_postmerge_validator_cutover_r1_v2",
+  "decision_id": "decision_20260905_issue156_execution_surface_compat_r2_v2",
+  "round_id": "round_20260905_issue156_execution_surface_compat_r2_v2",
   "mainline": "engineering_branch",
-  "generated_at": "2026-09-04T04:37:22.764599Z",
+  "generated_at": "2026-09-05T13:43:51.109726Z",
   "artifact_path": "project_state/gates/startup_snapshot.json",
   "startup_sequence": [
     {
-      "command": "Set-Location F:\\reverse-agent-issue156-postmerge-validator-cutover-r1-v2",
+      "command": "Set-Location C:\\Users\\wjc27\\AppData\\Local\\Temp\\opencode\\nerelan-r2v2",
       "exit_code": 0,
-      "stdout": "F:\\reverse-agent-issue156-postmerge-validator-cutover-r1-v2"
+      "stdout": "C:\\Users\\wjc27\\AppData\\Local\\Temp\\opencode\\nerelan-r2v2"
     },
     {
       "command": "Get-Location",
       "exit_code": 0,
-      "stdout": "F:\\reverse-agent-issue156-postmerge-validator-cutover-r1-v2"
+      "stdout": "C:\\Users\\wjc27\\AppData\\Local\\Temp\\opencode\\nerelan-r2v2"
     },
     {
-      "command": "Test-Path F:\\reverse-agent-issue156-postmerge-validator-cutover-r1-v2",
+      "command": "Test-Path C:\\Users\\wjc27\\AppData\\Local\\Temp\\opencode\\nerelan-r2v2",
       "exit_code": 0,
       "stdout": "True"
     },
     {
       "command": "git rev-parse --show-toplevel",
       "exit_code": 0,
-      "stdout": "F:/reverse-agent-issue156-postmerge-validator-cutover-r1-v2"
+      "stdout": "C:/Users/wjc27/AppData/Local/Temp/opencode/nerelan-r2v2"
     },
     {
       "command": "git status --short",
@@ -35,10 +35,10 @@
       "stdout_lines": []
     }
   ],
-  "repository_root": "F:/reverse-agent-issue156-postmerge-validator-cutover-r1-v2",
-  "expected_repository_root": "F:\\reverse-agent-issue156-postmerge-validator-cutover-r1-v2",
+  "repository_root": "C:/Users/wjc27/AppData/Local/Temp/opencode/nerelan-r2v2",
+  "expected_repository_root": "C:\\Users\\wjc27\\AppData\\Local\\Temp\\opencode\\nerelan-r2v2",
   "repository_root_matches": true,
-  "head_commit": "c7d1e617d9e7",
+  "head_commit": "1fd99c51d210",
   "raw_git_status_short": [],
   "dirty_files": [],
   "worktree_classifier_schema_version": 1,
