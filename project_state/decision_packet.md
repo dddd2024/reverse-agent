@@ -3,8 +3,8 @@
 ```json decision_meta
 {
   "schema_version": 1,
-  "decision_id": "decision_20260904_issue156_postmerge_validator_cutover_r1_v2",
-  "round_id": "round_20260904_issue156_postmerge_validator_cutover_r1_v2",
+  "decision_id": "decision_20260905_issue156_execution_surface_compat_r2_v2",
+  "round_id": "round_20260905_issue156_execution_surface_compat_r2_v2",
   "status": "APPROVED",
   "mainline": "engineering_branch",
   "skill_profiles": ["reverse-agent-iteration@v2"]
@@ -14,27 +14,27 @@
 ```json decision_contract
 {
   "transition_kernel_required": true,
-  "decision_scope": "FRESH_BASE_BOUNDED_P0_PRODUCTION_SHAPE_CORRECTION",
+  "decision_scope": "FRESH_BASE_BOUNDED_P0_OPERATION_SURFACE_COMPATIBILITY_REGISTRY_COMPLETENESS",
   "not_governance_architecture_rewrite": true,
-  "follows_last_decision_id": "decision_20260903_issue156_postmerge_validator_cutover_r1",
-  "follows_last_round_id": "round_20260903_issue156_postmerge_validator_cutover_r1",
-  "previous_audit_outcome": "PR628_EXACT_HEAD_602192FB2CBFD7095688454822D3ADCEFD03A56C_OWNER_AUDIT_5108951152_FOUND_COMMIT_ASSOCIATED_PR_PAYLOAD_LACKS_MERGED_BOOLEAN_KEY_RESOLVED_PR_NOT_MERGED_FALSE_POSITIVE_ON_REAL_MERGED_PR_625_P0_PRODUCTION_SHAPE_CORRECTION_REQUIRED",
-  "workstream_id": "issue156-postmerge-validator-cutover-r1-v2",
+  "follows_last_decision_id": "decision_20260905_issue156_execution_surface_compat_r2_v1",
+  "follows_last_round_id": "round_20260905_issue156_execution_surface_compat_r2_v1",
+  "previous_audit_outcome": "PR637_TERMINAL_NEGATIVE_EVIDENCE_EXACT_HEAD_2359019F357A5E24555870E9D7E9FE6D3F9F30D4_OWNER_DISPOSITION_EXACT_HEAD_REJECTED_INCOMPLETE_OPERATION_VOCABULARY_COVERAGE_OPERATION_SURFACE_ADMISSIBILITY_FAILS_CLOSED_ON_UNKNOWN_OPERATIONS_BUT_CAPABILITY_CONTROLLED_OPERATIONS_RUNNER_DISPATCH_MODEL_API_INVOCATION_EXTERNAL_REVERSE_TOOL_INVOCATION_UNKNOWN_BINARY_EXECUTION_DESTRUCTIVE_BMAD_INSTALLATION_DIRECT_PUSH_MAIN_FORCE_PUSH_REBASE_TAG_OR_RELEASE_BECOME_SEMANTICALLY_DEAD_FOR_CURRENT_TYPED_DECISIONS_REQUIRES_COMPLETE_CANONICAL_OPERATION_VOCABULARY_SHARED_WITH_CAPABILITY_POLICY_PLUS_REGISTRY_COMPLETENESS_INVARIANT",
+  "workstream_id": "issue156-execution-surface-compat-r2-v2",
   "source_issue": 156,
   "trigger_issue": 156,
-  "trigger_pr": 628,
-  "predecessor_pr": 628,
-  "predecessor_head": "602192fb2cbfd7095688454822d3adcefd03a56c",
-  "predecessor_base": "cfe5fd3819009fdcb6a4d8402aa6b818947f9d0c",
-  "semantic_source_pr": 628,
-  "semantic_source_head": "602192fb2cbfd7095688454822d3adcefd03a56c",
-  "semantic_reuse_note": "File-level reuse only: reverse_agent/mainline_landing.py reverse_agent/github_remote_verifier.py reverse_agent/project_gate.py tests/test_mainline_landing.py are re-materialized byte-for-byte from the PR628 accepted exact head 602192fb, then the single new production-shape correction is applied to GitHubRemoteAcceptanceVerifier.resolve_merged_pull_request. No PR628 governance history is cherry-picked and PR628 itself is never amended, force-pushed, marked Ready, or merged.",
-  "fresh_base": "cfe5fd3819009fdcb6a4d8402aa6b818947f9d0c",
+  "trigger_pr": 637,
+  "predecessor_pr": 637,
+  "predecessor_head": "2359019f357a5e24555870e9d7e9fe6d3f9f30d4",
+  "predecessor_base": "97a9c18a8751e0f7ffd496b71883f51c009835ef",
+  "semantic_source_pr": 637,
+  "semantic_source_head": "6cd8f116a290612188c0fb80ff44cc537dc22d88",
+  "semantic_reuse_note": "File-level reuse only: the accepted-part v1 operation-surface compatibility validator in reverse_agent/control_plane/command_authority.py plus its regressions in tests/test_execution_evidence.py tests/test_control_plane_transition.py tests/test_authority_closure.py tests/test_project_gate.py tests/test_trust_authorization_adapter.py are re-materialized byte-for-byte from the v1 semantic commit 6cd8f116, then EXTENDED by this v2 Decision with (a) one canonical capability-flag-to-operation vocabulary shared by capability-policy enforcement and the compatibility registry, (b) registry entries for every capability-controlled operation that can become allowed, and (c) a machine-checked completeness invariant with positive/negative regressions. No PR637 governance history is cherry-picked and PR637 itself is never reopened, amended, rebased, force-pushed, continued, marked Ready, or merged.",
+  "fresh_base": "97a9c18a8751e0f7ffd496b71883f51c009835ef",
   "integration_base_ref": "main",
-  "base_sha": "cfe5fd3819009fdcb6a4d8402aa6b818947f9d0c",
-  "activation_base_sha": "cfe5fd3819009fdcb6a4d8402aa6b818947f9d0c",
-  "starting_head": "cfe5fd3819009fdcb6a4d8402aa6b818947f9d0c",
-  "required_branch": "owner/issue156-postmerge-validator-cutover-r1-v2",
+  "base_sha": "97a9c18a8751e0f7ffd496b71883f51c009835ef",
+  "activation_base_sha": "97a9c18a8751e0f7ffd496b71883f51c009835ef",
+  "starting_head": "97a9c18a8751e0f7ffd496b71883f51c009835ef",
+  "required_branch": "owner/issue156-execution-surface-compat-r2-v2",
   "fresh_worktree_creation_required": true,
   "history_reuse_allowed": false,
   "risk_tier": "R2",
@@ -78,12 +78,12 @@
   "mainline_merge_intent_required": false,
   "active_pr_binding_mode": "none",
   "no_legacy_intent_mode": "READ_ONLY_LANDING_CANDIDATE_VALIDATION",
-  "landing_authority_scope_note": "This engineering Decision repairs the PR628 false/none post-merge validator production shape only. mainline_merge_intent_required=false and active_pr_binding_mode=none are a NO_LEGACY_INTENT / READ_ONLY_LANDING_CANDIDATE_VALIDATION contract for the correction PR itself; this Decision does not grant Ready or Merge. Final Ready/Merge of this correction PR requires a separate independent Owner landing authority AND a pre-merge OWNER_LANDING_MERGE_ATTESTATION comment per the new false/none post-merge protocol. PR628 remains Draft and is never merged or marked Ready under this Decision.",
+  "landing_authority_scope_note": "This engineering Decision closes the PR637 completeness gap: one canonical capability-flag-to-operation vocabulary shared by capability-policy enforcement and the operation-surface compatibility registry, registry entries for every grantable capability operation, and a machine-checked invariant that no capability-controlled operation can become unknown_operation. It does not grant Ready or Merge. Final Ready/Merge of this PR requires a separate independent Owner landing authority per the established protocol.",
   "bootstrap_compatibility_notes": [
-    "FINAL_PRE_CUTOVER_BOOTSTRAP_COMPATIBILITY",
-    "NOT_USER_LOCAL_PRODUCT_REQUIREMENT"
+    "POST_CUTOVER_EXECUTION_SURFACE_COMPATIBILITY",
+    "NO_LEGACY_LOCAL_AUTHORING"
   ],
-  "bootstrap_compatibility_detail": "This fresh-base Decision is created from the currently locked main schema at cfe5fd3819009fdcb6a4d8402aa6b818947f9d0c. The bootstrap allowed_commands therefore use only surfaces the current main schema accepts (local, remote_observation). No schema relaxation, no fake trusted_worker, no second loader, and no gate modification was made to bootstrap this Decision.",
+  "bootstrap_compatibility_detail": "This fresh Decision is created from the currently locked main schema at 97a9c18a8751e0f7ffd496b71883f51c009835ef. All checkout/gate commands are declared on trusted_worker; GitHub-native publication on github_control_plane; read-only acceptance on remote_observation. No allowed_command selects the legacy local surface and no bootstrap_exception_command is used. user_local is not declared because no machine-specific capability is required for this round.",
   "issue_number_must_not_substitute_for_pr_number": true,
   "test_semantics_changes_allowed": true,
   "source_test_mutation_authorized": true,
@@ -95,23 +95,16 @@
     "project_state/gates/transition_command_plan_preview.json",
     "project_state/gates/transition_preflight_result.json"
   ],
-  "bootstrap_exception_commands": [
-    "verify exact fresh main cfe5fd3819009fdcb6a4d8402aa6b818947f9d0c and fresh branch merge-base",
-    "commit this immutable R2 Decision as the unique first commit",
-    "python -m reverse_agent.project_gate startup-snapshot --state-dir project_state",
-    "python -m reverse_agent.project_gate transition-command-plan --state-dir project_state",
-    "python -m reverse_agent.project_gate transition-lint --state-dir project_state",
-    "python -m reverse_agent.project_gate transition-preflight --state-dir project_state --mode pre"
-  ],
+  "bootstrap_exception_commands": [],
   "allowed_commands": [
     {
-      "command_id": "issue156_postmerge_cutover_r1_v2.bootstrap_and_preflight",
-      "command": "verify exact fresh locked main cfe5fd3819009fdcb6a4d8402aa6b818947f9d0c and fresh branch merge-base; commit this immutable R2 Decision first; run startup snapshot command-plan compiler transition lint and transition preflight pre; require PRE_EXECUTION_AUTHORIZED before any semantic mutation",
+      "command_id": "execution_surface_compat_r2_v2.bootstrap_and_preflight",
+      "command": "verify exact fresh locked main 97a9c18a8751e0f7ffd496b71883f51c009835ef and fresh branch merge-base; commit this immutable R2 Decision first; run startup snapshot command-plan compiler transition lint and transition preflight pre; require PRE_EXECUTION_AUTHORIZED before any semantic mutation",
       "phase": "bootstrap",
       "required": true,
       "expected_exit_codes": [0],
-      "execution_surface": "local",
-      "operations": ["code_read", "local_static_check", "commit"],
+      "execution_surface": "trusted_worker",
+      "operations": ["code_read", "local_static_check", "command_plan_generation"],
       "network_access": false,
       "required_evidence_source": "repository_state_attestation",
       "produced_artifacts": [
@@ -123,42 +116,42 @@
       ]
     },
     {
-      "command_id": "issue156_postmerge_cutover_r1_v2.implement",
-      "command": "after PRE_EXECUTION_AUTHORIZED re-materialize the PR628 accepted semantic files byte-for-byte from the accepted exact head 602192fb2cbfd7095688454822d3adcefd03a56c (reverse_agent/mainline_landing.py reverse_agent/github_remote_verifier.py reverse_agent/project_gate.py tests/test_mainline_landing.py); then apply ONLY the new P0 production-shape correction to GitHubRemoteAcceptanceVerifier.resolve_merged_pull_request: the commit-associated-PR list endpoint never returns a merged boolean key, so resolution must require exactly one associated PR with a legal object shape, exact repository identity, non-empty merged_at, merge_commit_sha equal to the requested merge_commit_sha, and (optionally) state closed, and must NOT require bool(pr[\"merged\"]); the authoritative merged-state verification stays in verify_pr with exact source PR/head/base/merge-commit and require_merged=True and must never be deleted, bypassed, or weakened; add deterministic production-shape regressions covering the real verifier (a PASS case whose payload deliberately omits the merged key, plus BLOCK cases for zero/multiple associated PRs, wrong repository, missing merged_at, wrong merge_commit_sha, and malformed payload) and confirm the false+missing-active_pr_binding_mode landing policy still fails closed in the final gate; keep the legacy true/bound path, Decision immutability, expected-head protection, required checks, active.json, and the READ_ONLY_LANDING_CANDIDATE_VALIDATION mode unchanged",
+      "command_id": "execution_surface_compat_r2_v2.implement",
+      "command": "after PRE_EXECUTION_AUTHORIZED carry forward byte-for-byte the v1 operation-surface compatibility validator in reverse_agent/control_plane/command_authority.py and its regressions, then implement the v2 closure: define ONE canonical capability-flag-to-operation vocabulary (CAPABILITY_OPERATION_MAPPING) in command_authority.py shared by capability-policy enforcement (_capability_forbidden_operations in transition.py) and the operation-surface compatibility registry; add an explicit admissible-surface entry for every capability-controlled operation that can become allowed (runner_dispatch model_api_invocation external_reverse_tool_invocation unknown_binary_execution destructive bmad_installation direct_push_main force_push rebase tag_or_release; merge already covered) grounded in the #156 surface model (GitHub-native ref/workflow/tag publication to github_control_plane; checked-out-repo history/destructive/subprocess-tool/binary execution to trusted_worker(+user_local); networked external API calls and installs to network-capable subprocess/CI surfaces); keep truly unsupported operations fail-closed as unknown_operation; add a machine-checked completeness invariant (every capability-controlled operation that can become allowed must be present in OPERATION_SURFACE_ADMISSIBILITY) plus positive capability-enabled operation/surface cases, negative cross-surface cases, and the capability-policy-and-compatibility-both-required proof; preserve the #636 github_control_plane + source_edit/commit rejection and the legacy local loader seam",
       "phase": "implementation",
       "required": true,
       "expected_exit_codes": [0],
-      "execution_surface": "local",
+      "execution_surface": "trusted_worker",
       "operations": ["source_edit", "unit_test", "local_static_check", "commit"],
       "network_access": false,
       "required_evidence_source": "repository_state_attestation"
     },
     {
-      "command_id": "issue156_postmerge_cutover_r1_v2.validate",
-      "command": "run python -m pytest tests/test_mainline_landing.py tests/test_project_gate.py plus the State Gate focused suite tests/test_project_reports.py tests/test_project_jobs.py tests/test_post_final_evidence_sync.py tests/test_decision_preflight.py tests/test_project_state.py; require git diff --check clean and transition-lint/transition-command-plan/transition-preflight revalidation and worktree-publication-readiness PUBLICATION_READY",
+      "command_id": "execution_surface_compat_r2_v2.validate",
+      "command": "run python -m pytest tests/test_execution_evidence.py tests/test_control_plane_transition.py tests/test_authority_closure.py tests/test_command_mutation_grants.py tests/test_provenance_integration.py tests/test_trusted_command_runner.py tests/test_trust_authorization_adapter.py -q plus the State Gate focused suite tests/test_project_reports.py tests/test_project_jobs.py tests/test_post_final_evidence_sync.py tests/test_decision_preflight.py tests/test_project_state.py; require git diff --check clean and transition-lint/transition-command-plan/transition-preflight revalidation and worktree-publication-readiness PUBLICATION_READY",
       "phase": "validation",
       "required": true,
       "expected_exit_codes": [0],
-      "execution_surface": "local",
+      "execution_surface": "trusted_worker",
       "operations": ["unit_test", "local_static_check"],
       "network_access": false,
       "required_evidence_source": "repository_state_attestation"
     },
     {
-      "command_id": "issue156_postmerge_cutover_r1_v2.validate_and_publish",
-      "command": "run the CI-equivalent blocking deterministic suites plus git diff --check; after all blocking validation passes push the exact branch owner/issue156-postmerge-validator-cutover-r1-v2 to locked main cfe5fd3819009fdcb6a4d8402aa6b818947f9d0c and create exactly one Draft PR with body P0 production-shape correction for PR628 false/none post-merge validator; never mark Ready or merge under this Decision; never rerun or dispatch workflows",
+      "command_id": "execution_surface_compat_r2_v2.publish",
+      "command": "after all blocking validation passes, push the exact branch owner/issue156-execution-surface-compat-r2-v2 to locked main 97a9c18a8751e0f7ffd496b71883f51c009835ef and create exactly one Draft PR with body recording the immutable R2 authority snapshot; never mark Ready or merge under this Decision; never rerun or dispatch workflows",
       "phase": "publication",
       "required": true,
       "expected_exit_codes": [0],
-      "execution_surface": "local",
-      "operations": ["unit_test", "local_static_check", "commit", "push", "draft_pr", "network_access"],
+      "execution_surface": "github_control_plane",
+      "operations": ["push", "draft_pr", "network_access"],
       "network_access": true,
       "required_evidence_source": "repository_state_attestation",
       "allowed_only_after_validation": true
     },
     {
-      "command_id": "issue156_postmerge_cutover_r1_v2.exact_head_acceptance",
-      "command": "require natural exact-head CI Decision Preflight and State Gate observations on the Draft PR and independently audit that no unauthorized paths changed and the legacy true/bound post-merge regressions remain green; keep the PR Draft and do NOT Ready or merge under this Decision; never rerun or dispatch workflows to manufacture green",
+      "command_id": "execution_surface_compat_r2_v2.exact_head_acceptance",
+      "command": "require natural exact-head CI, Decision Preflight and State Gate observations on the Draft PR and independently audit that no unauthorized paths changed, that the operation-surface compatibility regressions, the capability completeness invariant and legacy compatibility tests are green, and that no capability-controlled operation can be both capability-allowed and registry-missing; keep the PR Draft and do NOT Ready or merge under this Decision",
       "phase": "final_evidence",
       "required": true,
       "expected_exit_codes": [0],
@@ -175,27 +168,30 @@
     "project_state/gates/bootstrap_state.json",
     "project_state/gates/transition_command_plan_preview.json",
     "project_state/gates/transition_preflight_result.json",
-    "reverse_agent/mainline_landing.py",
-    "reverse_agent/github_remote_verifier.py",
-    "reverse_agent/project_gate.py",
-    "tests/test_mainline_landing.py",
-    "tests/test_project_gate.py"
+    "reverse_agent/control_plane/command_authority.py",
+    "reverse_agent/control_plane/transition.py",
+    "reverse_agent/control_plane/legacy_adapter.py",
+    "tests/test_execution_evidence.py",
+    "tests/test_control_plane_transition.py",
+    "tests/test_authority_closure.py",
+    "tests/test_project_gate.py",
+    "tests/test_trust_authorization_adapter.py"
   ],
   "reference_paths": [
     "AGENTS.md",
     ".github/workflows/state-gate.yml",
     ".github/workflows/ci.yml",
     ".github/workflows/decision-preflight.yml",
-    "project_state/mainline_merge_intents/active.json",
-    "project_state/schemas/mainline_merge_intent_v3.schema.json"
+    ".github/workflows/freshness.yml",
+    "project_state/mainline_merge_intents/active.json"
   ],
   "reference_only_paths": [
     "AGENTS.md",
     ".github/workflows/state-gate.yml",
     ".github/workflows/ci.yml",
     ".github/workflows/decision-preflight.yml",
-    "project_state/mainline_merge_intents/active.json",
-    "project_state/schemas/mainline_merge_intent_v3.schema.json"
+    ".github/workflows/freshness.yml",
+    "project_state/mainline_merge_intents/active.json"
   ],
   "generated_artifact_paths": [
     "project_state/gates/command_plan.json",
@@ -218,7 +214,14 @@
     "pyproject.toml",
     ".github/workflows/**",
     "reverse_agent/platform_v1/**",
-    "reverse_agent/control_plane/**",
+    "reverse_agent/control_plane/evidence_recorder.py",
+    "reverse_agent/control_plane/models.py",
+    "reverse_agent/control_plane/execution_reconciliation.py",
+    "reverse_agent/control_plane/path_a.py",
+    "reverse_agent/control_plane/local_seal.py",
+    "reverse_agent/control_plane/worktree_state.py",
+    "reverse_agent/control_plane/evidence_source.py",
+    "reverse_agent/control_plane/report_binding.py",
     "project_state/mainline_merge_intents/**",
     "project_state/schemas/**",
     "project_state/current_state.json",
@@ -232,12 +235,12 @@
     "**/owner_handoffs/**"
   ],
   "forbidden_operations": [
-    "direct_push_main", "auto_merge", "merge", "mark_ready", "force_push", "rebase", "squash", "reset", "clean", "stash", "restore", "amend", "history_rewrite",
+    "local_authoring", "implicit_user_local_fallback", "direct_push_main", "auto_merge", "merge", "mark_ready", "force_push", "rebase", "squash", "reset", "clean", "stash", "restore", "amend", "history_rewrite",
     "unknown_binary_execution", "secrets", "destructive_delete", "privileged_remote_execution", "model_api_invocation", "provider_network_call", "credential_access", "auth_store_read",
     "runner_dispatch", "workflow_rerun", "tag_or_release", "deployment", "dependency_install", "browser_execution", "snapshot_update", "arbitrary_remote_browsing", "external_url_navigation",
-    "second_decision_commit", "second_command_runner", "active_json_rewrite", "product_replay", "desktop_reanchor", "ruleset_weakening", "required_check_weakening", "skip_mainline_merge_validation", "retroactive_false_none_attestation",
-    "pr628_amendment", "pr628_mark_ready", "pr628_merge", "rerun_failed_625_post_merge_run", "weaken_verify_pr_merged_authority",
-    "implicit_user_local_fallback", "weaken_decision_immutability", "weaken_expected_head_protection", "weaken_required_checks"
+    "second_decision_commit", "second_command_runner", "active_json_rewrite", "product_replay", "desktop_reanchor", "ruleset_weakening", "required_check_weakening",
+    "reuse_v1_decision", "reopen_pr637", "amend_pr637", "rebase_pr637", "continue_push_pr637", "png_recapture", "no_op_surface_semantics_green",
+    "weaken_decision_immutability", "weaken_expected_head_protection", "weaken_required_checks", "ignore_operation_surface_admissibility", "registry_completeness_by_comment_only"
   ],
   "capability_policy": {
     "runner_dispatch_allowed": false,
@@ -253,17 +256,20 @@
     "rebase_during_execution_allowed": false,
     "tag_or_release_allowed": false,
     "remote_observation_read_only_allowed": true,
-    "local_network_exceptions": [
+    "local_network_exceptions": [],
+    "ci_network_exceptions": [],
+    "trusted_worker_network_exceptions": [],
+    "github_control_plane_network_exceptions": [
       "push the exact validated branch and create exactly one Draft PR"
     ],
-    "ci_network_exceptions": []
+    "user_local_network_exceptions": []
   },
   "path_risk_floor": [
     {"pattern": "project_state/**", "minimum_risk": "R2"},
     {"pattern": ".github/workflows/**", "minimum_risk": "R2"},
-    {"pattern": "reverse_agent/mainline_landing.py", "minimum_risk": "R2"},
-    {"pattern": "reverse_agent/github_remote_verifier.py", "minimum_risk": "R2"},
-    {"pattern": "reverse_agent/project_gate.py", "minimum_risk": "R2"},
+    {"pattern": "reverse_agent/control_plane/command_authority.py", "minimum_risk": "R2"},
+    {"pattern": "reverse_agent/control_plane/transition.py", "minimum_risk": "R2"},
+    {"pattern": "reverse_agent/control_plane/legacy_adapter.py", "minimum_risk": "R2"},
     {"pattern": "**/secrets/**", "minimum_risk": "R3"}
   ],
   "authorized_risk_paths": [
@@ -273,16 +279,19 @@
     "project_state/gates/bootstrap_state.json",
     "project_state/gates/transition_command_plan_preview.json",
     "project_state/gates/transition_preflight_result.json",
-    "reverse_agent/mainline_landing.py",
-    "reverse_agent/github_remote_verifier.py",
-    "reverse_agent/project_gate.py",
-    "tests/test_mainline_landing.py",
-    "tests/test_project_gate.py"
+    "reverse_agent/control_plane/command_authority.py",
+    "reverse_agent/control_plane/transition.py",
+    "reverse_agent/control_plane/legacy_adapter.py",
+    "tests/test_execution_evidence.py",
+    "tests/test_control_plane_transition.py",
+    "tests/test_authority_closure.py",
+    "tests/test_project_gate.py",
+    "tests/test_trust_authorization_adapter.py"
   ],
   "run_environment_binding": {
-    "run_strategy": "local_trusted_worker",
+    "run_strategy": "trusted_worker",
     "canonical_repository": "dddd2024/Nerelan",
-    "target_owner_branch": "owner/issue156-postmerge-validator-cutover-r1-v2",
+    "target_owner_branch": "owner/issue156-execution-surface-compat-r2-v2",
     "authority_path": "Path B R2 transition",
     "local_agent_ready_or_merge_authority": false
   }
