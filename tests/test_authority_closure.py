@@ -93,7 +93,7 @@ def _structured_command(
     command: str = "git status --short",
     *,
     phase: str = "status",
-    surface: str = "local",
+    surface: str = "trusted_worker",
     operations: tuple[str, ...] = ("repository_observation",),
     network_access: bool = False,
     command_id: str = "",
@@ -219,7 +219,7 @@ def test_reconcile_executions_classifies_bootstrap_exceptions() -> None:
     envelopes = (
         ExecutionEnvelope(
             command="git status --short",
-            execution_surface="local",
+            execution_surface="trusted_worker",
             operations=("repository_observation",),
             exit_code=0,
         ),
@@ -272,6 +272,93 @@ def test_capability_flag_true_removes_forbidden_operation() -> None:
     forbidden = _capability_forbidden_operations(policy)
     assert "merge" not in forbidden
     assert "force_push" not in forbidden
+
+
+# ---------------------------------------------------------------------------
+# #637 closure: capability vocabulary shared with the compatibility registry.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("flag", "operation"),
+    [
+        ("runner_dispatch_allowed", "runner_dispatch"),
+        ("model_api_invocation_allowed", "model_api_invocation"),
+        ("external_reverse_tool_invocation_allowed", "external_reverse_tool_invocation"),
+        ("unknown_binary_execution_allowed", "unknown_binary_execution"),
+        ("destructive_operations_allowed", "destructive"),
+        ("bmad_installation_allowed", "bmad_installation"),
+        ("direct_push_to_main_allowed", "direct_push_main"),
+        ("merge_allowed", "merge"),
+        ("force_push_allowed", "force_push"),
+        ("rebase_during_execution_allowed", "rebase"),
+        ("tag_or_release_allowed", "tag_or_release"),
+    ],
+)
+def test_capability_flag_true_removes_operation_from_forbidden(flag: str, operation: str) -> None:
+    """When a capability flag is True, its operation must be absent from the
+    forbidden set (grantable). It therefore MUST have a compatibility entry."""
+    from reverse_agent.control_plane.command_authority import OPERATION_SURFACE_ADMISSIBILITY
+
+    policy = CapabilityPolicy(**{flag: True})
+    forbidden = _capability_forbidden_operations(policy)
+    assert operation not in forbidden
+    # The grantable operation must be representable on an admissible surface,
+    # otherwise the flag is semantically dead for current typed Decisions.
+    assert operation in OPERATION_SURFACE_ADMISSIBILITY
+    assert OPERATION_SURFACE_ADMISSIBILITY[operation]
+
+
+def test_capability_forbidden_operations_derive_from_canonical_mapping() -> None:
+    """_capability_forbidden_operations must enumerate exactly the canonical
+    capability-flag vocabulary shared with the compatibility registry."""
+    from reverse_agent.control_plane.command_authority import CAPABILITY_OPERATION_MAPPING
+
+    all_allowed = _capability_forbidden_operations(CapabilityPolicy(
+        runner_dispatch_allowed=True,
+        model_api_invocation_allowed=True,
+        external_reverse_tool_invocation_allowed=True,
+        unknown_binary_execution_allowed=True,
+        destructive_operations_allowed=True,
+        bmad_installation_allowed=True,
+        direct_push_to_main_allowed=True,
+        merge_allowed=True,
+        force_push_allowed=True,
+        rebase_during_execution_allowed=True,
+        tag_or_release_allowed=True,
+    ))
+    assert all_allowed == ()
+    assert set(CAPABILITY_OPERATION_MAPPING.values()) == {
+        "runner_dispatch",
+        "model_api_invocation",
+        "external_reverse_tool_invocation",
+        "unknown_binary_execution",
+        "destructive",
+        "bmad_installation",
+        "direct_push_main",
+        "merge",
+        "force_push",
+        "rebase",
+        "tag_or_release",
+    }
+
+
+def test_capability_vocabulary_registry_completeness_invariant() -> None:
+    """GRANTABLE_CAPABILITY_OPERATIONS must be a subset of
+    OPERATION_SURFACE_ADMISSIBILITY. If a developer adds a capability flag to
+    the canonical mapping but forgets the compatibility entry, this test
+    FAILS immediately instead of at a future real Decision execution."""
+    from reverse_agent.control_plane.command_authority import (
+        CAPABILITY_OPERATION_MAPPING,
+        OPERATION_SURFACE_ADMISSIBILITY,
+    )
+
+    missing = sorted(
+        operation
+        for operation in CAPABILITY_OPERATION_MAPPING.values()
+        if operation not in OPERATION_SURFACE_ADMISSIBILITY
+    )
+    assert missing == []
 
 
 def test_load_capability_policy_reads_structured_mapping() -> None:

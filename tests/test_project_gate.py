@@ -31729,7 +31729,7 @@ def _make_transition_authority():
                 "test",
                 True,
                 (0,),
-                "local",
+                "trusted_worker",
                 ("unit_test",),
                 command_id="test.unit",
                 allowed_mutated_paths=("tests/test_project_gate.py",),
@@ -31786,7 +31786,7 @@ def test_transition_valid_authority_ignores_legacy_acceptance_artifacts(tmp_path
         (tmp_path / name).write_text("{\"gate_status\": \"FAILED\"}", encoding="utf-8")
     envelope = ExecutionEnvelope(
         command="python -m pytest tests/test_project_gate.py -q",
-        execution_surface="local",
+        execution_surface="trusted_worker",
         mutated_paths=("tests/test_project_gate.py",),
         command_id="test.unit",
     )

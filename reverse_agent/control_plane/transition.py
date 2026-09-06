@@ -5,7 +5,12 @@ from __future__ import annotations
 from fnmatch import fnmatch
 from typing import Any, Iterable
 
-from .command_authority import authorize_command, canonical_command, validate_command_plan
+from .command_authority import (
+    authorize_command,
+    canonical_command,
+    capability_forbidden_operations_for_policy,
+    validate_command_plan,
+)
 from .execution_reconciliation import reconcile_executions
 from .models import (
     CapabilityPolicy,
@@ -151,26 +156,14 @@ def _capability_forbidden_operations(policy: CapabilityPolicy) -> tuple[str, ...
 
     Each flag that is ``False`` must add its corresponding operation to the
     forbidden set so the machine gate stays in sync with the Decision.
+
+    The flag->operation vocabulary lives in the single canonical
+    ``CAPABILITY_OPERATION_MAPPING`` (command_authority.py) shared with the
+    operation-surface compatibility registry, so the vocabulary cannot drift
+    between capability-policy enforcement and registry completeness.
     """
 
-    mapping = {
-        "runner_dispatch_allowed": "runner_dispatch",
-        "model_api_invocation_allowed": "model_api_invocation",
-        "external_reverse_tool_invocation_allowed": "external_reverse_tool_invocation",
-        "unknown_binary_execution_allowed": "unknown_binary_execution",
-        "destructive_operations_allowed": "destructive",
-        "bmad_installation_allowed": "bmad_installation",
-        "direct_push_to_main_allowed": "direct_push_main",
-        "merge_allowed": "merge",
-        "force_push_allowed": "force_push",
-        "rebase_during_execution_allowed": "rebase",
-        "tag_or_release_allowed": "tag_or_release",
-    }
-    operations: list[str] = []
-    for field, operation in mapping.items():
-        if not getattr(policy, field, False):
-            operations.append(operation)
-    return tuple(dict.fromkeys(operations))
+    return capability_forbidden_operations_for_policy(policy)
 
 
 def _network_exceptions_for_surface(policy: CapabilityPolicy, surface: str) -> tuple[str, ...]:

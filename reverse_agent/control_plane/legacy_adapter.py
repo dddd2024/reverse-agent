@@ -492,21 +492,14 @@ def load_transition_scope(
 
     # If the contract declares capability_policy, derive forbidden operations
     # from the structured flags as well so the machine gate stays in sync.
+    # The flag->operation vocabulary is the single canonical
+    # ``CAPABILITY_OPERATION_MAPPING`` shared with the compatibility registry
+    # so the vocabulary cannot drift between loader and enforcement.
     structured_policy = contract.get("capability_policy")
     if isinstance(structured_policy, Mapping):
-        capability_forbidden = {
-            "direct_push_to_main_allowed": "direct_push_main",
-            "merge_allowed": "merge",
-            "force_push_allowed": "force_push",
-            "rebase_during_execution_allowed": "rebase",
-            "destructive_operations_allowed": "destructive",
-            "unknown_binary_execution_allowed": "unknown_binary_execution",
-            "model_api_invocation_allowed": "model_api_invocation",
-            "external_reverse_tool_invocation_allowed": "external_reverse_tool_invocation",
-            "runner_dispatch_allowed": "runner_dispatch",
-            "bmad_installation_allowed": "bmad_installation",
-        }
-        for field, operation in capability_forbidden.items():
+        from .command_authority import CAPABILITY_OPERATION_MAPPING
+
+        for field, operation in CAPABILITY_OPERATION_MAPPING.items():
             value = structured_policy.get(field)
             if isinstance(value, bool) and not value:
                 operations.append(operation)

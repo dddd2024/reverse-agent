@@ -1,6 +1,6 @@
 {
   "status": "BOOTSTRAP_EXPIRED",
-  "decision_id": "decision_20260904_issue156_postmerge_validator_cutover_r1_v2",
-  "round_id": "round_20260904_issue156_postmerge_validator_cutover_r1_v2",
-  "expired_at": "2026-09-04T04:37:52+00:00"
+  "decision_id": "decision_20260905_issue156_execution_surface_compat_r2_v2",
+  "round_id": "round_20260905_issue156_execution_surface_compat_r2_v2",
+  "expired_at": "2026-09-05T13:44:16+00:00"
 }
