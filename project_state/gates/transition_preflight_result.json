@@ -2,18 +2,18 @@
   "schema_version": 1,
   "gate_name": "transition-preflight",
   "gate_status": "PRE_EXECUTION_AUTHORIZED",
-  "decision_id": "decision_20260904_issue156_postmerge_validator_cutover_r1_v2",
-  "round_id": "round_20260904_issue156_postmerge_validator_cutover_r1_v2",
+  "decision_id": "decision_20260906_issue156_pr638_owner_landing_r2_v1",
+  "round_id": "round_20260906_issue156_pr638_owner_landing_r2_v1",
   "checks": [
     {
       "name": "decision_identity",
       "status": "PASS",
-      "detail": "observed=decision_20260904_issue156_postmerge_validator_cutover_r1_v2 expected=decision_20260904_issue156_postmerge_validator_cutover_r1_v2"
+      "detail": "observed=decision_20260906_issue156_pr638_owner_landing_r2_v1 expected=decision_20260906_issue156_pr638_owner_landing_r2_v1"
     },
     {
       "name": "round_identity",
       "status": "PASS",
-      "detail": "observed=round_20260904_issue156_postmerge_validator_cutover_r1_v2 expected=round_20260904_issue156_postmerge_validator_cutover_r1_v2"
+      "detail": "observed=round_20260906_issue156_pr638_owner_landing_r2_v1 expected=round_20260906_issue156_pr638_owner_landing_r2_v1"
     },
     {
       "name": "decision_approved",
@@ -33,22 +33,22 @@
     {
       "name": "branch_identity",
       "status": "PASS",
-      "detail": "observed=owner/issue156-postmerge-validator-cutover-r1-v2 expected=owner/issue156-postmerge-validator-cutover-r1-v2"
+      "detail": "observed=owner/issue156-pr638-owner-landing-r2-v1 expected=owner/issue156-pr638-owner-landing-r2-v1"
     },
     {
       "name": "base_ancestry",
       "status": "PASS",
-      "detail": "base=cfe5fd3819009fdcb6a4d8402aa6b818947f9d0c merge_base=cfe5fd3819009fdcb6a4d8402aa6b818947f9d0c"
+      "detail": "base=97a9c18a8751e0f7ffd496b71883f51c009835ef merge_base=97a9c18a8751e0f7ffd496b71883f51c009835ef"
     },
     {
       "name": "decision_ancestry",
       "status": "PASS",
-      "detail": "decision_commit=c7d1e617d9e7ccb1d7aff731f45c997ba59d0733"
+      "detail": "decision_commit=f637abcb557afb48b9709ed9228e60be0ddc6a92"
     },
     {
       "name": "command_plan_identity",
       "status": "PASS",
-      "detail": "plan=decision_20260904_issue156_postmerge_validator_cutover_r1_v2/round_20260904_issue156_postmerge_validator_cutover_r1_v2"
+      "detail": "plan=decision_20260906_issue156_pr638_owner_landing_r2_v1/round_20260906_issue156_pr638_owner_landing_r2_v1"
     },
     {
       "name": "command_plan_contract",
@@ -108,23 +108,21 @@
         "decision_path": "project_state/decision_packet.md",
         "applicable": true,
         "decision_content_immutable_after_activation": true,
-        "starting_head": "cfe5fd3819009fdcb6a4d8402aa6b818947f9d0c",
-        "head": "e366c0e052f6229bc3f060044c9ef86f40abb06d",
+        "starting_head": "97a9c18a8751e0f7ffd496b71883f51c009835ef",
+        "head": "f637abcb557afb48b9709ed9228e60be0ddc6a92",
         "commits": [
-          "c7d1e617d9e7ccb1d7aff731f45c997ba59d0733",
-          "d873d20f705d21668b1782ca6c8ac77ac6c86e13",
-          "e366c0e052f6229bc3f060044c9ef86f40abb06d"
+          "f637abcb557afb48b9709ed9228e60be0ddc6a92"
         ],
         "decision_commits": [
-          "c7d1e617d9e7ccb1d7aff731f45c997ba59d0733"
+          "f637abcb557afb48b9709ed9228e60be0ddc6a92"
         ],
-        "decision_commit": "c7d1e617d9e7ccb1d7aff731f45c997ba59d0733",
+        "decision_commit": "f637abcb557afb48b9709ed9228e60be0ddc6a92",
         "decision_commit_is_ancestor": true,
         "activation_scope_paths": [
           "project_state/decision_packet.md"
         ],
-        "activation_blob": "2a08456a280940f2da2c4fc42109c76644397a55",
-        "head_blob": "2a08456a280940f2da2c4fc42109c76644397a55",
+        "activation_blob": "d65efdc1a6ae32ba15fc8b8b9782b64bbe646b87",
+        "head_blob": "d65efdc1a6ae32ba15fc8b8b9782b64bbe646b87",
         "worktree_paths": [],
         "index_paths": [],
         "status_paths": [],
@@ -138,23 +136,21 @@
     "decision_path": "project_state/decision_packet.md",
     "applicable": true,
     "decision_content_immutable_after_activation": true,
-    "starting_head": "cfe5fd3819009fdcb6a4d8402aa6b818947f9d0c",
-    "head": "e366c0e052f6229bc3f060044c9ef86f40abb06d",
+    "starting_head": "97a9c18a8751e0f7ffd496b71883f51c009835ef",
+    "head": "f637abcb557afb48b9709ed9228e60be0ddc6a92",
     "commits": [
-      "c7d1e617d9e7ccb1d7aff731f45c997ba59d0733",
-      "d873d20f705d21668b1782ca6c8ac77ac6c86e13",
-      "e366c0e052f6229bc3f060044c9ef86f40abb06d"
+      "f637abcb557afb48b9709ed9228e60be0ddc6a92"
     ],
     "decision_commits": [
-      "c7d1e617d9e7ccb1d7aff731f45c997ba59d0733"
+      "f637abcb557afb48b9709ed9228e60be0ddc6a92"
     ],
-    "decision_commit": "c7d1e617d9e7ccb1d7aff731f45c997ba59d0733",
+    "decision_commit": "f637abcb557afb48b9709ed9228e60be0ddc6a92",
     "decision_commit_is_ancestor": true,
     "activation_scope_paths": [
       "project_state/decision_packet.md"
     ],
-    "activation_blob": "2a08456a280940f2da2c4fc42109c76644397a55",
-    "head_blob": "2a08456a280940f2da2c4fc42109c76644397a55",
+    "activation_blob": "d65efdc1a6ae32ba15fc8b8b9782b64bbe646b87",
+    "head_blob": "d65efdc1a6ae32ba15fc8b8b9782b64bbe646b87",
     "worktree_paths": [],
     "index_paths": [],
     "status_paths": [],
